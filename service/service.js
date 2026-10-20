@@ -39,7 +39,7 @@ const STREMIO_API = 'https://api.strem.io/api/';
 const CACHE_MS = 60 * 1000;
 // Local image server. webOS won't let a developer-installed web app read other
 // apps' files, so the (root) service hands icons to the page over localhost.
-const IMAGE_PORT = 47823;
+const IMAGE_PORT = Number(process.env.HOMEPLUS_PORT) || 47823; /* tests run their own copy on another port */
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml' };
 
 // ------------------------------------------------------------------ helpers
@@ -53,7 +53,8 @@ function fail(msg, text) {
 }
 
 // Config lives outside the app folder so reinstalling Home+ keeps you signed in.
-const CONFIG_DIRS = ['/var/lib/homeplus', path.join(__dirname, 'data')];
+// HOMEPLUS_CONFIG_DIR: tests and the desktop preview keep their config elsewhere (no root needed)
+const CONFIG_DIRS = [process.env.HOMEPLUS_CONFIG_DIR, '/var/lib/homeplus', path.join(__dirname, 'data')].filter(Boolean);
 let configPath = null;
 
 function findConfigPath() {

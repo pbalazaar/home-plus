@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Rooting your TV, or the Homebrew Channel
+    url: https://github.com/webosbrew/webos-homebrew-channel
+    about: Home+ needs a rooted TV with the Homebrew Channel. Help with those is there.

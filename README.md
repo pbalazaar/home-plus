@@ -226,16 +226,17 @@ If you added the lginputhook keybind, delete it in the LG Input Hook app. If the
 
 ## Building from source
 
-The launcher is built with the webOS TV toolchain ([openlgtv/buildroot-nc4](https://github.com/openlgtv/buildroot-nc4)). The easiest route is Docker, which works on Linux and macOS, Intel or Apple Silicon:
+The launcher is built with the webOS TV toolchain ([openlgtv/buildroot-nc4](https://github.com/openlgtv/buildroot-nc4)), which runs on Linux. The easiest route is Docker, which works on Linux and macOS, Intel or Apple Silicon. On Windows, use WSL 2 ([how](CONTRIBUTING.md#building)).
 
 ```sh
 tools/docker-build.sh                  # -> dist/com.github.pmiraka.homeplus_<version>_all.ipk
 tools/install.sh <tv-ip>               # copy it to the TV over SSH, install, set up root, open it
+tools/test.sh                          # run the tests (tools/test.sh all: every check CI runs)
 ```
 
 Without Docker, unpack the toolchain, run its `relocate-sdk.sh`, then `WEBOS_SDK=/path/to/arm-webos-linux-gnueabi_sdk-buildroot tools/build-release.sh`. `tools/native-preview/run.sh` renders screenshots on a Linux desktop. It runs the real service against a stand-in for webOS, and the shots land in `preview/`.
 
-Every push is built by GitHub Actions. Pushing a `v*` tag publishes a release with the `.ipk` attached.
+Every push is built and tested by GitHub Actions. Pushing a `v*` tag publishes a release with the `.ipk` attached. To send a change, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## How it works
 

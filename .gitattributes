@@ -1,0 +1,6 @@
+# Everything is built and run on Linux (the TV, Docker, WSL), so text files keep LF line endings,
+# also in a Windows checkout: a shell script with CRLF endings doesn't run, on the TV or in a build.
+* text=auto eol=lf
+
+# vendored as SDL ships it
+native/third_party/SDL2/LICENSE-SDL2.txt -text

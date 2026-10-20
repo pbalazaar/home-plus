@@ -1,11 +1,16 @@
 #!/bin/sh
 # Renders native Home+ screenshots into preview/native-*.png using the harness.
+# HOMEPLUS_PREVIEW_OUT: another folder for them (tools/test.sh uses a fresh one).
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
+OUT=${HOMEPLUS_PREVIEW_OUT:-$ROOT/preview}
+OUT=$(mkdir -p "$OUT" && cd "$OUT" && pwd)
 ASSETS=${TMPDIR:-/tmp}/homeplus-native-preview
 # the service writes its API token here and the launcher reads it (on the TV: the app folder)
 export HOMEPLUS_TOKEN_FILE=${TMPDIR:-/tmp}/homeplus-api-token
+# ...and its config goes here, so no root is needed
+export HOMEPLUS_CONFIG_DIR=${TMPDIR:-/tmp}/homeplus-preview-config
 python3 "$HERE/make-assets.py" "$ASSETS" "$ROOT/native/assets/fonts/Inter-Bold.ttf" > "$ASSETS.apps" && mv "$ASSETS.apps" "$ASSETS/apps.txt"
 make -s -C "$ROOT/native"
 service() { # start the harness service with the given environment
@@ -13,7 +18,7 @@ service() { # start the harness service with the given environment
   env "$@" NODE_PATH="$HERE/stub" node "$HERE/harness.js" "$ASSETS" "$ROOT/service" & SVC=$!
   sleep 1
 }
-trap 'kill $SVC 2>/dev/null; rm -rf /var/lib/homeplus/config.json' EXIT
+trap 'kill $SVC 2>/dev/null; rm -rf "$HOMEPLUS_CONFIG_DIR"' EXIT
 service HOMEPLUS_PREVIEW=1
 # Prefer a real GLES2 renderer (Mesa under Xvfb) so the glass effects show, like on the TV.
 if command -v xvfb-run >/dev/null; then
@@ -22,8 +27,11 @@ else
   RUN=""; DRIVER="SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software"
 fi
 shot() { # name keys ms [pointer points]
-  eval "$RUN env $DRIVER HOMEPLUS_SCREENSHOT='$ROOT/preview/native-$1.png' HOMEPLUS_KEYS='$2' HOMEPLUS_SCREENSHOT_MS='$3' HOMEPLUS_POINTS='${4:-}' '$ROOT/native/build/host/homeplus'" 2>/dev/null
-  echo "saved preview/native-$1.png"
+  LOG=${TMPDIR:-/tmp}/homeplus-preview-$1.log # the launcher's own output, shown if it fails
+  if ! eval "$RUN env $DRIVER HOMEPLUS_SCREENSHOT='$OUT/native-$1.png' HOMEPLUS_KEYS='$2' HOMEPLUS_SCREENSHOT_MS='$3' HOMEPLUS_POINTS='${4:-}' '$ROOT/native/build/host/homeplus'" >"$LOG" 2>&1; then
+    tail -20 "$LOG" >&2; echo "native-$1: the launcher failed" >&2; exit 1
+  fi
+  echo "saved $OUT/native-$1.png"
 }
 shot home "" 2500
 shot stremio "RR" 3000

@@ -40,9 +40,17 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   package: launcher, service, boot script, licence notices). Versions in `native/appinfo.json` and
   `service/package.json` must match.
 - CI (`.github/workflows/build.yml`) builds every push; pushing a `v*` tag publishes a release.
-- Desktop preview (Linux): `tools/native-preview/run.sh` → `preview/native-*.png`.
-  On a Mac: a `linux/arm64` Debian container with `libsdl2-dev xvfb xauth libgles2 libegl1
-  libgl1-mesa-dri python3-pil nodejs` (the Makefile finds the arm64 libSDL2 by itself).
+- Desktop preview (Linux): `tools/native-preview/run.sh` → `preview/native-*.png`
+  (`HOMEPLUS_PREVIEW_OUT` for another folder). On a Mac: `tools/native-preview/Dockerfile` (Debian with
+  `libsdl2-dev xvfb xauth libgles2 libegl1 libgl1-mesa-dri python3-pil nodejs`; the Makefile finds the
+  arm64 libSDL2 by itself). The harness's service believes it's root unless `HOMEPLUS_PREVIEW_UNROOTED`.
+- Tests (`tools/test.sh`, CI: `.github/workflows/test.yml`): the service's unit tests and HTTP API
+  tests in `test/` (Node's test runner; `node --test test/*.test.js`), every preview scene rendered and
+  checked (`screens`), the .ipk built and checked (`package`: `tools/check-package.mjs` — contents,
+  versions, modes, 32-bit ARM, only SDL 2.0.14 functions). Service modules read their mock URLs from env
+  at load (`HOMEPLUS_TMDB`, `HOMEPLUS_PLEX_TV`, ...), so tests load them with `freshRequire`;
+  `HOMEPLUS_CONFIG_DIR` and `HOMEPLUS_PORT` let the service run without root, on another port.
+  `HOMEPLUS_SERVICE_NODE` runs the API tests' service on another Node (CI: 16, as on the TV).
   `tools/native-preview/glass-test.sh <art.jpg> <out.png>` renders a glass test card.
 - Docker on a Mac can see a file before it's fully written: if a build reports
   "expected ... at end of input", just run it again.

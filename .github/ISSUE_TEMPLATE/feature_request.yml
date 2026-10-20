@@ -1,0 +1,16 @@
+name: Idea
+description: Something Home+ could do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What Home+ could do
+      description: What you'd like, and what it would help with.
+    validations:
+      required: true
+  - type: textarea
+    id: tvos
+    attributes:
+      label: How tvOS does it
+      description: If Apple TV has it, how it works there. Screenshots or a link help.

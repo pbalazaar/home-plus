@@ -38,14 +38,16 @@ function ar(dir, members) {
 
 // The .tar.gz that `tar --format=gnu --owner=0 --group=0 --numeric-owner --sort=name -czf out -C dir .`
 // writes. macOS's bsdtar has none of those flags, and it would add ._* entries for extended attributes.
-function tarGz(dir) {
+// Modes are set here, not read from the disk, so a package built from a Windows folder (where every
+// file looks 0777, or 0666) comes out the same: folders and the files in `executable` 0755, the rest 0644.
+function tarGz(dir, executable = new Set()) {
   const blocks = [];
-  const header = (name, st, type, size) => {
+  const header = (name, st, type, size, mode) => {
     if (Buffer.byteLength(name) > 100) throw new Error(`path too long for a tar header: ${name}`);
     const h = Buffer.alloc(512);
     const octal = (offset, width, n) => h.write(n.toString(8).padStart(width - 1, '0'), offset, 'ascii');
     h.write(name, 0);
-    octal(100, 8, st.mode & 0o7777);
+    octal(100, 8, mode);
     octal(108, 8, 0); // uid
     octal(116, 8, 0); // gid
     octal(124, 12, size);
@@ -61,11 +63,12 @@ function tarGz(dir) {
     const p = path.join(dir, rel);
     const st = fs.statSync(p);
     if (st.isDirectory()) {
-      blocks.push(header(rel ? `./${rel}/` : './', st, '5', 0));
+      blocks.push(header(rel ? `./${rel}/` : './', st, '5', 0, 0o755));
       for (const name of fs.readdirSync(p).sort()) add(rel ? `${rel}/${name}` : name);
     } else {
       const data = fs.readFileSync(p);
-      blocks.push(header(`./${rel}`, st, '0', data.length), data, Buffer.alloc((512 - data.length % 512) % 512));
+      blocks.push(header(`./${rel}`, st, '0', data.length, executable.has(rel) ? 0o755 : 0o644),
+        data, Buffer.alloc((512 - data.length % 512) % 512));
     }
   })('');
   blocks.push(Buffer.alloc(1024)); // end-of-archive marker
@@ -74,8 +77,9 @@ function tarGz(dir) {
   return zlib.gzipSync(Buffer.concat(blocks));
 }
 
-// stage(appDir) fills the data tree; services lists service ids for packageinfo.
-function buildPackage({ appinfo, stage: fill, services = [] }) {
+// stage(appDir) fills the data tree; services lists service ids for packageinfo; executable lists
+// the programs in it (paths in the data tree).
+function buildPackage({ appinfo, stage: fill, services = [], executable = [] }) {
   const { id, version } = appinfo;
   const build = path.join(root, 'build', id);
   const data = path.join(build, 'data');
@@ -100,7 +104,7 @@ function buildPackage({ appinfo, stage: fill, services = [] }) {
   ].join('\n'));
 
   fs.writeFileSync(path.join(build, 'control.tar.gz'), tarGz(ctrl));
-  fs.writeFileSync(path.join(build, 'data.tar.gz'), tarGz(data));
+  fs.writeFileSync(path.join(build, 'data.tar.gz'), tarGz(data, new Set(executable)));
   fs.writeFileSync(path.join(build, 'debian-binary'), '2.0\n');
 
   fs.mkdirSync(dist, { recursive: true });
@@ -116,14 +120,19 @@ const svcVersion = readJSON('service/package.json').version;
 if (svcVersion !== appinfo.version) throw new Error(`versions differ: native/appinfo.json ${appinfo.version}, service/package.json ${svcVersion}`);
 const bin = path.join(root, 'native/build/webos/homeplus');
 if (!fs.existsSync(bin)) throw new Error('native/build/webos/homeplus missing: run `make -C native webos` first');
+const svcDir = path.join(root, 'service');
+// never hidden files (.DS_Store), service/data (a local config, maybe with sign-ins) or tests
+const shipped = (src) => !path.basename(src).startsWith('.') &&
+  path.relative(svcDir, src).split(path.sep)[0] !== 'data' && !src.endsWith('.test.js');
 buildPackage({
   appinfo,
   services: [svc.id],
+  executable: ['homeplus', ...fs.readdirSync(path.join(root, 'init.d')).map((f) => `init.d/${f}`)]
+    .map((f) => `usr/palm/applications/${appinfo.id}/${f}`),
   stage(appDir, data) {
     fs.copyFileSync(path.join(root, 'native/appinfo.json'), path.join(appDir, 'appinfo.json'));
     fs.copyFileSync(bin, path.join(appDir, 'homeplus'));
-    fs.chmodSync(path.join(appDir, 'homeplus'), 0o755);
-    fs.cpSync(path.join(root, 'native/assets'), path.join(appDir, 'assets'), { recursive: true });
+    fs.cpSync(path.join(root, 'native/assets'), path.join(appDir, 'assets'), { recursive: true, filter: shipped });
     fs.copyFileSync(path.join(root, 'native/img/icon.png'), path.join(appDir, 'icon.png'));
     fs.copyFileSync(path.join(root, 'native/img/largeIcon.png'), path.join(appDir, 'largeIcon.png'));
     // cJSON is compiled into the binary, so its notice ships with it (the font's is in assets/)
@@ -133,10 +142,7 @@ buildPackage({
     fs.copyFileSync(path.join(root, 'THIRD_PARTY_NOTICES.md'), path.join(appDir, 'THIRD_PARTY_NOTICES.md'));
     fs.copyFileSync(path.join(root, 'native/third_party/SDL2/LICENSE-SDL2.txt'), path.join(appDir, 'LICENSE-SDL2.txt'));
     // the boot script travels with the app, so it can be installed on the TV with cp
-    fs.cpSync(path.join(root, 'init.d'), path.join(appDir, 'init.d'), { recursive: true });
-    fs.cpSync(path.join(root, 'service'), path.join(data, 'usr/palm/services', svc.id), {
-      recursive: true,
-      filter: (src) => !src.includes(`${path.sep}data`) && !src.endsWith('.test.js')
-    });
+    fs.cpSync(path.join(root, 'init.d'), path.join(appDir, 'init.d'), { recursive: true, filter: shipped });
+    fs.cpSync(svcDir, path.join(data, 'usr/palm/services', svc.id), { recursive: true, filter: shipped });
   }
 });

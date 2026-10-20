@@ -42,6 +42,9 @@ jobs:
       - name: Build
         run: tools/build-release.sh
 
+      - name: Check the package
+        run: node tools/check-package.mjs
+
       - uses: actions/upload-artifact@v4
         with:
           name: homeplus-ipk

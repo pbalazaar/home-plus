@@ -1,0 +1,45 @@
+name: Bug report
+description: Something in Home+ doesn't work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Screenshots or a photo of the screen help.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Home+ version
+      description: Settings → About in Home+.
+      placeholder: 0.10.0
+    validations:
+      required: true
+  - type: input
+    id: tv
+    attributes:
+      label: TV and webOS version
+      description: The model, and the webOS version from the TV's own settings (About This TV).
+      placeholder: LG C3, webOS 23.20.59
+    validations:
+      required: true
+  - type: dropdown
+    id: installed
+    attributes:
+      label: Installed from
+      options:
+        - A release (the .ipk from the Releases page)
+        - My own build
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >
+        If you can reach the TV over SSH: /tmp/homeplus-service.log, the service's log. It starts afresh
+        when the service restarts, so copy it soon after the problem. Look through it before posting, and
+        take out anything you'd rather not share.
+      render: text

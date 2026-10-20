@@ -11,19 +11,23 @@ const [assets, serviceDir] = process.argv.slice(2);
 const APPS = fs.readFileSync(path.join(assets, 'apps.txt'), 'utf8').trim().split(',').map((s) => s.split('|'));
 const COLORS = { netflix: '#E50914', prime: '#00A8E1', disney: '#113CCF', hdmi1: '#3A3A40' };
 
-// Stremio: a signed-in config and five shows mid-watch.
-fs.mkdirSync('/var/lib/homeplus', { recursive: true });
+// Stremio: a signed-in config and five shows mid-watch. The config lives in HOMEPLUS_CONFIG_DIR
+// when it's set (tests, and run.sh, which need no root), else where the TV keeps it.
+const CONFIG_DIR = process.env.HOMEPLUS_CONFIG_DIR || '/var/lib/homeplus';
+const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+fs.mkdirSync(CONFIG_DIR, { recursive: true });
 // HOMEPLUS_PREVIEW_FRESH: a first install (Home button question not answered yet)
-fs.writeFileSync('/var/lib/homeplus/config.json', JSON.stringify(
+fs.writeFileSync(CONFIG_FILE, JSON.stringify(
   process.env.HOMEPLUS_PREVIEW_FRESH ? { stremioAuthKey: 'preview' } : { stremioAuthKey: 'preview', homeAsked: true, homeMode: 'watch' }));
 // HOMEPLUS_PREVIEW_PREFS: launcher preferences to start with, as JSON
 if (process.env.HOMEPLUS_PREVIEW_PREFS) {
-  const cfg = JSON.parse(fs.readFileSync('/var/lib/homeplus/config.json', 'utf8'));
+  const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
   cfg.prefs = JSON.parse(process.env.HOMEPLUS_PREVIEW_PREFS);
-  fs.writeFileSync('/var/lib/homeplus/config.json', JSON.stringify(cfg));
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg));
 }
-// HOMEPLUS_PREVIEW_UNROOTED: the service as Homebrew Channel installs it, before elevation
-if (process.env.HOMEPLUS_PREVIEW_UNROOTED) process.getuid = () => 1000;
+// The service as it runs on the TV: elevated (root), whoever runs the preview.
+// HOMEPLUS_PREVIEW_UNROOTED: as Homebrew Channel installs it, before elevation.
+process.getuid = () => (process.env.HOMEPLUS_PREVIEW_UNROOTED ? 1000 : 0);
 const SHOWS = ['Severed Signals', 'The Long Orbit', 'Northbound', 'Glass City', 'Midnight Kitchen'];
 const library = SHOWS.map((name, i) => ({
   _id: `tt000000${i}`, type: i % 2 ? 'movie' : 'series', name, removed: false,
@@ -107,7 +111,7 @@ if (process.env.HOMEPLUS_PREVIEW_MEDIA) {
     json(res, 404, {});
   }).listen(PORT, '127.0.0.1');
   process.env.HOMEPLUS_PLEX_TV = process.env.HOMEPLUS_PLEX_CLIENTS = process.env.HOMEPLUS_STREMIO_LINK = BASE;
-  const cfg = JSON.parse(fs.readFileSync('/var/lib/homeplus/config.json', 'utf8'));
+  const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
   cfg.jellyfinServer = BASE; // no LAN broadcast in here: the server's address instead
   cfg.layout = { order: ['jellyfin', 'plex', 'stremio'], hidden: [] };
   if (signin) {
@@ -116,7 +120,7 @@ if (process.env.HOMEPLUS_PREVIEW_MEDIA) {
     cfg.jellyfin = { url: BASE, name: 'Living Room', userId: 'u1', user: 'Paolo', token: 'jf-token' };
     cfg.plex = { token: 'plex-token', user: 'paolo', url: BASE, server: 'Media Server', serverToken: 'plex-srv' };
   }
-  fs.writeFileSync('/var/lib/homeplus/config.json', JSON.stringify(cfg));
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg));
 }
 
 // HOMEPLUS_PREVIEW_TMDB: a mock TMDB with three streaming services (Netflix, Prime Video,
@@ -151,10 +155,10 @@ if (process.env.HOMEPLUS_PREVIEW_TMDB) {
   }).listen(PORT, '127.0.0.1');
   process.env.HOMEPLUS_TMDB = `${BASE}/tmdb`;
   process.env.HOMEPLUS_TMDB_IMAGES = `${BASE}/img`;
-  const cfg = JSON.parse(fs.readFileSync('/var/lib/homeplus/config.json', 'utf8'));
+  const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
   cfg.tmdbKey = 'preview-key';
   cfg.tmdbRegion = 'US';
-  fs.writeFileSync('/var/lib/homeplus/config.json', JSON.stringify(cfg));
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg));
 }
 
 // A stand-in TV for the Control Center: inputs (a soundbar with a PS5 behind it), sound output,

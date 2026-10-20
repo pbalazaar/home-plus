@@ -1,0 +1,44 @@
+#!/bin/sh
+# Runs Home+'s checks, the same ones CI runs on every pull request.
+#   tools/test.sh            the service's tests: unit tests and its HTTP API (seconds; Node 18+)
+#   tools/test.sh screens    renders every launcher screen and checks them; they land in build/screens/
+#                            (on Linux with the preview packages, else in Docker; about 2 minutes)
+#   tools/test.sh package    builds the .ipk for the TV and checks it (WEBOS_SDK, else Docker)
+#   tools/test.sh all        all three
+# On Windows, run it in WSL. (In PowerShell, the service's tests are: node --test "test/*.test.js")
+set -eu
+cd "$(dirname "$0")/.."
+
+service() {
+  echo "== service tests"
+  node --test test/*.test.js
+}
+
+screens() {
+  echo "== launcher screens"
+  rm -rf build/screens
+  mkdir -p build/screens
+  run='tools/native-preview/run.sh && python3 tools/native-preview/check-screens.py build/screens'
+  if [ "$(uname)" = Linux ] && command -v xvfb-run >/dev/null && python3 -c 'import PIL' 2>/dev/null; then
+    HOMEPLUS_PREVIEW_OUT=build/screens sh -c "$run"
+  elif command -v docker >/dev/null; then
+    docker build -q -t homeplus-preview tools/native-preview >/dev/null
+    docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -e HOMEPLUS_PREVIEW_OUT=build/screens homeplus-preview sh -c "$run"
+  else
+    echo "needs Docker, or Linux with: libsdl2-dev xvfb xauth libgles2 libegl1 libgl1-mesa-dri python3-pil nodejs" >&2
+    exit 1
+  fi
+  echo "   the screens: build/screens/"
+}
+
+package() {
+  echo "== package"
+  if [ -n "${WEBOS_SDK:-}" ]; then tools/build-release.sh; else tools/docker-build.sh; fi
+  node tools/check-package.mjs
+}
+
+case ${1:-service} in # (not "a && b": sh ignores set -e inside functions run that way)
+  service | screens | package) "${1:-service}" ;;
+  all) service; screens; package ;;
+  *) sed -n '2,8p' "$0" >&2; exit 2 ;;
+esac
