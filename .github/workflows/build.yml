@@ -1,0 +1,54 @@
+# Builds the Home+ .ipk on every push and pull request.
+# Pushing a tag like v1.0.0 also publishes a GitHub release with the packages attached.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: write # only used by the release step, on tags
+
+env:
+  # openlgtv/buildroot-nc4 release; keep in step with docker/Dockerfile
+  SDK_RELEASE: 2026.08-webos
+  WEBOS_SDK: /home/runner/toolchain/arm-webos-linux-gnueabi_sdk-buildroot
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the webOS toolchain
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/toolchain
+          key: webos-sdk-${{ env.SDK_RELEASE }}-x86_64
+
+      - name: Fetch the webOS toolchain
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /home/runner/toolchain
+          curl -fsSL "https://github.com/openlgtv/buildroot-nc4/releases/download/${SDK_RELEASE}/arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz" \
+            | tar xz -C /home/runner/toolchain
+
+      - name: Point the toolchain at its location
+        run: "$WEBOS_SDK/relocate-sdk.sh"
+
+      - name: Build
+        run: tools/build-release.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: homeplus-ipk
+          path: dist/*.ipk
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.ipk --title "Home+ $GITHUB_REF_NAME" --generate-notes
