@@ -92,6 +92,10 @@ shot popular-browse "URR" 5600
 # Continue Watching turning its pages
 service HOMEPLUS_PREVIEW=1
 rest stremio "RR"
+# no app list (webOS lists none): after its tries the launcher says it couldn't start, and rests
+service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_NO_APPS=1
+shot no-apps "" 28000
+rest no-apps ""
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=signin
 shot signin-plex "UODDDDRODDDDDODDDO" 6400
 service HOMEPLUS_PREVIEW=1

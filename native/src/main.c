@@ -685,11 +685,15 @@ static void free_app(App *a)
     tex_free(&a->big);
 }
 
-static void parse_apps(const char *json)
+/* 0: no apps in it (not JSON, or none: webOS always has some), an answer as good as none */
+static int parse_apps(const char *json)
 {
     cJSON *o = cJSON_Parse(json);
-    if (!o) return;
     cJSON *arr = cJSON_GetObjectItem(o, "apps"), *v;
+    if (!cJSON_GetArraySize(arr)) {
+        cJSON_Delete(o);
+        return 0;
+    }
 
     /* skip the rebuild when nothing changed: keeps textures and focus */
     char sig[4096] = "";
@@ -699,7 +703,7 @@ static void parse_apps(const char *json)
     }
     if (S.napps && !strcmp(sig, S.apps_sig)) {
         cJSON_Delete(o);
-        return;
+        return 1;
     }
     snprintf(S.apps_sig, sizeof S.apps_sig, "%s", sig);
 
@@ -743,6 +747,7 @@ static void parse_apps(const char *json)
         }
     }
     S.shelf_cur = -1;
+    return 1;
 }
 
 /* the big title and meta line, made only for the card on show (~0.4 MB each) */
@@ -1125,6 +1130,7 @@ static void request_data(void)
 
 static void sheet_open(const char *title);
 static void on_status(Result *r);
+static void setup_set(int state);
 static void sheet_body(const char *text);
 static void settings_page(int page, int index);
 static void sw_open(void);
@@ -1464,17 +1470,22 @@ static void handle_result(Result *r)
         }
         break;
     case TAG_APPS:
-        if (r->status == 200) {
+        if (r->status == 200 && parse_apps(r->body)) {
             S.service_ok = 1;
-            parse_apps(r->body);
+            S.wake_tries = 0; /* (the next time it fails, it gets its tries again) */
         } else {
             S.service_ok = 0;
-            /* service not up yet: start it, then retry */
+            /* service not up yet (or no apps in its answer): start it, then retry */
             if (S.wake_tries++ < 10) {
                 net_wake_service();
                 S.next_retry = SDL_GetTicks() + 2000;
             }
-            toast(S.wake_tries < 10 ? "Starting the Home+ service\xE2\x80\xA6" : "The Home+ service isn\xE2\x80\x99t responding. Restart the TV, or reinstall Home+.", 600000);
+            if (S.wake_tries > 10 && !S.napps && S.setup == SETUP_DONE) { /* tried: not placeholders for good, but why and Try Again */
+                S.toast_until = 0;
+                setup_set(SETUP_FAILED);
+            } else {
+                toast(S.wake_tries < 10 ? "Starting the Home+ service\xE2\x80\xA6" : "The Home+ service isn\xE2\x80\x99t responding. Restart the TV, or reinstall Home+.", 600000);
+            }
         }
         if (S.service_ok && S.toast_until > SDL_GetTicks() + 100000) S.toast_until = 0;
         break;
@@ -2126,7 +2137,7 @@ static void on_elevate(Result *r)
 
 static void setup_retry_now(void)
 {
-    S.setup_tries = S.elevate_tries = 0;
+    S.setup_tries = S.elevate_tries = S.wake_tries = 0;
     S.setup = SETUP_CHECK;
     setup_screen();
     setup_check();
