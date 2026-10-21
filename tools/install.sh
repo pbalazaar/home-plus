@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds Home+ and installs it on a rooted webOS TV over SSH (from macOS or Linux).
 # usage: tools/install.sh <tv-ip> [--autostart]
-#   --autostart  also installs the boot script so the TV starts in Home+
+#   --autostart  also links the boot script (the service does that itself once it's root)
 # Installs the Home+ package (launcher + service), re-elevates the service (every install
 # resets it), then opens Home+.
 set -eu
@@ -130,11 +130,10 @@ else
   fail "service didn't start as root: ${reply:-no answer to ping}"
 fi
 
-if [ -n "$AUTOSTART" ]; then
+if [ -n "$AUTOSTART" ]; then # a link, as the service makes it (Homebrew Channel's rules: not a copy)
   mkdir -p /var/lib/webosbrew/init.d &&
-    cp $APPS/usr/palm/applications/com.github.pmiraka.homeplus/init.d/50-homeplus /var/lib/webosbrew/init.d/ &&
-    chmod 755 /var/lib/webosbrew/init.d/50-homeplus &&
-    ok "boot script installed" || fail "couldn't install the boot script"
+    ln -sf $APPS/usr/palm/applications/com.github.pmiraka.homeplus/init.d/50-homeplus /var/lib/webosbrew/init.d/50-homeplus &&
+    ok "boot script linked" || fail "couldn't link the boot script"
 fi
 
 app=com.github.pmiraka.homeplus

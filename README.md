@@ -37,7 +37,7 @@ A tvOS-style home screen for rooted LG webOS TVs, in a Liquid Glass look, with C
 2. Install it with [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop) (Apps → Install), or with `ares-install`.
 3. Open **Home+** from the app list.
 
-**What the first start does:** Home+ asks the Homebrew Channel for the root access its background service needs, restarts that service and installs its own boot script, so it's ready every time the TV starts. You'll see "Setting Up Home+" for a few seconds. Then Home+ asks whether the Home button should open it. You can change that answer any time in Settings.
+**What the first start does:** Home+ asks the Homebrew Channel for the root access its background service needs, restarts that service and links its boot script into the Homebrew Channel's startup scripts, so it's ready every time the TV starts. You'll see "Setting Up Home+" for a few seconds. Then Home+ asks whether the Home button should open it. You can change that answer any time in Settings.
 
 If something stops it, the screen says what and offers **Try Again**:
 
@@ -179,6 +179,8 @@ To remove that flash, use lginputhook (1.5.1 or later, from the Homebrew Channel
 {"773": {"action": "launch", "id": "com.github.pmiraka.homeplus"}}
 ```
 
+Home+ turns that keybind into a command that opens Home+ only while it's installed, and LG's home screen otherwise, so the Home button keeps working if Home+ is ever removed without **Remove Home+**. The Settings button's keybind (see [Using Home+](#using-home)) falls back to LG's Quick Settings the same way.
+
 On TVs where LG's home screen is a web app (not the C3), **Settings → Home Button** also offers **No Flash**. In that mode, Home+ replaces LG's home page in memory while it runs; nothing on disk changes.
 
 ## OLED protection
@@ -194,7 +196,7 @@ Change the timings, or turn any of these off, in **Settings → Display & OLED**
 
 **Settings → Remove Home+** undoes everything Home+ set up, then uninstalls it:
 - it turns off the Home button takeover;
-- it deletes its boot script and settings;
+- it deletes its boot script, the boot script's log, and its settings;
 - it deletes its sign-ins and keys (Stremio, Trakt, Jellyfin, Plex, TMDB);
 - it removes its lginputhook keybinds, the Home key's and the Settings key's (your others stay);
 - it deletes the root access files the Homebrew Channel created.
@@ -202,19 +204,23 @@ Change the timings, or turn any of these off, in **Settings → Display & OLED**
 **If Home+ won't open,** do the same by hand over SSH:
 
 ```sh
-rm -f /var/lib/webosbrew/init.d/50-homeplus
+rm -f /var/lib/webosbrew/init.d/50-homeplus /var/lib/webosbrew/homeplus-boot.log
 rm -rf /var/lib/homeplus
 luna-send -n 1 luna://com.webos.appInstallService/dev/remove '{"id":"com.github.pmiraka.homeplus"}'
 ```
 
-If you added the lginputhook keybind, delete it in the LG Input Hook app. If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot scripts after a crash during start-up, so the TV comes back without Home+'s.
+If you added the lginputhook keybinds, delete them in the LG Input Hook app.
+
+**If Home+ is removed another way** (from the Homebrew Channel, say), it can't tidy up after itself, but what it leaves behind does nothing. The boot script is a link into Home+'s package, so it goes with Home+, and the Homebrew Channel skips the link left behind. The Home and Settings keybinds check for Home+ first, and without it open LG's home screen and Quick Settings, as the buttons do without Home+. What stays, to delete by hand if you like: those keybinds (in the LG Input Hook app), the link and its log (the first line above), and your settings, sign-ins and pictures (`/var/lib/homeplus`). Keybinds you made yourself for other buttons that open Home+ do nothing once it's gone, so delete those too.
+
+If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot scripts after a crash during start-up, so the TV comes back without Home+'s.
 
 ## Troubleshooting
 
 - **Home+ is stuck on a setup screen:** press Try Again. If that doesn't help, these logs on the TV say why:
   - `/tmp/homeplus-service.log`: the service.
   - `homeplus-native.log`: the launcher's own log, inside its app sandbox. Find it with `find / -name homeplus-native.log`.
-  - `/tmp/homeplus-boot.log`: the boot script.
+  - `/var/lib/webosbrew/homeplus-boot.log`: the boot script, at the last start-up.
 - **The Home button still opens LG's home screen:** check **Settings → Home Button**. If you use lginputhook, restart the TV after changing its keybinds.
 - **No Continue Watching:** sign in under **Settings → Accounts**, and make sure the app's tile is in the top row.
 - **A streaming app shows a glow, not what's popular:** check **Settings → Accounts → TMDB**, and that the app's name is one TMDB lists for your TV's country.
@@ -247,7 +253,7 @@ Every push is built and tested by GitHub Actions. Pushing a `v*` tag publishes a
 One package, `com.github.pmiraka.homeplus`, holds three things:
 - **The launcher** (`native/`): C with SDL2 and OpenGL ES 2, using the TV's own libraries. Our renderer (`native/src/render.c`) draws the glass, shapes and shadows with shaders. A frame is a few dozen quads, and glass works on a half-resolution copy of the screen. Animations are springs, and nothing is redrawn while nothing moves.
 - **The service** (`service/`): a Node.js webOS service that runs as root once the Homebrew Channel elevates it. It lists, opens and closes apps and serves their icons. It also talks to Stremio, Trakt, Jellyfin and Plex, and handles the Home button.
-- **The boot script** (`init.d/`): makes the Homebrew Channel re-elevate and start the service at every boot.
+- **The boot script** (`init.d/`): makes the Homebrew Channel re-elevate and start the service at every boot. The service links it into the Homebrew Channel's `/var/lib/webosbrew/init.d/`: a link, not a copy, so it goes with the package.
 
 The launcher talks to the service over a local HTTP API on `127.0.0.1:47823`. It uses the webOS luna bus only to start the service and to ask the Homebrew Channel for root.
 

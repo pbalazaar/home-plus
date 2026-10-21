@@ -52,8 +52,10 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   checked (`screens`), the .ipk built and checked (`package`: `tools/check-package.mjs` — contents,
   versions, modes, 32-bit ARM, only SDL 2.0.14 functions). Service modules read their mock URLs from env
   at load (`HOMEPLUS_TMDB`, `HOMEPLUS_PLEX_TV`, ...), so tests load them with `freshRequire`;
-  `HOMEPLUS_CONFIG_DIR` and `HOMEPLUS_PORT` let the service run without root, on another port.
-  `HOMEPLUS_SERVICE_NODE` runs the API tests' service on another Node (CI: 16, as on the TV).
+  `HOMEPLUS_CONFIG_DIR` and `HOMEPLUS_PORT` let the service run without root, on another port, and
+  `HOMEPLUS_APP_DIR`, `HOMEPLUS_INITD_DIR` and `HOMEPLUS_INPUTHOOK_BINDS` stand in for the app folder,
+  Homebrew Channel's init.d and LG Input Hook's binds (`startService` in `test/helpers.js` starts it).
+  `HOMEPLUS_SERVICE_NODE` runs the tests' service on another Node (CI: 16, as on the TV).
   `tools/native-preview/glass-test.sh <art.jpg> <out.png>` renders a glass test card.
 - Docker on a Mac can see a file before it's fully written: if a build reports
   "expected ... at end of input", just run it again.
@@ -88,13 +90,18 @@ appears in your own SSH command line** — it kills the session. Use:
   root: it calls Homebrew Channel's `elevateService` with the service id, then `POST /api/restart`
   (refused once root) so the next start runs elevated. Errors: "Homebrew Channel Needed" (luna says
   the service doesn't exist) or "Couldn't Get Permission". Every failure screen has Try Again.
-- Once root, the service copies `init.d/50-homeplus` from its package into
-  `/var/lib/webosbrew/init.d/` (and updates it when the package changes).
+- Once root, the service links `/var/lib/webosbrew/init.d/50-homeplus` to `init.d/50-homeplus` in its
+  package (replacing the copy 0.11.1 and older made): Homebrew Channel's publishing rules want a link,
+  so the script goes with the package. The C3's run-parts (busybox 1.35) skips the dead link left
+  after a plain uninstall with one stderr line and runs the rest (exit 0; tried on the TV). The
+  script logs the last boot to `/var/lib/webosbrew/homeplus-boot.log` (not /tmp: the rules ask for it
+  there) and stops if Home+'s service isn't installed.
 - The Home button is left alone (`homeMode` "off") until the launcher has asked
   "Use Home+ as Your Home Screen?" once (`homeAsked` in config.json). Settings has the switch.
 - Settings → Remove Home+ (`POST /api/uninstall`): unmounts the no-flash page, deletes the boot
-  script, lginputhook binds that launch Home+, `/var/lib/homeplus` and the elevation files, then
-  `appInstallService/dev/remove`s the package.
+  script and its log, lginputhook binds that launch Home+, `/var/lib/homeplus` and the elevation files,
+  then `appInstallService/dev/remove`s the package. A plain uninstall (Homebrew Channel) runs none of
+  that: what's left must be harmless (the dead link, the binds' fallbacks below); `/var/lib/homeplus` stays.
 - Preview modes: `HOMEPLUS_PREVIEW_FRESH=1` (question not answered), `HOMEPLUS_PREVIEW_UNROOTED=1`
   (unelevated service; with no luna-send on the host this shows the Homebrew Channel screen).
 
@@ -112,11 +119,20 @@ appears in your own SSH command line** — it kills the session. Use:
 - No-flash mode can't work on the C3: LG's home is a native app (`/usr/bin/com.webos.app.home`),
   so the service falls back to `watch` and reports `noFlashAvailable: false`.
 - No flash on the C3 comes from lginputhook (`org.webosbrew.inputhook` 1.5.1; 1.4.0 couldn't
-  inject on webOS 23). `/home/root/.config/lginputhook/keybinds.json` binds Home to
-  `{"773":{"action":"launch","id":"com.github.pmiraka.homeplus"}}`, so LG's home never starts.
-  Binding keys are the hook log's `uinput_code`, not `keyid`
+  inject on webOS 23). `/home/root/.config/lginputhook/keybinds.json` binds Home (773) to Home+, so
+  LG's home never starts. Binding keys are the hook log's `uinput_code`, not `keyid`
   (`/tmp/lginput-hook-lginput2.log`). The hook injects once per boot, guarded by the `/tmp/inputhook`
-  marker; after updating it, delete the marker and restart its service, or reboot.
+  marker; after updating it, delete the marker and restart its service, or reboot. It rereads
+  keybinds.json whenever the file changes ("Keybinds reloaded due to config file change").
+- Home+'s binds outlive a plain uninstall, so they're `exec` binds that check for Home+ and otherwise
+  do the key's LG job: Home `[ -f <app>/appinfo.json ] && exec luna-send ... launch Home+; exec
+  luna-send ... launch com.webos.app.home`, Settings settings-key.sh or LG's Quick Settings (`OUR_BINDS`).
+  They test a packaged file, not the folder: the app folder also holds the service's `api-token`, which
+  isn't the package's. At start and whenever keybinds.json changes, the service upgrades the old
+  forms (`OLD_BINDS`): a `launch` of Home+ on 773 (LG Input Hook's "Launch App") and 0.11's
+  `sh settings-key.sh`. Others' binds are never touched. Speed: the TV's 1.5.1 hook runs both `launch`
+  and `exec` binds through `/bin/sh` (popen), so `exec` costs nothing extra; current inputhookpp
+  spawns luna-send directly for `launch`, and the shell adds ~1.5 ms (measured on the C3).
 - Developer-installed web apps can't read other apps' files; icons are served by the service.
 - Stremio's LG app (io.strem.tv 1.13.3) doesn't open titles from launch params (10+ formats
   tested, cold and warm). Its files are encrypted LG Store content; don't try to work around

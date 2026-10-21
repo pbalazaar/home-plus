@@ -1,19 +1,21 @@
 #!/bin/sh
-# Home+ boot script, run as root by Homebrew Channel at startup.
-# Install to /var/lib/webosbrew/init.d/50-homeplus (chmod 755). The name must
-# have no extension: Homebrew Channel runs these with run-parts.
+# Home+ boot script, run as root by Homebrew Channel at startup. The Home+ service links it
+# into /var/lib/webosbrew/init.d/50-homeplus: a link, so it goes when Home+ does (run-parts
+# skips the dead link). The name must have no extension: Homebrew Channel runs these with run-parts.
 #
 # 1. Elevates the Home+ service so it can list/launch apps (idempotent).
 # 2. Starts the service. It watches the foreground app and replaces LG's home
 #    screen with Home+ - including at boot.
+# What it did goes to /var/lib/webosbrew/homeplus-boot.log (this boot's only).
 
 APP=com.github.pmiraka.homeplus
 SVC=$APP.service
+SVC_DIR=/media/developer/apps/usr/palm/services/$SVC
 ELEVATE=/media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/elevate-service
-LOG=/tmp/homeplus-boot.log
+LOG=/var/lib/webosbrew/homeplus-boot.log
 
-# Home+ was uninstalled: remove this script too, and leave the TV alone.
-[ -d /media/developer/apps/usr/palm/applications/$APP ] || { rm -f "$0"; exit 0; }
+# Home+'s service isn't installed (any more): stop, and leave the TV alone.
+[ -f "$SVC_DIR/service.js" ] || { echo "homeplus: $SVC_DIR isn't installed; nothing to do" >&2; exit 0; }
 
 (
   echo "homeplus boot $(date)"
@@ -34,4 +36,4 @@ LOG=/tmp/homeplus-boot.log
     i=$((i + 1))
     sleep 2
   done
-) >>"$LOG" 2>&1 &
+) >"$LOG" 2>&1 &

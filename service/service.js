@@ -310,24 +310,27 @@ async function applyHomeMode() {
 }
 setTimeout(() => applyHomeMode().catch((e) => log('home mode error', e.message)), 1500);
 
-// ---- boot script: once elevated, the service installs the copy shipped in its package,
-// so Homebrew Channel re-elevates and starts it at every boot. Updated when the package is.
+// ---- boot script: once elevated, the service links the one in its package into Homebrew
+// Channel's init.d, so Homebrew Channel re-elevates and starts it at every boot. A link, not a
+// copy (Homebrew Channel's rules): it goes with the package, and run-parts skips the dead link.
 
-const APP_DIR = path.join(__dirname, '..', '..', 'applications', NATIVE_ID);
+const APP_DIR = process.env.HOMEPLUS_APP_DIR || path.join(__dirname, '..', '..', 'applications', NATIVE_ID); /* tests: elsewhere */
 const INITD_DIR = '/var/lib/webosbrew/init.d';
-const INITD = path.join(INITD_DIR, '50-homeplus');
+const INITD = path.join(process.env.HOMEPLUS_INITD_DIR || INITD_DIR, '50-homeplus'); /* tests: elsewhere */
+const BOOT_LOG = path.join(path.dirname(INITD), '..', 'homeplus-boot.log'); /* the boot script's */
 
 function installBootScript() {
   if (!isRoot()) return false;
+  const script = path.join(APP_DIR, 'init.d', '50-homeplus');
   try {
-    const want = fs.readFileSync(path.join(APP_DIR, 'init.d', '50-homeplus'));
     let have = null;
-    try { have = fs.readFileSync(INITD); } catch (e) { /* not installed yet */ }
-    if (have && have.equals(want)) return true;
-    if (!fs.existsSync(INITD_DIR)) { log('boot script: no', INITD_DIR, '(Homebrew Channel missing?)'); return false; }
-    fs.writeFileSync(INITD, want, { mode: 0o755 });
-    fs.chmodSync(INITD, 0o755);
-    log('boot script installed:', INITD);
+    try { have = fs.readlinkSync(INITD); } catch (e) { /* not there yet, or a copy */ }
+    if (have === script) return true;
+    if (!fs.existsSync(script)) { log('boot script: no', script); return false; }
+    fs.mkdirSync(path.dirname(INITD), { recursive: true }); /* some ways of rooting never made it */
+    fs.rmSync(INITD, { force: true }); /* the copy Home+ 0.11 and older made */
+    fs.symlinkSync(script, INITD);
+    log('boot script linked:', INITD, '->', script);
     return true;
   } catch (e) {
     log('boot script failed:', e.message);
@@ -368,6 +371,45 @@ function readBinds() {
   try { return JSON.parse(fs.readFileSync(INPUTHOOK_BINDS, 'utf8')) || {}; } catch (e) { return null; }
 }
 
+// ---- Home+'s binds outlive it when it's removed without Remove Home+ (from the Homebrew Channel,
+// say). So each checks that Home+ is still installed, by a file of its package (its folders can
+// outlive it), and otherwise does what the key does without Home+.
+
+const HOME_KEY = '773';
+const lunaSend = (uri, params) => `luna-send -n 1 ${uri} '${JSON.stringify(params)}'`;
+const unlessGone = (file, cmd, otherwise) => ({ action: 'exec', command: `[ -f ${file} ] && exec ${cmd}; exec ${otherwise}` });
+const OUR_BINDS = { /* Home: Home+, else LG's home screen. Settings: our script, else LG's Quick Settings */
+  [HOME_KEY]: unlessGone(path.join(APP_DIR, 'appinfo.json'), lunaSend(APPMGR + '/launch', { id: NATIVE_ID }), lunaSend(APPMGR + '/launch', { id: LG_HOME })),
+  [SETTINGS_KEY]: unlessGone(SETTINGS_KEY_SCRIPT, `sh ${SETTINGS_KEY_SCRIPT}`,
+    lunaSend('luna://com.webos.service.systemUIManager/launch', { appId: 'com.webos.app.quicksettings' }))
+};
+// the binds Home+ 0.11 and older made, and LG Input Hook's app makes ("Launch App": Home+)
+const OLD_BINDS = {
+  [HOME_KEY]: (b) => b.action === 'launch' && OUR_IDS.includes(b.id),
+  [SETTINGS_KEY]: (b) => b.action === 'exec' && b.command === `sh ${SETTINGS_KEY_SCRIPT}`
+};
+
+function upgradeBinds() {
+  const binds = readBinds();
+  const keys = Object.keys(OLD_BINDS).filter((k) => binds && binds[k] && OLD_BINDS[k](binds[k]));
+  if (!keys.length) return;
+  for (const k of keys) binds[k] = OUR_BINDS[k];
+  fs.writeFileSync(INPUTHOOK_BINDS, JSON.stringify(binds, null, 2));
+  log('LG Input Hook binds now work without Home+:', keys);
+}
+
+// at start, and whenever the binds change, so a Home bind just made in LG Input Hook's app is
+// upgraded at once (the hook rereads the file by itself)
+if (isRoot()) {
+  const upgrade = () => { try { upgradeBinds(); } catch (e) { log('LG Input Hook binds:', e.message); } };
+  let timer = null;
+  upgrade();
+  try {
+    fs.watch(path.dirname(INPUTHOOK_BINDS), { persistent: false }, () => { clearTimeout(timer); timer = setTimeout(upgrade, 500); })
+      .on('error', () => {});
+  } catch (e) { /* no LG Input Hook */ }
+}
+
 function settingsKeyState() {
   const binds = readBinds();
   return { available: binds !== null || fs.existsSync(path.dirname(INPUTHOOK_BINDS)), on: !!binds && ourBind(binds[SETTINGS_KEY]) };
@@ -376,7 +418,7 @@ function settingsKeyState() {
 function setSettingsKey(on) {
   if (!settingsKeyState().available) throw new Error('LG Input Hook isn\'t installed');
   const binds = readBinds() || {};
-  if (on) binds[SETTINGS_KEY] = { action: 'exec', command: `sh ${SETTINGS_KEY_SCRIPT}` };
+  if (on) binds[SETTINGS_KEY] = OUR_BINDS[SETTINGS_KEY];
   else if (ourBind(binds[SETTINGS_KEY])) delete binds[SETTINGS_KEY]; /* someone else's bind stays */
   fs.writeFileSync(INPUTHOOK_BINDS, JSON.stringify(binds, null, 2));
   log('settings key:', on ? 'Control Center' : 'LG Quick Settings');
@@ -432,9 +474,9 @@ function dropElevation() {
 async function uninstall() {
   const steps = {};
   await unmountRedirect().catch(() => {});
-  try { fs.rmSync(INITD, { force: true }); steps.bootScript = true; } catch (e) { steps.bootScript = e.message; }
+  try { [INITD, BOOT_LOG].forEach((f) => fs.rmSync(f, { force: true })); steps.bootScript = true; } catch (e) { steps.bootScript = e.message; }
   try { steps.inputhookBinds = dropInputhookBinds(); } catch (e) { steps.inputhookBinds = e.message; }
-  try { fs.rmSync('/var/lib/homeplus', { recursive: true, force: true }); steps.settings = true; } catch (e) { steps.settings = e.message; }
+  try { fs.rmSync(path.dirname(findConfigPath()), { recursive: true, force: true }); steps.settings = true; } catch (e) { steps.settings = e.message; }
   steps.elevationFiles = dropElevation();
   log('uninstall:', steps);
   // removing the package stops this service, so it goes last, after the reply is sent

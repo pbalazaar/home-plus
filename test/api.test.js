@@ -9,42 +9,12 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const net = require('net');
 const http = require('http');
-const { spawn } = require('child_process');
-const { until } = require('./helpers');
+const { startService, until } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
-const NODE = process.env.HOMEPLUS_SERVICE_NODE || process.execPath;
-let child, port, token, dir, log = '';
-
-function freePort() {
-  return new Promise((resolve) => {
-    const s = net.createServer().listen(0, '127.0.0.1', () => {
-      const p = s.address().port;
-      s.close(() => resolve(p));
-    });
-  });
-}
-
-/* a request as the launcher makes it (token, Host 127.0.0.1), unless told otherwise */
-function call(method, p, { body, headers = {}, auth = true } = {}) {
-  return new Promise((resolve, reject) => {
-    const data = body === undefined ? '' : JSON.stringify(body);
-    const h = Object.assign(auth ? { 'X-Homeplus-Token': token } : {}, data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}, headers);
-    const req = http.request({ host: '127.0.0.1', port, path: p, method, headers: h }, (res) => {
-      let buf = '';
-      res.on('data', (c) => { buf += c; });
-      res.on('end', () => {
-        let json = null;
-        try { json = JSON.parse(buf); } catch (e) { /* not JSON */ }
-        resolve({ status: res.statusCode, json });
-      });
-    });
-    req.on('error', reject);
-    req.end(data || undefined);
-  });
-}
+let svc, dir;
+const call = (...args) => svc.call(...args);
 
 test.before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-api-'));
@@ -52,35 +22,15 @@ test.before(async () => {
   for (let i = 0; i < 5; i++) fs.writeFileSync(path.join(dir, `show${i}.jpg`), `a picture of show ${i}`); /* the mock Stremio's */
   fs.mkdirSync(path.join(dir, 'lginputhook')); /* LG Input Hook, with the Home key bound to Home+ */
   fs.writeFileSync(path.join(dir, 'lginputhook', 'keybinds.json'), JSON.stringify({ 773: { action: 'launch', id: 'com.github.pmiraka.homeplus' } }));
-  port = await freePort();
-  child = spawn(NODE, [path.join(ROOT, 'tools/native-preview/harness.js'), dir, path.join(ROOT, 'service')], {
-    env: Object.assign({}, process.env, {
-      NODE_PATH: path.join(ROOT, 'tools/native-preview/stub'),
-      HOMEPLUS_CONFIG_DIR: path.join(dir, 'config'),
-      HOMEPLUS_TOKEN_FILE: path.join(dir, 'api-token'),
-      HOMEPLUS_PORT: String(port),
-      HOMEPLUS_PREVIEW: '1',
-      HOMEPLUS_PREVIEW_TMDB: '1',
-      HOMEPLUS_PREVIEW_FOREGROUND: 'com.github.pmiraka.homeplus', /* Home+ is in front */
-      HOMEPLUS_INPUTHOOK_BINDS: path.join(dir, 'lginputhook', 'keybinds.json')
-    }),
-    stdio: ['ignore', 'pipe', 'pipe']
+  svc = await startService(dir, {
+    HOMEPLUS_PREVIEW_TMDB: '1',
+    HOMEPLUS_PREVIEW_FOREGROUND: 'com.github.pmiraka.homeplus', /* Home+ is in front */
+    HOMEPLUS_INPUTHOOK_BINDS: path.join(dir, 'lginputhook', 'keybinds.json')
   });
-  child.stdout.on('data', (d) => { log += d; });
-  child.stderr.on('data', (d) => { log += d; });
-  await until(async () => {
-    if (child.exitCode !== null) throw new Error(`the service stopped (exit code ${child.exitCode})`);
-    try { return (await call('GET', '/api/status', { auth: false })).status === 200; } catch (e) { return false; }
-  }, 15000, 'the service to start').catch((e) => { throw new Error(`${e.message}. Its output:\n${log}`); });
-  token = fs.readFileSync(path.join(dir, 'api-token'), 'utf8').trim();
 });
 
 test.after(async () => {
-  if (child && child.exitCode === null) { /* Windows won't delete files the service still has open */
-    const gone = new Promise((resolve) => child.once('exit', resolve));
-    child.kill();
-    await gone;
-  }
+  if (svc) await svc.stop();
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
 });
 
@@ -130,7 +80,7 @@ test('api: what\'s popular on a streaming app, and what\'s trending for an app w
 test('api: a title\'s picture comes through the service, and is kept for next time', async () => {
   const pic = (await call('GET', '/api/continue')).json.items.find((it) => it.background).background;
   const get = () => new Promise((resolve, reject) => {
-    http.get({ host: '127.0.0.1', port, path: pic, headers: { 'X-Homeplus-Token': token } }, (res) => {
+    http.get({ host: '127.0.0.1', port: svc.port, path: pic, headers: { 'X-Homeplus-Token': svc.token } }, (res) => {
       let body = '';
       res.on('data', (c) => { body += c; });
       res.on('end', () => resolve({ status: res.statusCode, body }));
@@ -183,15 +133,16 @@ test('api: sign-ins change things, so they take POST only', async () => {
 
 test('api: the Settings key binds through LG Input Hook, and only Home+\'s bind comes and goes', async () => {
   const binds = () => JSON.parse(fs.readFileSync(path.join(dir, 'lginputhook', 'keybinds.json'), 'utf8'));
+  const home = binds()[773];
   assert.deepEqual((await call('GET', '/api/home')).json.settingsKey, { available: true, on: false });
   const on = await call('POST', '/api/home', { body: { settingsKey: true } });
   assert.deepEqual(on.json.settingsKey, { available: true, on: true });
   assert.equal(binds()[139].action, 'exec');
-  assert.match(binds()[139].command, /settings-key\.sh$/);
-  assert.equal(binds()[773].id, 'com.github.pmiraka.homeplus', 'the Home key\'s bind stays');
+  assert.match(binds()[139].command, /sh \S+settings-key\.sh; exec luna-send .+com\.webos\.app\.quicksettings/, 'LG\'s Quick Settings once Home+ is gone');
+  assert.deepEqual(binds()[773], home, 'the Home key\'s bind stays');
   await call('POST', '/api/home', { body: { settingsKey: false } });
   assert.equal(binds()[139], undefined);
-  assert.equal(binds()[773].id, 'com.github.pmiraka.homeplus');
+  assert.deepEqual(binds()[773], home);
 });
 
 test('api: the Settings key, with Home+ in front, reaches the launcher as an event', async () => {
