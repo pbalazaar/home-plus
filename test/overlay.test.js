@@ -72,7 +72,8 @@ test.before(async () => {
       HOMEPLUS_PREVIEW: '1',
       HOMEPLUS_PREVIEW_FOREGROUND: 'netflix', /* an app is in front */
       HOMEPLUS_PREVIEW_AMBIENT: '1', /* with PicCap, capturing */
-      HOMEPLUS_PICCAP_PAUSED: path.join(dir, 'piccap-paused')
+      HOMEPLUS_PICCAP_PAUSED: path.join(dir, 'piccap-paused'),
+      HOMEPLUS_PICCAP_AGAIN_MS: '100' /* PicCap starts again this long after it closes (on the TV: 2 s) */
     }),
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -240,5 +241,24 @@ test('overlay: Blur Over Video pauses PicCap while it\'s open, for frames of the
     await until(() => calls('luna://org.webosbrew.piccap.service/start').length > started, 3000, 'PicCap to start again');
   } finally {
     await call('POST', '/api/prefs', { body: { ccBlurVideo: false } });
+  }
+});
+
+test('overlay: the panel asks for the next frame, and the answer comes when it\'s taken', async () => {
+  try {
+    const frames = await openWith({});
+    const first = (await call('POST', '/api/overlay', { body: { event: 'frame', after: 0 } })).json;
+    assert.equal(first.picture, true, 'a picture already');
+    const asked = Date.now();
+    const next = (await call('POST', '/api/overlay', { body: { event: 'frame', after: first.n } })).json;
+    assert.ok(next.n > first.n && next.picture, `a newer one: ${JSON.stringify(next)}`);
+    assert.ok(Date.now() - asked < 1500, 'as soon as it was taken');
+    assert.ok(fs.existsSync(path.join(frames, 'frame.png')));
+    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'black' }));
+    let r = next;
+    for (let i = 0; i < 5 && r.picture; i++) r = (await call('POST', '/api/overlay', { body: { event: 'frame', after: r.n } })).json;
+    assert.equal(r.picture, false, 'the video went black: no picture (clear glass)');
+  } finally {
+    await close();
   }
 });

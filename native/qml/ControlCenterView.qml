@@ -56,21 +56,37 @@ FocusScope {
     FontLoader { id: semi; source: "../assets/fonts/Inter-SemiBold.ttf" }
 
     // ---- the picture behind, for the glass: the service's frames of the video while this is open
-    // (see the service; the TV gives about three a second, each a third of a second old), loaded in
+    // (see the service; the TV gives about five a second, each a fifth of a second old), loaded in
     // turn into two images, blurred hard and small so the glass carries the video's colours rather
-    // than its detail (which would show the delay), the newer faded in over the older. A blur runs
-    // when its frame comes, not every frame. No frame (none yet, or the video can't be captured):
-    // the glass is a tint over what's there.
+    // than its detail (which would show the delay), the newer faded in over the older. The service
+    // answers an ask for the next frame when it's taken, so each shows at once, and only new ones
+    // load. A blur runs when its frame comes, not every frame. No frame (none yet, or the video
+    // can't be captured): the glass is clear over what's there.
     property real fade: 0          // 0: frame A on show, 1: frame B
-    property int frameN: 0
+    property int frameN: 0         // the service's number for the picture on show (or none)
     property bool hasFrame: false
-    function nextFrame() {
-        if (fade > 0.001 && fade < 0.999) return; // still fading: the next one waits
-        var back = fade < 0.5 ? frameB : frameA;
-        if (back.status === Image.Loading) return;
-        if (cc.frame) back.source = cc.frame + "?n=" + (++frameN);
+    property bool frameDue: false  // a new one came while the last was fading in
+    property var asking: ({ on: true }) // off once it closes: an answer that comes later is let be
+    Component.onDestruction: asking.on = false
+    function askFrame() {
+        if (closing || solid || !cc.frame) return;
+        var a = asking;
+        host.call("overlay", { event: "frame", after: frameN }, function (r) {
+            if (!a.on) return;
+            if (r.n === undefined) { askAgain.start(); return; } // (no answer: in a moment)
+            if (r.n !== frameN) {
+                frameN = r.n;
+                if (r.picture) loadFrame(); else hasFrame = false;
+            }
+            askFrame();
+        });
     }
-    Timer { interval: 120; running: !view.closing && !view.solid; repeat: true; triggeredOnStart: true; onTriggered: view.nextFrame() }
+    Timer { id: askAgain; interval: 500; onTriggered: view.askFrame() }
+    function loadFrame() {
+        if (fade > 0.001 && fade < 0.999) { frameDue = true; return; } // after this fade
+        frameDue = false;
+        (fade < 0.5 ? frameB : frameA).source = cc.frame + "?n=" + frameN;
+    }
     Image {
         id: frameA
         visible: false; width: 160; height: 90; sourceSize: Qt.size(160, 90); cache: false; asynchronous: true
@@ -81,7 +97,8 @@ FocusScope {
         visible: false; width: 160; height: 90; sourceSize: Qt.size(160, 90); cache: false; asynchronous: true
         onStatusChanged: if (status === Image.Ready) view.show(1); else if (status === Image.Error) view.hasFrame = false
     }
-    NumberAnimation { id: fadeTo; target: view; property: "fade"; duration: 140; easing.type: Easing.InOutQuad }
+    NumberAnimation { id: fadeTo; target: view; property: "fade"; duration: 90; easing.type: Easing.InOutQuad
+        onStopped: if (view.frameDue) view.loadFrame() }
     function show(which) { // the first frame at once; then each fades in
         if (!hasFrame) fade = which;
         else { fadeTo.to = which; fadeTo.restart(); }
@@ -208,6 +225,7 @@ FocusScope {
         if (net >= 0) focusIndex = net;
         idle.restart();
         settled.start();
+        askFrame();
     }
     Timer { id: settled; interval: 1200; onTriggered: view.opening = false }
 
@@ -528,6 +546,7 @@ FocusScope {
     function close() {
         if (closing) return;
         closing = true;
+        asking.on = false;
         sheet = null;
         listKind = 0;
         if (picked >= 0) { picked = -1; save(); } // one being moved stays where it is now

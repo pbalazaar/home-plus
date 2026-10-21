@@ -516,6 +516,7 @@ async function openOverlay() {
   try {
     const prefs = readConfig().prefs || {}; /* the launcher's: its clock, Settings -> Control Center and Accessibility */
     const frames = prefs.reduceTransparency ? '' : framesDir(); /* solid panels: no frames */
+    framePicture = false;
     // what's on screen now (DISPLAY: the app's own screen too), before the panel is drawn over it:
     // the glass's first picture, and the one it keeps over an app with no video. The TV takes it as
     // the call starts (seen on the C3), so it isn't waited for: the panel isn't on screen yet.
@@ -569,6 +570,30 @@ const settle = (promise, ms) => Promise.race([promise, new Promise((done) => set
 
 const PANEL = { x0: 0.75, x1: 0.98, y0: 0.04, y1: 0.93 }; /* where the panel is (ControlCenterView.qml) */
 
+// Each change of the glass's picture (a new frame, or none: the glass is clear) has a number. The
+// panel asks for the next ({"event": "frame", "after": n}, POST /api/overlay), and the answer waits
+// for it (or 2 s): a frame shows as soon as it's taken, not when the panel next looks for one.
+let frameN = 0, framePicture = false;
+const frameWaiters = new Set();
+function frameChanged(picture) {
+  frameN++;
+  framePicture = picture;
+  for (const wake of frameWaiters) wake();
+}
+function nextFrame(after) {
+  return new Promise((resolve) => {
+    let timer = null;
+    const answer = () => {
+      clearTimeout(timer);
+      frameWaiters.delete(answer);
+      resolve({ returnValue: true, n: frameN, picture: framePicture });
+    };
+    if (frameN > after) return answer();
+    timer = setTimeout(answer, 2000);
+    frameWaiters.add(answer);
+  });
+}
+
 // a small picture of the screen (DISPLAY) or the video (VIDEO) into dir/frame.png, whole or not at
 // all: 'picture'; 'dark' (not kept) if it's black where the panel is; else why there's none
 async function grab(dir, method) {
@@ -582,6 +607,7 @@ async function grab(dir, method) {
       return 'dark';
     }
     fs.renameSync(tmp, frame);
+    frameChanged(true);
     return 'picture';
   } catch (e) {
     fs.rmSync(tmp, { force: true });
@@ -602,15 +628,17 @@ async function captureFrames(gen, dir, snapshot, blurVideo) {
       if (got === 'picture') video = true;
       else if (video) { /* the video went dark, or can't be captured now: clear glass, over what's there */
         fs.rmSync(path.join(dir, 'frame.png'), { force: true });
+        frameChanged(false);
         video = false;
       }
       const soon = got === 'dark' || (paused && !video && n < 10); /* (PicCap lets go of the capture) */
-      await new Promise((done) => setTimeout(done, got === 'picture' ? 40 : soon ? 300 : 1500));
+      await new Promise((done) => setTimeout(done, got === 'picture' ? 0 : soon ? 300 : 1500)); /* (frames back to back) */
     }
   } catch (e) {
     log('control center frames:', e.message);
   } finally {
     if (paused) picCapture.resume();
+    frameChanged(false); /* (the panel's waiting asks are answered) */
     fs.rm(dir, { recursive: true, force: true }, () => {});
   }
 }
@@ -652,6 +680,7 @@ function closeOverlay() {
 // "opened"} (on screen) and {"event": "closed"}; and {"event": "failed", "error"}, when its panel
 // didn't load: LG's Quick Settings instead.
 async function overlayEvent(p) {
+  if (p.event === 'frame') return nextFrame(Number(p.after) || 0); /* (answered when there's a newer one) */
   if (p.event === 'opened') {
     if (overlayAsked) log('control center overlay: on screen', Date.now() - overlayAsked, 'ms after the key');
     overlayAsked = 0;
@@ -1104,8 +1133,7 @@ async function handleApi(req, res) {
     }
     if (url.pathname === '/api/featured') return sendJSON(res, 200, await apiFeatured(String(url.searchParams.get('app') || '')));
     if (url.pathname === '/api/overlay' && req.method === 'POST') { /* the Control Center over other apps */
-      await overlayEvent(await readBody(req));
-      return sendJSON(res, 200, { returnValue: true });
+      return sendJSON(res, 200, (await overlayEvent(await readBody(req))) || { returnValue: true });
     }
     if (url.pathname === '/api/control') { /* the Control Center: GET its state, POST {action, value} */
       if (req.method === 'POST') {

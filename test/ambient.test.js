@@ -13,6 +13,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-ambient-'));
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 const PAUSED = path.join(dir, 'piccap-paused'); /* the mark that PicCap's capture is paused */
 process.env.HOMEPLUS_PICCAP_PAUSED = PAUSED;
+process.env.HOMEPLUS_PICCAP_AGAIN_MS = '50'; /* PicCap starts again this long after the Control Center closes (on the TV: 2 s) */
 
 /* HyperHDR's JSON-RPC: serverinfo with its components, and componentstate turning one on or off */
 async function fakeHyperhdr(leds) {
@@ -103,9 +104,22 @@ test('ambient: Blur Over Video pauses PicCap\'s capture (its switch still says O
   assert.ok(fs.existsSync(PAUSED), 'marked, in case the service stops');
   assert.deepEqual(await capture.read(), { on: true, value: 'On' }, 'paused, not switched off');
   assert.equal(await capture.pause(), false, 'once');
-  await capture.resume();
-  assert.equal(pic.running, true);
+  capture.resume();
+  assert.equal(pic.running, false, 'not at once');
+  await until(() => pic.running, 3000, 'PicCap to start again');
   assert.equal(fs.existsSync(PAUSED), false);
+});
+
+test('ambient: the Control Center opened again before PicCap starts again finds it still paused', async () => {
+  const { capture, pic, calls } = ambient({ capturing: true });
+  await capture.pause();
+  capture.resume();
+  assert.equal(await capture.pause(), true, 'still paused, for this one');
+  await new Promise((done) => setTimeout(done, 150));
+  assert.equal(pic.running, false);
+  assert.equal(calls.filter((c) => c.uri.endsWith('/stop')).length, 1, 'stopped once');
+  capture.resume();
+  await until(() => pic.running, 3000, 'PicCap to start after the last close');
 });
 
 test('ambient: nothing to pause when PicCap isn\'t capturing, or isn\'t there', async () => {
@@ -121,7 +135,8 @@ test('ambient: Screen Capture switched off while it\'s paused stays off', async 
   await capture.pause();
   await capture.run();
   assert.deepEqual(await capture.read(), { on: false, value: 'Off' });
-  await capture.resume();
+  capture.resume();
+  await new Promise((done) => setTimeout(done, 150));
   assert.equal(pic.running, false);
   assert.equal(fs.existsSync(PAUSED), false);
 });

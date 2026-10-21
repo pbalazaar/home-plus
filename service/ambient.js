@@ -44,9 +44,11 @@ module.exports = function createAmbient({ luna, log }) {
 
   // Blur Over Video: PicCap keeps the TV's one video capture while it captures, so the Control
   // Center over other apps gets no frames of the video to blur. With that setting on, it pauses
-  // PicCap's capture while it's open (its switch still says On), and starts it again after. A mark
-  // in /tmp says it's paused, in case the service stops in between: the next one starts it again.
-  let paused = false;
+  // PicCap's capture while it's open (its switch still says On), and starts it again 2 s after, so
+  // opening it again at once finds PicCap still paused, not starting. A mark in /tmp says it's
+  // paused, in case the service stops in between: the next one starts it again.
+  const AGAIN_MS = Number(process.env.HOMEPLUS_PICCAP_AGAIN_MS) || 2000;
+  let paused = false, again = null;
   const setPaused = (on) => {
     paused = on;
     try { if (on) fs.writeFileSync(PAUSED, ''); else fs.rmSync(PAUSED, { force: true }); } catch (e) { /* /tmp */ }
@@ -99,6 +101,11 @@ module.exports = function createAmbient({ luna, log }) {
       },
       // true if it was capturing, and now isn't
       pause: async () => {
+        if (again) { /* opened again before PicCap was started: it stays paused */
+          clearTimeout(again);
+          again = null;
+          return true;
+        }
         if (paused || !fs.existsSync(PICCAP_DIR) || !(await capture().catch(() => false))) return false;
         const r = await luna(`${PICCAP}/stop`, {});
         if (!r || r.returnValue === false) return false;
@@ -106,10 +113,14 @@ module.exports = function createAmbient({ luna, log }) {
         log('ambient: capture paused, for the Control Center\'s glass');
         return true;
       },
-      resume: async () => {
-        if (!paused) return; /* (or turned off in between) */
-        setPaused(false);
-        await start();
+      resume: () => {
+        if (!paused || again) return; /* (or turned off in between) */
+        again = setTimeout(() => {
+          again = null;
+          if (!paused) return;
+          setPaused(false);
+          start();
+        }, AGAIN_MS);
       }
     }
   ];

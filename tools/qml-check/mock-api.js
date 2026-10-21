@@ -1,6 +1,7 @@
 // The service's API as the Control Center over other apps uses it, for tools/qml-check/run.sh:
 // POST /api/control answers with the state, a layout as it was sent but slowly (like a busy TV, so
-// the check can edit again before the answer comes); POST /api/overlay is recorded. GET /log is
+// the check can edit again before the answer comes); POST /api/overlay is recorded, but for asks for
+// a frame, answered with frame 1 (the panel's frame file), then none newer. GET /log is
 // everything it got, with the token each request carried.
 'use strict';
 const http = require('http');
@@ -20,6 +21,10 @@ http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/log') return res.end(JSON.stringify(got));
     let b = {};
     try { b = JSON.parse(body || '{}'); } catch (e) { /* not JSON */ }
+    if (req.url === '/api/overlay' && b.event === 'frame') { /* one frame (the file the panel was given), then none newer */
+      const after = Number(b.after) || 0;
+      return setTimeout(() => res.end(JSON.stringify({ returnValue: true, n: Math.max(after, 1), picture: true })), after ? 2000 : 50);
+    }
     got.push({ url: req.url, body: b, token: req.headers['x-homeplus-token'] || '' });
     if (req.url !== '/api/control') return res.end('{"returnValue":true}');
     if (b.action === 'layout') controls = b.controls;
