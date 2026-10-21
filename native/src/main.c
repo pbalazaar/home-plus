@@ -216,7 +216,7 @@ typedef struct {
     Action act;
     int arg;
     int destructive;
-    char id[ID_LEN]; /* ACT_LAUNCH_ID */
+    char id[ID_LEN]; /* ACT_LAUNCH_ID's app; the app of ACT_DELETE_ASK, ACT_DELETE and ACT_UNHIDE */
     Tex *tex;
     int w, h;
     Tex *val; /* Settings rows: the current value, drawn on the right */
@@ -1854,6 +1854,15 @@ static void sheet_add(const char *label, Action act, int arg, int destructive)
     it->tex = text_render(S.f_medium, SHEET_BUTTON_PX, label, 600, &it->w, &it->h);
 }
 
+/* A button for one app: by its id, not its place in S.apps, which a new app list rebuilds while the
+ * sheet is open (a relaunch, or the list after a deletion) */
+static void sheet_add_app(const char *label, Action act, const char *id, int destructive)
+{
+    int n = S.sheet.n;
+    sheet_add(label, act, 0, destructive);
+    if (S.sheet.n > n) copy_id(S.sheet.it[n].id, id);
+}
+
 /* A few lines of explanation under the sheet's title; lines are split on '\n'. */
 static void sheet_body(const char *text)
 {
@@ -2351,7 +2360,7 @@ static void open_app_sheet(void)
         sheet_add(t, ACT_MEDIA_LINK, src, 0);
     }
     sheet_add("Hide App", ACT_HIDE, 0, 0); /* not red: Hidden gives it back */
-    if (a->removable) sheet_add("Delete App", ACT_DELETE_ASK, (int)(a - S.apps), 1); /* from the TV, like tvOS's */
+    if (a->removable) sheet_add_app("Delete App", ACT_DELETE_ASK, a->id, 1); /* from the TV, like tvOS's */
     sheet_add("Cancel", ACT_CANCEL, 0, 0);
 }
 
@@ -2363,7 +2372,7 @@ static void open_hidden_sheet(void)
         if (!is_hidden(S.apps[i].id)) continue;
         char label[200];
         snprintf(label, sizeof label, "Show \xE2\x80\x9C%s\xE2\x80\x9D", S.apps[i].title);
-        sheet_add(label, ACT_UNHIDE, i, 0);
+        sheet_add_app(label, ACT_UNHIDE, S.apps[i].id, 0);
         n++;
     }
     if (n > 1) sheet_add("Show All", ACT_UNHIDE_ALL, 0, 0);
@@ -2383,9 +2392,14 @@ static void move_item_to(int to)
     S.focus = to;
 }
 
-static void run_action(Action act, int arg)
+static void run_action(Action act, int arg, const char *id)
 {
     App *a = item_app(S.focus);
+    App *chosen = act == ACT_DELETE_ASK || act == ACT_DELETE || act == ACT_UNHIDE ? app_by_id(id) : NULL; /* the button's app, now */
+    if (!chosen && (act == ACT_DELETE_ASK || act == ACT_DELETE || act == ACT_UNHIDE)) {
+        toast("That app is gone", 3000);
+        return;
+    }
     switch (act) {
     case ACT_CC_EDIT: /* the controls wobble; OK moves one, holding OK sizes or removes it */
         S.cc.editing = 1;
@@ -2427,33 +2441,31 @@ static void run_action(Action act, int arg)
         break;
     case ACT_MOVE: S.moving = 1; break;
     case ACT_FRONT: move_item_to(0); save_layout(); break;
-    case ACT_DELETE_ASK: /* tvOS's question */
-        if (arg >= 0 && arg < S.napps) {
-            char t[ID_LEN + 32];
-            snprintf(t, sizeof t, "Delete \xE2\x80\x9C%s\xE2\x80\x9D?", S.apps[arg].title);
-            sheet_open(t);
-            sheet_body("Deleting this app also deletes its data.");
-            sheet_add("Delete", ACT_DELETE, arg, 1);
-            sheet_add("Cancel", ACT_CANCEL, 0, 0);
-            S.sheet.index = 1; /* Cancel first, so a stray OK keeps the app */
-        }
+    case ACT_DELETE_ASK: { /* tvOS's question */
+        char t[ID_LEN + 32];
+        snprintf(t, sizeof t, "Delete \xE2\x80\x9C%s\xE2\x80\x9D?", chosen->title);
+        sheet_open(t);
+        sheet_body("Deleting this app also deletes its data.");
+        sheet_add_app("Delete", ACT_DELETE, chosen->id, 1);
+        sheet_add("Cancel", ACT_CANCEL, 0, 0);
+        S.sheet.index = 1; /* Cancel first, so a stray OK keeps the app */
         break;
-    case ACT_DELETE:
-        if (arg >= 0 && arg < S.napps) {
-            App *d = &S.apps[arg];
-            cJSON *o = cJSON_CreateObject();
-            cJSON_AddStringToObject(o, "id", d->id);
-            char *body = cJSON_PrintUnformatted(o);
-            net_post("/api/remove", body, TAG_DELETED);
-            free(body);
-            cJSON_Delete(o);
-            d->deleted = 1; /* its tile goes now; the app list catches up once the TV has deleted it */
-            rebuild_items();
-            char msg[ID_LEN + 32];
-            snprintf(msg, sizeof msg, "Deleting %s\xE2\x80\xA6", d->title);
-            toast(msg, 3000);
-        }
+    }
+    case ACT_DELETE: {
+        App *d = chosen;
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "id", d->id);
+        char *body = cJSON_PrintUnformatted(o);
+        net_post("/api/remove", body, TAG_DELETED);
+        free(body);
+        cJSON_Delete(o);
+        d->deleted = 1; /* its tile goes now; the app list catches up once the TV has deleted it */
+        rebuild_items();
+        char msg[ID_LEN + 32];
+        snprintf(msg, sizeof msg, "Deleting %s\xE2\x80\xA6", d->title);
+        toast(msg, 3000);
         break;
+    }
     case ACT_HIDE:
         if (a && S.nhidden < MAX_APPS) {
             char msg[200];
@@ -2467,7 +2479,7 @@ static void run_action(Action act, int arg)
     case ACT_UNHIDE:
     case ACT_UNHIDE_ALL:
         for (int i = 0; i < S.nhidden; i++) {
-            if (act == ACT_UNHIDE_ALL || !strcmp(S.hidden[i], S.apps[arg].id)) {
+            if (act == ACT_UNHIDE_ALL || !strcmp(S.hidden[i], chosen->id)) {
                 memmove(&S.hidden[i], &S.hidden[i + 1], (S.nhidden - i - 1) * ID_LEN);
                 S.nhidden--;
                 i--;
@@ -3510,7 +3522,7 @@ static void ok_release(void)
         S.at_parent_index = S.sheet.parent_index;
         if (!S.at_page || it.act == ACT_CANCEL || it.act == ACT_LAUNCH_ID) sheet_dismiss(); /* else its page is rebuilt */
         if (it.act == ACT_LAUNCH_ID) launch(it.id, NULL);
-        else run_action(it.act, it.arg);
+        else run_action(it.act, it.arg, it.id);
     } else if (S.cc.open) {
         cc_activate();
     } else {
