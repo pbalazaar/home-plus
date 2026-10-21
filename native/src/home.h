@@ -472,13 +472,8 @@ static inline float smooth01(float a, float b, float x)
 }
 
 /* main.c */
-void save_layout(void);
-void launch_app(const char *id, const char *params, const char *hint);
-void launch(const char *id, const char *hint);
 void enter_top(int col);
 void focus_rect(float *x, float *y, float *w, float *h);
-void close_apps(const char *id);
-App *app_by_id(const char *id);
 void settings_page(int page, int index);
 float swatch_x(float bx, float bw, int i);
 void open_settings_sheet(void);
@@ -592,5 +587,19 @@ int carousel_coming(const App *a);
 void update_page(float dt, int *anim);
 void draw_shelf_art(Uint8 alpha, int backdrop);
 void draw_shelf_content(Uint8 alpha, int backdrop);
+
+/* apps.c */
+void rebuild_items(void);
+void save_layout(void);
+void parse_layout(const char *json);
+int parse_apps(const char *json);
+void launch_app(const char *id, const char *params, const char *hint);
+void launch(const char *id, const char *hint);
+void close_apps(const char *id);
+App *app_by_id(const char *id);
+void open_app_sheet(void);
+void open_hidden_sheet(void);
+void move_item_to(int to);
+int apps_loading(void);
 
 #endif
