@@ -473,8 +473,8 @@ static inline float smooth01(float a, float b, float x)
 
 /* main.c */
 void request_data(void);
+void open_asked(int what);
 void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop);
-int wake(int key);
 
 /* util.c */
 void log_remote(const char *fmt, ...);
@@ -639,5 +639,13 @@ void on_key_up(SDL_KeyboardEvent *e);
 int sheet_button_at(int mx, int my, int *outside);
 int pointer_at(int mx, int my, int apply);
 void to_logical(int *x, int *y);
+
+/* idle.c */
+void start_idle_wait(void);
+int wait_event(SDL_Event *e, int timeout_ms, int drew);
+int next_wake_ms(void);
+void go_offscreen(void);
+void come_back(void);
+int wake(int key);
 
 #endif
