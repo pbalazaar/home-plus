@@ -514,8 +514,9 @@ async function openOverlay() {
   overlayBusy = true;
   overlayAsked = Date.now();
   try {
-    const prefs = readConfig().prefs || {}; /* the launcher's: its clock, and Settings -> Accessibility */
-    const frames = prefs.reduceTransparency ? '' : framesDir(); /* solid panels: no frames */
+    const prefs = readConfig().prefs || {}; /* the launcher's: its clock, Settings -> Control Center and Accessibility */
+    const dark = prefs.ccAppearance === 'dark';
+    const frames = prefs.reduceTransparency || dark ? '' : framesDir(); /* solid panels, or Dark's clear tint: no frames */
     // what's on screen now (DISPLAY: the app's own screen too), before the panel is drawn over it:
     // the glass's first picture, and the one it keeps over an app with no video. The TV takes it as
     // the call starts (seen on the C3), so it isn't waited for: the panel isn't on screen yet.
@@ -524,7 +525,7 @@ async function openOverlay() {
     if (gen !== overlayGen) return false;
     overlayInputs = (state.inputs || []).map((i) => i.appId);
     Object.assign(state, { clock24: !!prefs.clock24, reduceMotion: !!prefs.reduceMotion, reduceTransparency: !!prefs.reduceTransparency,
-      sounds: prefs.sounds !== false });
+      sounds: prefs.sounds !== false, appearance: dark ? 'dark' : 'light' });
     if (fs.existsSync('/tmp/homeplus-cc-fps')) state.debugFps = true; /* its frame rate, on screen */
     const r = await luna(SYSUI + '/launch', {
       appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
@@ -540,7 +541,7 @@ async function openOverlay() {
       return false;
     }
     overlayOpen = true;
-    if (frames) captureFrames(gen, frames, snapshot);
+    if (frames) captureFrames(gen, frames, snapshot, !!prefs.ccBlurVideo);
     return true;
   } finally {
     overlayBusy = false;
@@ -549,10 +550,11 @@ async function openOverlay() {
 
 // Its glass shows the picture behind it, blurred: first a snapshot of the screen as it opens, then,
 // while it's open, a small frame of the video (VIDEO: without any graphics, so not the Control Center
-// itself) about three times a second. With no frame, the glass is a tint over what's there. The TV
-// can't always capture its video: not protected video, and not while its one video capture is taken
-// (PicCap's, for the ambient light, takes it): no frames of the video then, and the screen's are
-// black where it is, so a frame that's black where the panel is isn't shown. The frames are what's
+// itself) about three times a second. With no frame, the glass is frosted. The TV can't always
+// capture its video: not protected video, and not while its one video capture is taken (PicCap's,
+// for the ambient light, takes it; Blur Over Video pauses PicCap's while it's open): no frames of
+// the video then, and the screen's are black where it is, so a frame that's black where the panel
+// is isn't shown. Dark (Settings) is a clear tint, with no frames at all. The frames are what's
 // on screen, so they go in a folder the service makes for each opening, with a name nobody can
 // guess, that only root can read (the compositor, root, shows them); in memory, and deleted when it
 // closes.
@@ -588,24 +590,28 @@ async function grab(dir, method) {
   }
 }
 
-async function captureFrames(gen, dir, snapshot) {
+async function captureFrames(gen, dir, snapshot, blurVideo) {
   const until = Date.now() + 5 * 60000; /* in case it's never said to have closed */
   let video = false; /* the frame on show is the video's, not the snapshot */
+  let paused = false; /* PicCap's capture, for Blur Over Video */
   try {
     const screen = await snapshot; /* (one capture at a time) */
+    if (blurVideo && picCapture) paused = await picCapture.pause();
     for (let n = 0; overlayOpen && gen === overlayGen && Date.now() < until; n++) {
       const got = await grab(dir, 'VIDEO'); /* none (no video playing): the snapshot stays */
-      if (!n) log('control center frames: the screen', screen, '- the video', got);
+      if (!n) log('control center frames: the screen', screen, '- the video', got, paused ? '(PicCap paused)' : '');
       if (got === 'picture') video = true;
-      else if (video) { /* the video went dark, or can't be captured now: the tint, over what's there */
+      else if (video) { /* the video went dark, or can't be captured now: frosted, over what's there */
         fs.rmSync(path.join(dir, 'frame.png'), { force: true });
         video = false;
       }
-      await new Promise((done) => setTimeout(done, got === 'picture' ? 40 : got === 'dark' ? 300 : 1500));
+      const soon = got === 'dark' || (paused && !video && n < 10); /* (PicCap lets go of the capture) */
+      await new Promise((done) => setTimeout(done, got === 'picture' ? 40 : soon ? 300 : 1500));
     }
   } catch (e) {
     log('control center frames:', e.message);
   } finally {
+    if (paused) picCapture.resume();
     fs.rm(dir, { recursive: true, force: true }, () => {});
   }
 }
@@ -989,8 +995,9 @@ async function tvRegion() {
   return tvCountry;
 }
 const tmdb = require('./tmdb')({ readConfig, writeConfig, log, region: tvRegion });
-const control = require('./control')({ luna, log, readConfig, writeConfig,
-  extra: require('./ambient')({ luna, log }) }); /* the Control Center's TV controls, and ambient light (HyperHDR, PicCap) */
+const ambient = require('./ambient')({ luna, log });
+const control = require('./control')({ luna, log, readConfig, writeConfig, extra: ambient }); /* the Control Center's TV controls, and ambient light (HyperHDR, PicCap) */
+const picCapture = ambient.find((c) => c.id === 'screenCapture'); /* Blur Over Video pauses it */
 
 // What's popular on the service a streaming app is, or trending for an app with no picture,
 // for its Top Shelf (pictures through us).
@@ -1150,7 +1157,8 @@ async function handleApi(req, res) {
           await applyHomeMode();
         }
       }
-      return sendJSON(res, 200, { mode: homeMode(cfg), noFlashActive: !!redirectTarget, noFlashAvailable: await noFlashAvailable(), settingsKey: settingsKeyState() });
+      return sendJSON(res, 200, { mode: homeMode(cfg), noFlashActive: !!redirectTarget, noFlashAvailable: await noFlashAvailable(), settingsKey: settingsKeyState(),
+        piccap: !!picCapture && await picCapture.available() }); /* Settings -> Control Center offers Blur Over Video */
     }
     if (url.pathname === '/api/events') return listen(req, res);
     if (url.pathname === '/api/key' && req.method === 'POST') return sendJSON(res, 200, await remoteKey(String((await readBody(req)).key || '')));

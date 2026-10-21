@@ -58,6 +58,10 @@ shot reduce-transparency "UODDDDRO" 4400
 # media servers: Jellyfin's and Plex's Continue Watching, and a sign-in with a QR code
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_AMBIENT=1 HOMEPLUS_PREVIEW_CC='[{"id":"power","size":"small"},{"id":"ambientLight","size":"wide"},{"id":"screenCapture","size":"wide"},{"id":"soundMode","size":"wide"},{"id":"brightness","size":"wide"},{"id":"pictureMode","size":"wide"},{"id":"toneMapping","size":"wide"},{"id":"sleepTimer","size":"small"},{"id":"recents","size":"small"},{"id":"settings","size":"small"}]'
 shot cc-custom "UO" 3600
+# with LG Input Hook (the Control Center over other apps) and PicCap: Settings -> Control Center
+mkdir -p "$ASSETS/lginputhook"
+service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_AMBIENT=1 HOMEPLUS_INPUTHOOK_BINDS="$ASSETS/lginputhook/keybinds.json"
+shot settings-cc "UODDDDRODDO" 4600
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=1
 shot jellyfin "" 4500
 shot plex "R" 4500

@@ -1,7 +1,8 @@
 /* Ambient light, for people who run HyperHDR and PicCap on the TV: two Control Center
  * switches, HyperHDR's LEDs and PicCap's screen capture. They're offered only when those
- * are installed. Nothing else in Home+ knows about them: deleting this file and its line
- * in service.js removes them.
+ * are installed. Nothing else in Home+ knows about them, but for Blur Over Video (Settings),
+ * which pauses PicCap's capture (below): deleting this file and its line in service.js
+ * removes them.
  */
 'use strict';
 
@@ -16,6 +17,7 @@ const HYPERHDR_DIR = process.env.HOMEPLUS_HYPERHDR_DIR || `${SERVICES}/org.webos
 const PICCAP_DIR = process.env.HOMEPLUS_PICCAP_DIR || `${SERVICES}/org.webosbrew.piccap.service`;
 const LOADER = 'luna://org.webosbrew.hyperhdr.loader.service';
 const PICCAP = 'luna://org.webosbrew.piccap.service';
+const PAUSED = process.env.HOMEPLUS_PICCAP_PAUSED || '/tmp/homeplus-piccap-paused'; /* (gone at a restart, when PicCap starts anyway) */
 
 module.exports = function createAmbient({ luna, log }) {
   const installed = (dir) => async () => fs.existsSync(dir);
@@ -40,6 +42,29 @@ module.exports = function createAmbient({ luna, log }) {
   };
   const onOff = (on) => ({ on, value: on ? 'On' : 'Off' });
 
+  // Blur Over Video: PicCap keeps the TV's one video capture while it captures, so the Control
+  // Center over other apps gets no frames of the video to blur. With that setting on, it pauses
+  // PicCap's capture while it's open (its switch still says On), and starts it again after. A mark
+  // in /tmp says it's paused, in case the service stops in between: the next one starts it again.
+  let paused = false;
+  const setPaused = (on) => {
+    paused = on;
+    try { if (on) fs.writeFileSync(PAUSED, ''); else fs.rmSync(PAUSED, { force: true }); } catch (e) { /* /tmp */ }
+  };
+  async function start(again) {
+    const r = await luna(`${PICCAP}/start`, {});
+    if (r && r.returnValue !== false) {
+      log('ambient: capture started again');
+    } else {
+      log('ambient: capture didn\'t start again:', (r && r.errorText) || 'no answer');
+      if (!again) setTimeout(() => start(true), 2000);
+    }
+  }
+  if (fs.existsSync(PAUSED)) { /* paused by a service that stopped */
+    setPaused(false);
+    setImmediate(start);
+  }
+
   return [
     {
       id: 'ambientLight', title: 'Ambient Light', kind: 'switch', icon: 'ambient', group: 'Ambient Light', sizes: ['wide', 'small'],
@@ -60,12 +85,31 @@ module.exports = function createAmbient({ luna, log }) {
     {
       id: 'screenCapture', title: 'Screen Capture', kind: 'switch', icon: 'capture', group: 'Ambient Light', sizes: ['wide', 'small'],
       available: installed(PICCAP_DIR),
-      read: async () => onOff(await capture()),
+      read: async () => onOff(paused || await capture()),
       run: async () => {
+        if (paused) { /* turned off while the Control Center has it paused: it stays off */
+          setPaused(false);
+          log('ambient: capture stays stopped');
+          return;
+        }
         const on = await capture();
         const r = await luna(`${PICCAP}/${on ? 'stop' : 'start'}`, {});
         if (!r || r.returnValue === false) throw new Error(`PicCap: ${(r && r.errorText) || "it didn't answer"}`);
         log('ambient: capture', on ? 'stopped' : 'started');
+      },
+      // true if it was capturing, and now isn't
+      pause: async () => {
+        if (paused || !fs.existsSync(PICCAP_DIR) || !(await capture().catch(() => false))) return false;
+        const r = await luna(`${PICCAP}/stop`, {});
+        if (!r || r.returnValue === false) return false;
+        setPaused(true);
+        log('ambient: capture paused, for the Control Center\'s glass');
+        return true;
+      },
+      resume: async () => {
+        if (!paused) return; /* (or turned off in between) */
+        setPaused(false);
+        await start();
       }
     }
   ];

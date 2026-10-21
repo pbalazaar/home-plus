@@ -246,9 +246,11 @@ global.__stubLuna = (uri, params) => {
   if (/systemUIManager\/(launch|closeByAppId)$/.test(uri)) return { returnValue: true };
   if (uri === 'luna://com.webos.service.capture/executeOneShot') {
     // <assets>/capture.json, when it's there: what the TV gives for each method: "picture" (the
-    // default), "black" (video it couldn't capture), or "busy" (its one video capture taken, as PicCap takes it)
+    // default), "black" (video it couldn't capture), "busy" (its one video capture taken, as PicCap
+    // takes it), or "piccap": busy, or black, while the stand-in PicCap captures, a picture once it's stopped
     let kind = 'picture';
     try { kind = JSON.parse(fs.readFileSync(path.join(assets, 'capture.json'), 'utf8'))[params.method] || kind; } catch (e) { /* the default */ }
+    if (kind === 'piccap') kind = !ambient.capture ? 'picture' : params.method === 'VIDEO' ? 'busy' : 'black';
     if (kind === 'busy') return { returnValue: false, errorCode: 2, errorText: 'ERROR_NOT_INITIALIZED' };
     fs.writeFileSync(params.path, png(params.width, params.height, () => (kind === 'black' ? [0, 0, 0] : [90, 120, 160])));
     return { returnValue: true, capturedWidth: params.width, capturedHeight: params.height };

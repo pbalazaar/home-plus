@@ -44,7 +44,9 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   - The C3 has one video capture (the media resource `VT_CAPTURE`, `com.webos.media/getActivePipelines`
     shows who holds it), and PicCap's vtcapture keeps it while it captures (after a reboot, from boot): then
     VIDEO says `ERROR_NOT_INITIALIZED`, and DISPLAY, screenshots included, is black where the video is. The
-    service checks each frame (`service/png.js`): black behind the panel isn't shown, and the glass is a tint.
+    service checks each frame (`service/png.js`): black behind the panel isn't shown, and the glass is frosted.
+    Settings → Control Center: Appearance (`ccAppearance` in prefs: Light, or Dark's clear tint with no frames)
+    and Blur Over Video (`ccBlurVideo`: pauses PicCap's capture while it's open, `ambient.js`).
   - It can't post a notification that leaves the remote to the app: an overlay keeps the keys even when it
     doesn't take them (tried), so Home+'s hints stay LG's toasts.
   - Sounds play through QtMultimedia's `SoundEffect` (`Sounds.qml`, loaded on its own in case it can't).

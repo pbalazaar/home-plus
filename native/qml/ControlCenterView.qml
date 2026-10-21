@@ -30,6 +30,7 @@ FocusScope {
 
     readonly property bool still: !!cc.reduceMotion      // Settings -> Accessibility: Reduce Motion
     readonly property bool solid: !!cc.reduceTransparency // ... and Reduce Transparency
+    readonly property bool dark: cc.appearance === "dark" // Settings: the Control Center's appearance (Light: frosted)
 
     property int focusIndex: 0     // a control (0..n-1); while editing, the + slot (n) and Reset (n + 1)
     property int listKind: 0       // in the Control Center's place: 1 picture modes, 2 inputs, 3 the gallery
@@ -234,6 +235,7 @@ FocusScope {
                 r.debugFps = cc.debugFps;
                 r.reduceMotion = cc.reduceMotion;
                 r.reduceTransparency = cc.reduceTransparency;
+                r.appearance = cc.appearance;
                 cc = r;
                 load(r);
             }
@@ -595,8 +597,20 @@ FocusScope {
     NumberAnimation on wobble { running: view.editing && !view.still; from: 0; to: 100000; duration: 100000000; loops: Animation.Infinite }
 
     // ---- the clock, as Home+'s header while its Control Center is open (main.c: draw_clock): the
-    // time on its own, and the Control Center's circle, grown and white
+    // time on its own, and the Control Center's circle, grown and white. Over another app it's over
+    // the picture itself, white over white or a channel's logo as often as not: the corner it's in
+    // dims, and both cast a soft shadow (unseen over dark pictures), so they stand out.
 
+    RadialGradient {
+        x: view.rightEdge - 80 - 760; y: 80 - 560; width: 2 * 760; height: 2 * 560
+        horizontalRadius: width / 2; verticalRadius: height / 2
+        opacity: clock.opacity
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.38) }
+            GradientStop { position: 0.45; color: Qt.rgba(0, 0, 0, 0.16) }
+            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0) }
+        }
+    }
     Item {
         id: clock
         property real drop: 0
@@ -609,16 +623,30 @@ FocusScope {
             id: time
             x: view.rightEdge - 65 - width
             y: 80 - height / 2
+            visible: false // drawn by its shadow, below
             color: "white"
-            style: Text.Raised // over the picture itself
-            styleColor: Qt.rgba(0, 0, 0, 0.35)
-            opacity: 0.92
             font.family: semi.name
             font.weight: Font.DemiBold
             font.pixelSize: 27
             text: Qt.formatTime(new Date(), view.cc.clock24 ? "hh:mm" : "h:mm AP")
             Timer { interval: 5000; running: true; repeat: true
                 onTriggered: time.text = Qt.formatTime(new Date(), view.cc.clock24 ? "hh:mm" : "h:mm AP") }
+        }
+        DropShadow {
+            anchors.fill: time
+            source: time
+            radius: 14; samples: 29; spread: 0.3
+            verticalOffset: 1
+            color: Qt.rgba(0, 0, 0, 0.6)
+            transparentBorder: true
+            cached: true
+        }
+        RectangularGlow {
+            x: view.rightEdge - 28 - 29; y: 80 - 29 + 2
+            width: 58; height: 58
+            glowRadius: 12; spread: 0.1; cornerRadius: 29 + glowRadius
+            color: "black"
+            opacity: 0.4
         }
         Rectangle {
             x: view.rightEdge - 28 - 29; y: 80 - 29
@@ -711,7 +739,7 @@ FocusScope {
                 radius: tile.rad
                 sourceA: glassA; sourceB: glassB; fade: view.fade
                 live: view.hasFrame
-                solid: view.solid
+                dark: view.dark; solid: view.solid
                 screenX: tile.x
                 screenY: tile.y
                 visible: tile.lit < 0.99 // under white, nothing to see
@@ -889,7 +917,7 @@ FocusScope {
             anchors.fill: parent
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            solid: view.solid
+            dark: view.dark; solid: view.solid
             screenX: reset.x; screenY: reset.y
             visible: !reset.focused
         }
@@ -945,7 +973,7 @@ FocusScope {
             radius: 34
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            solid: view.solid
+            dark: view.dark; solid: view.solid
             screenX: list.x
             screenY: view.gridY
         }
@@ -1020,7 +1048,7 @@ FocusScope {
             radius: 34
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            solid: view.solid
+            dark: view.dark; solid: view.solid
             screenX: gal.x
             screenY: view.gridY
         }
@@ -1126,7 +1154,7 @@ FocusScope {
             radius: 40
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            solid: view.solid
+            dark: view.dark; solid: view.solid
             screenX: sheetBox.x
             screenY: sheetBox.y
         }

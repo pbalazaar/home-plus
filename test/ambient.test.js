@@ -7,10 +7,12 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { mockServer, quiet, freshRequire } = require('./helpers');
+const { mockServer, quiet, freshRequire, until } = require('./helpers');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-ambient-'));
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+const PAUSED = path.join(dir, 'piccap-paused'); /* the mark that PicCap's capture is paused */
+process.env.HOMEPLUS_PICCAP_PAUSED = PAUSED;
 
 /* HyperHDR's JSON-RPC: serverinfo with its components, and componentstate turning one on or off */
 async function fakeHyperhdr(leds) {
@@ -92,4 +94,41 @@ test('ambient: Screen Capture is PicCap\'s, started and stopped through its own 
   assert.equal(pic.running, false);
   await capture.run();
   assert.equal(pic.running, true);
+});
+
+test('ambient: Blur Over Video pauses PicCap\'s capture (its switch still says On), and starts it again after', async () => {
+  const { capture, pic } = ambient({ capturing: true });
+  assert.equal(await capture.pause(), true);
+  assert.equal(pic.running, false);
+  assert.ok(fs.existsSync(PAUSED), 'marked, in case the service stops');
+  assert.deepEqual(await capture.read(), { on: true, value: 'On' }, 'paused, not switched off');
+  assert.equal(await capture.pause(), false, 'once');
+  await capture.resume();
+  assert.equal(pic.running, true);
+  assert.equal(fs.existsSync(PAUSED), false);
+});
+
+test('ambient: nothing to pause when PicCap isn\'t capturing, or isn\'t there', async () => {
+  const idle = ambient({ capturing: false });
+  assert.equal(await idle.capture.pause(), false);
+  const gone = ambient({ piccap: false, capturing: true });
+  assert.equal(await gone.capture.pause(), false);
+  for (const a of [idle, gone]) assert.ok(!a.calls.some((c) => c.uri.endsWith('/stop')), 'PicCap left alone');
+});
+
+test('ambient: Screen Capture switched off while it\'s paused stays off', async () => {
+  const { capture, pic } = ambient({ capturing: true });
+  await capture.pause();
+  await capture.run();
+  assert.deepEqual(await capture.read(), { on: false, value: 'Off' });
+  await capture.resume();
+  assert.equal(pic.running, false);
+  assert.equal(fs.existsSync(PAUSED), false);
+});
+
+test('ambient: PicCap paused by a service that stopped is started again by the next', async () => {
+  fs.writeFileSync(PAUSED, '');
+  const { pic } = ambient({ capturing: false });
+  await until(() => pic.running, 3000, 'PicCap to be started');
+  assert.equal(fs.existsSync(PAUSED), false);
 });

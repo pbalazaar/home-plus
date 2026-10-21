@@ -120,7 +120,7 @@ typedef struct {
 } CCItem;
 
 /* Settings pages (a sheet's page; 0 = not a Settings page) */
-enum { PAGE_MAIN = 1, PAGE_HOME, PAGE_DISPLAY, PAGE_ACCESS, PAGE_ACCOUNTS, PAGE_TV, PAGE_ABOUT, PAGE_CONFIRM, PAGE_SIGNIN };
+enum { PAGE_MAIN = 1, PAGE_HOME, PAGE_DISPLAY, PAGE_CC, PAGE_ACCESS, PAGE_ACCOUNTS, PAGE_TV, PAGE_ABOUT, PAGE_CONFIRM, PAGE_SIGNIN };
 
 /* zones: what the remote is moving through */
 enum { ZONE_GRID, ZONE_RAIL, ZONE_TOP };
@@ -165,7 +165,7 @@ typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELE
                ACT_LAUNCH_ID, ACT_TRAKT_LINK, ACT_TRAKT_UNLINK, ACT_MEDIA_LINK, ACT_MEDIA_UNLINK, ACT_ACCOUNT_ASK, ACT_UP, ACT_TMDB, ACT_SHELF,
                ACT_HOME_MODE, ACT_SOUNDS,
                ACT_SETUP_RETRY, ACT_HOME_YES, ACT_HOME_NO, ACT_HOME_TOGGLE, ACT_REMOVE_ASK, ACT_REMOVE,
-               ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY,
+               ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY, ACT_CC_APPEARANCE, ACT_CC_BLUR_VIDEO,
                ACT_PAGE, ACT_CLOCK, ACT_DIM, ACT_OFF, ACT_ORBIT, ACT_CALM, ACT_HIDDEN, ACT_SETTINGS_KEY,
                ACT_CC_EDIT, ACT_CC_ADD, ACT_CC_SIZE, ACT_CC_REMOVE, ACT_CC_RESET } Action;
 
@@ -246,6 +246,7 @@ static struct {
     Uint32 idle_dim_ms, idle_off_ms; /* OLED idle stages (0 = default) */
     int noflash_active, noflash_available; /* available: LG's home is a web app we can replace */
     int settings_key, settings_key_available; /* the remote's Settings key opens the Control Center (LG Input Hook) */
+    int cc_dark, cc_blur_video, piccap; /* Settings -> Control Center (over other apps): Dark, Blur Over Video (PicCap installed) */
     Uint32 trakt_poll; /* while showing a Trakt code: next status check */
     int moving;
     float scroll, scroll_v, scroll_target; /* grid y offset */
@@ -1413,6 +1414,7 @@ static void handle_result(Result *r)
                 cJSON *sk = cJSON_GetObjectItem(o, "settingsKey");
                 S.settings_key = cJSON_IsTrue(cJSON_GetObjectItem(sk, "on"));
                 S.settings_key_available = cJSON_IsTrue(cJSON_GetObjectItem(sk, "available"));
+                S.piccap = cJSON_IsTrue(cJSON_GetObjectItem(o, "piccap"));
                 if (!strcmp(S.home_mode, "redirect") && !S.noflash_active && r->tag == TAG_HOME_SET)
                     toast("No-flash mode isn\xE2\x80\x99t available on this TV; using standard mode.", 5000);
                 cJSON_Delete(o);
@@ -1426,6 +1428,8 @@ static void handle_result(Result *r)
             snd_enable(!S.sounds_off);
             S.reduce_motion = o && cJSON_IsTrue(cJSON_GetObjectItem(o, "reduceMotion"));
             S.reduce_transparency = o && cJSON_IsTrue(cJSON_GetObjectItem(o, "reduceTransparency"));
+            S.cc_dark = o && !strcmp(jstr(o, "ccAppearance"), "dark");
+            S.cc_blur_video = o && cJSON_IsTrue(cJSON_GetObjectItem(o, "ccBlurVideo"));
             double dm = jnum(o, "dimMinutes"), om = jnum(o, "offMinutes"); /* -1: never */
             S.idle_dim_ms = dm > 0 ? (Uint32)(dm * 60000) : dm < 0 ? IDLE_NEVER : 0;
             S.idle_off_ms = om > 0 ? (Uint32)(om * 60000) : om < 0 ? IDLE_NEVER : 0;
@@ -1999,13 +2003,15 @@ static const char *minutes(Uint32 ms, Uint32 dflt, char *buf, size_t cap)
 /* the row a page has on the main Settings page */
 static int main_index(int page)
 {
+    int cc = S.settings_key_available; /* Control Center: over other apps, with LG Input Hook */
     switch (page) {
     case PAGE_HOME: return 0;
     case PAGE_DISPLAY: return 1;
-    case PAGE_ACCESS: return 4;
-    case PAGE_ACCOUNTS: return 5;
-    case PAGE_TV: return 6 + (S.nhidden > 0);
-    case PAGE_ABOUT: return 6 + (S.nhidden > 0) + (S.nsettings > 0);
+    case PAGE_CC: return 2;
+    case PAGE_ACCESS: return 4 + cc;
+    case PAGE_ACCOUNTS: return 5 + cc;
+    case PAGE_TV: return 6 + cc + (S.nhidden > 0);
+    case PAGE_ABOUT: return 6 + cc + (S.nhidden > 0) + (S.nsettings > 0);
     default: return 0;
     }
 }
@@ -2022,8 +2028,8 @@ static void settings_page(int page, int index)
         if (S.settings_key_available) /* needs LG Input Hook, which catches the key */
             settings_row("Settings Button", S.settings_key ? "Control Center" : "LG Quick Settings", ACT_SETTINGS_KEY, 0, 0, 0);
         if (!S.noflash_available)
-            sheet_body(S.settings_key_available ? "With Home+ in front, the Settings button can open the Control Center;\n"
-                                                  "in other apps it opens LG\xE2\x80\x99s Quick Settings."
+            sheet_body(S.settings_key_available ? "The Settings button can open the Control Center,\n"
+                                                  "over other apps too."
                                                 : "On this TV, LG Input Hook from Homebrew Channel opens Home+\n"
                                                   "without LG\xE2\x80\x99s home screen showing first (see the README).");
         break;
@@ -2037,6 +2043,16 @@ static void settings_page(int page, int index)
         settings_row("Pixel Shift", S.orbit_off ? "Off" : "On", ACT_ORBIT, 0, 0, 0);
         settings_row("Calm Colours", S.vivid_covers ? "Off" : "On", ACT_CALM, 0, 0, 0);
         settings_row("Top Shelf", S.shelf_still ? "Stays Still" : "Turns Pages", ACT_SHELF, 0, 0, 0);
+        break;
+    case PAGE_CC:
+        sheet_open("Control Center");
+        settings_row("Appearance", S.cc_dark ? "Dark" : "Light", ACT_CC_APPEARANCE, 0, 0, 0);
+        if (!S.cc_dark && S.piccap) settings_row("Blur Over Video", S.cc_blur_video ? "On" : "Off", ACT_CC_BLUR_VIDEO, 0, 0, 0);
+        sheet_body(S.cc_dark || !S.piccap ? "Over other apps, Light is frosted glass, and Dark a clear tint."
+                   : "Over other apps, Light is frosted glass, and Dark a clear tint.\n"
+                     "The TV captures video for one app at a time, and PicCap has it:\n"
+                     "Blur Over Video pauses PicCap while the Control Center is open,\n"
+                     "so its glass can blur the video.");
         break;
     case PAGE_ACCESS:
         sheet_open("Accessibility");
@@ -2083,6 +2099,7 @@ static void settings_page(int page, int index)
         settings_row("Remote", home_on ? "Home Opens Home+" : "", ACT_PAGE, PAGE_HOME, 1, 0);
         snprintf(v, sizeof v, "Dims After %s", minutes(S.idle_dim_ms, IDLE_DIM_MS, v2, sizeof v2));
         settings_row("Display & OLED", S.idle_dim_ms == IDLE_NEVER ? "Never Dims" : v, ACT_PAGE, PAGE_DISPLAY, 1, 0);
+        if (S.settings_key_available) settings_row("Control Center", S.cc_dark ? "Dark" : "Light", ACT_PAGE, PAGE_CC, 1, 0);
         settings_row("Sounds", S.sounds_off ? "Off" : "On", ACT_SOUNDS, 0, 0, 0);
         settings_row("Clock", S.clock24 ? "24-Hour" : "12-Hour", ACT_CLOCK, 0, 0, 0);
         settings_row("Accessibility", S.reduce_motion || S.reduce_transparency ? "On" : "Off", ACT_PAGE, PAGE_ACCESS, 1, 0);
@@ -2290,7 +2307,7 @@ static void run_action(Action act, int arg)
     case ACT_SETTINGS_KEY:
         S.settings_key = !S.settings_key;
         net_post("/api/home", S.settings_key ? "{\"settingsKey\":true}" : "{\"settingsKey\":false}", TAG_HOME);
-        toast(S.settings_key ? "With Home+ in front, the Settings button opens the Control Center"
+        toast(S.settings_key ? "The Settings button opens the Control Center, over other apps too"
                              : "The Settings button opens LG\xE2\x80\x99s Quick Settings", 3000);
         settings_again();
         break;
@@ -2437,6 +2454,16 @@ static void run_action(Action act, int arg)
         settings_again();
         break;
     }
+    case ACT_CC_APPEARANCE:
+        S.cc_dark = !S.cc_dark;
+        net_post("/api/prefs", S.cc_dark ? "{\"ccAppearance\":\"dark\"}" : "{\"ccAppearance\":\"light\"}", 0);
+        settings_again();
+        break;
+    case ACT_CC_BLUR_VIDEO:
+        S.cc_blur_video = !S.cc_blur_video;
+        net_post("/api/prefs", S.cc_blur_video ? "{\"ccBlurVideo\":true}" : "{\"ccBlurVideo\":false}", 0);
+        settings_again();
+        break;
     case ACT_SOUNDS:
         S.sounds_off = !S.sounds_off;
         snd_enable(!S.sounds_off);
