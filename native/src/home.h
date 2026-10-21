@@ -473,9 +473,6 @@ static inline float smooth01(float a, float b, float x)
 
 /* main.c */
 void request_data(void);
-void enter_top(int col);
-void focus_rect(float *x, float *y, float *w, float *h);
-int is_back(SDL_Keycode k);
 void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop);
 int wake(int key);
 
@@ -624,5 +621,23 @@ void open_settings_sheet(void);
 
 /* actions.c */
 void run_action(Action act, int arg, const char *id);
+
+/* input.c */
+float top_w(void);
+float top_x(void);
+void enter_top(int col);
+int top_down_tile(void);
+void focus_rect(float *x, float *y, float *w, float *h);
+void move_focus(int dx, int dy);
+void go_home(void);
+int is_back(SDL_Keycode k);
+void keys_take_over(void);
+int pointer_moved(int mx, int my);
+void on_key_down(SDL_KeyboardEvent *e);
+void ok_release(void);
+void on_key_up(SDL_KeyboardEvent *e);
+int sheet_button_at(int mx, int my, int *outside);
+int pointer_at(int mx, int my, int apply);
+void to_logical(int *x, int *y);
 
 #endif
