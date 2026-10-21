@@ -39,20 +39,20 @@ Item {
                 lowp float inside = clamp(0.5 - d, 0.0, 1.0);
                 highp vec2 uv = area.xy + (qt_TexCoord0 * 0.9 + 0.05) * area.zw;
                 lowp vec3 c = mix(texture2D(srcA, uv).rgb, texture2D(srcB, uv).rgb, fade);
-                gl_FragColor = vec4(mix(c, vec3(1.0), 0.06), 1.0) * inside * qt_Opacity;
+                gl_FragColor = vec4(mix(c, vec3(1.0), 0.04), 1.0) * inside * 0.85 * qt_Opacity; // a little of the live picture shows through
             }"
     }
     Rectangle {
         anchors.fill: parent
         radius: glass.radius
-        color: glass.solid ? Qt.rgba(38 / 255, 38 / 255, 44 / 255, 0.96) : Qt.rgba(0.11, 0.11, 0.13, glass.live ? 0.2 : 0.45)
+        color: glass.solid ? Qt.rgba(38 / 255, 38 / 255, 44 / 255, 0.96) : Qt.rgba(0.11, 0.11, 0.13, glass.live ? 0.08 : 0.22)
         Behavior on color { ColorAnimation { duration: 300 } }
     }
     Rectangle {
         anchors.fill: parent
         radius: glass.radius
         gradient: Gradient {
-            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.14) }
+            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.10) }
             GradientStop { position: 0.55; color: Qt.rgba(1, 1, 1, 0.0) }
         }
     }

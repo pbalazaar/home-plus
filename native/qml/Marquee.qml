@@ -15,6 +15,8 @@ Item {
 
     Text {
         id: label
+        style: Text.Raised // a faint shadow: the glass is clear, and the picture behind can be bright
+        styleColor: Qt.rgba(0, 0, 0, color.r > 0.5 ? 0.35 : 0)
         elide: scroll.running ? Text.ElideNone : Text.ElideRight
         width: scroll.running ? implicitWidth : m.width
     }

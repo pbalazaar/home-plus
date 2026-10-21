@@ -609,6 +609,8 @@ FocusScope {
             x: view.rightEdge - 65 - width
             y: 80 - height / 2
             color: "white"
+            style: Text.Raised // over the picture itself
+            styleColor: Qt.rgba(0, 0, 0, 0.35)
             opacity: 0.92
             font.family: semi.name
             font.weight: Font.DemiBold
@@ -776,6 +778,8 @@ FocusScope {
                     width: parent.width
                     text: model.title
                     color: tile.lit > 0.5 ? view.ink : "white"
+                    style: Text.Raised // a faint shadow, as the pills' names (Marquee.qml)
+                    styleColor: Qt.rgba(0, 0, 0, tile.lit > 0.5 ? 0 : 0.35)
                     font.family: semi.name
                     font.weight: Font.DemiBold
                     font.pixelSize: 24
