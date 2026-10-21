@@ -13,7 +13,7 @@
 
 const crypto = require('crypto');
 const dgram = require('dgram');
-const { requestJSON } = require('./net');
+const { requestJSON, onThisTV } = require('./net');
 
 const TICKS_PER_MIN = 600000000; // Jellyfin times are 100 ns ticks
 
@@ -47,9 +47,7 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
   function onNetwork(address) {
     let u;
     try { u = new URL(String(address)); } catch (e) { return false; }
-    const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-    return (u.protocol === 'http:' || u.protocol === 'https:') &&
-      !(host === 'localhost' || host.endsWith('.localhost') || /^(127|0)\./.test(host) || /^::(1|ffff:7f[0-9a-f]{2}:[0-9a-f]+)?$/.test(host));
+    return (u.protocol === 'http:' || u.protocol === 'https:') && !onThisTV(u.hostname);
   }
 
   // Servers on this network answer "who is JellyfinServer?" on UDP 7359.

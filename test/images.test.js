@@ -82,11 +82,12 @@ test('images: a redirect to the TV itself is refused', async () => {
   assert.equal(art.hits.some((h) => h.path === '/x'), false, 'and not followed');
 });
 
-test('images: a picture from the TV itself is refused, not fetched', async () => {
-  /* another service, without the tests' exception for their own server on 127.0.0.1 */
+/* another service, without the tests' exception for their own server on 127.0.0.1: the pictures'
+ * server, written as base, is the TV itself, so its pictures are refused and never asked for */
+async function refusedFromTheTV(base) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-images-tv-'));
   fs.writeFileSync(path.join(d, 'apps.txt'), 'stremio|Stremio');
-  const s = await startService(d, { HOMEPLUS_PREVIEW_ART: art.base, HOMEPLUS_PREVIEW_ART_STRICT: '1' });
+  const s = await startService(d, { HOMEPLUS_PREVIEW_ART: base, HOMEPLUS_PREVIEW_ART_STRICT: '1' });
   try {
     const pic = (await s.call('GET', '/api/continue')).json.items.find((it) => it.id.endsWith('4')).background;
     const before = art.hits.length;
@@ -102,4 +103,10 @@ test('images: a picture from the TV itself is refused, not fetched', async () =>
     await s.stop();
     fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });
   }
-});
+}
+
+test('images: a picture from the TV itself is refused, not fetched', () => refusedFromTheTV(art.base));
+
+/* Linux connects 0.0.0.0, and so [::ffff:0.0.0.0], to the machine itself, where the test's server listens */
+test('images: also when its address is IPv4-mapped ([::ffff:0.0.0.0])', () =>
+  refusedFromTheTV(`http://[::ffff:0.0.0.0]:${new URL(art.base).port}`));

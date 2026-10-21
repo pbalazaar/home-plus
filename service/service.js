@@ -15,7 +15,7 @@ const https = require('https');
 const http = require('http');
 const dns = require('dns');
 const pkg = require('./package.json');
-const { requestJSON } = require('./net');
+const { requestJSON, onThisTV } = require('./net');
 const Service = require('webos-service');
 const callers = require('./callers');
 const png = require('./png');
@@ -1022,8 +1022,7 @@ function trimImages() {
 // where a picture may come from: another web server, not this TV (its own services answer on
 // 127.0.0.1); servers on the network stay allowed, as Jellyfin's and Plex's are. Checked for the
 // first URL as for every redirect, as the URLs come from addons and servers. null: nowhere
-const onTV = (host) => host === 'localhost' || host.endsWith('.localhost') || /^(127|0)\.\d+\.\d+\.\d+$/.test(host) ||
-  /^::(1|ffff:7f[0-9a-f]{2}:[0-9a-f]+|ffff:(127|0)\.\d+\.\d+\.\d+)?$/.test(host);
+const onTV = onThisTV;
 /* (the tests' pictures, on a server of theirs on 127.0.0.1; HOMEPLUS_PREVIEW_ART_STRICT: not even those) */
 const PREVIEW_ART = !process.env.HOMEPLUS_PREVIEW_ART_STRICT && process.env.HOMEPLUS_PREVIEW_ART;
 function pictureURL(location, from, first) {

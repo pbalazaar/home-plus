@@ -54,3 +54,15 @@ test('callers: the luna methods answer the TV\'s own tools and Home+, not other 
   for (const s of ['youtube.leanback.v4', 'com.webos.app.browser', 'com.webos.lunasendpub-12', 'com.webos.lunasend-', 'com.webos.lunasend-1 x', '', undefined])
     assert.equal(trusted(s), false, `not ${s}`);
 });
+
+test('net: the TV itself, however a URL writes it, and the network beside it', () => {
+  const { onThisTV } = require('../service/net');
+  const host = (url) => new URL(url).hostname;
+  for (const url of ['http://localhost/', 'http://a.localhost/', 'http://127.0.0.1/', 'http://127.1/', 'http://0x7f.1/', 'http://0/',
+    'http://0.0.0.0/', 'http://[::]/', 'http://[::1]/', 'http://[::ffff:127.0.0.1]/', 'http://[::ffff:7f00:1]/',
+    'http://[::ffff:0.0.0.0]/', 'http://[::ffff:0.1.2.3]/', 'http://[0:0:0:0:0:ffff:7f00:1]/', 'http://localhost./'])
+    assert.equal(onThisTV(host(url)), true, url);
+  for (const url of ['http://192.168.1.20:8096/', 'http://10.0.0.1/', 'http://[::ffff:192.168.1.20]/', 'http://[::ffff:a00:1]/',
+    'http://[fe80::1]/', 'http://[2001:db8::1]/', 'https://image.tmdb.org/', 'http://localhost.example.com/'])
+    assert.equal(onThisTV(host(url)), false, url);
+});

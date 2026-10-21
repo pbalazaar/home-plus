@@ -34,4 +34,13 @@ function requestJSON(method, url, { headers = {}, body, timeout = 10000 } = {}) 
   });
 }
 
-module.exports = { requestJSON };
+// Whether a URL's host is this TV, where its own services answer: localhost, 127.0.0.0/8, 0.0.0.0/8 (which
+// Linux connects to this machine too) and :: and ::1, however a URL writes them, IPv4-mapped included:
+// [::ffff:127.0.0.1] becomes ::ffff:7f00:1, and [::ffff:0.0.0.0] becomes ::ffff:0:0.
+function onThisTV(host) {
+  const h = String(host).replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase();
+  return h === 'localhost' || h.endsWith('.localhost') || /^(127|0)\.\d+\.\d+\.\d+$/.test(h) ||
+    /^::(1|ffff:(7f[0-9a-f]{2}|[0-9a-f]{1,2}):[0-9a-f]{1,4}|ffff:(127|0)\.\d+\.\d+\.\d+)?$/.test(h);
+}
+
+module.exports = { requestJSON, onThisTV };
