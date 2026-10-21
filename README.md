@@ -47,11 +47,8 @@ If something stops it, the screen says what and offers **Try Again**:
 | Homebrew Channel Needed | The Homebrew Channel isn't installed, or isn't running as root. |
 | Couldn't Get Permission | The Homebrew Channel refused to give Home+ root access. Check that the TV is rooted and the Homebrew Channel is up to date. |
 | Home+ Couldn't Start | Home+'s background service didn't answer. Restarting the TV usually fixes this. |
-| Uninstall the Old Home+ | The Home+ from before its app ID changed is still installed, and its service is the one answering. See below. |
 
 Updates install the same way. An update resets the service's root access, and Home+ sets it up again the next time it starts.
-
-**Updating from Home+ 0.14.0 or earlier:** Home+'s app ID changed from `com.github.pmiraka.homeplus` to `com.github.pbalazaar.homeplus`, so webOS sees the new Home+ as another app. Uninstall the old one first, the way you installed it (with webOS Dev Manager, say, or over SSH: `luna-send -n 1 luna://com.webos.appInstallService/dev/remove '{"id":"com.github.pmiraka.homeplus"}'`), but not with its Settings → Remove Home+, which deletes your settings and sign-ins. Then install the new one: your settings, sign-ins, layout and remote buttons carry over. `tools/install.sh` does this by itself.
 
 ## Using Home+
 
