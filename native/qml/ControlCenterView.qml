@@ -442,15 +442,16 @@ FocusScope {
 
     // ---- the gallery: what can be added, by group, as round buttons with their names under them;
     // wider than the grid, its right edge the grid's (main.c: cc_gallery_build; GAL_W, GAL_PAD,
-    // GAL_HEAD, GAL_GROUP, GAL_BTN, GAL_ROW, GAL_NAME_PX)
+    // GAL_HEAD, GAL_GROUP, GAL_BTN, GAL_ROW, GAL_NAME_PX, GAL_NAME_GAP)
 
-    readonly property int galW: 600
+    readonly property int galW: 680
     readonly property int galPad: 24
     readonly property int galHead: 66
     readonly property int galGroup: 34
     readonly property int galBtn: 72
     readonly property int galRow: 144
     readonly property int galNamePx: 20
+    readonly property int galNameGap: 16 // between neighbours' names: a longer one takes two lines
     property var gallery: []        // [{entry, x, y}]
     property var galleryHeads: []   // [{text, y}]
     property int galleryH: 0
@@ -1146,7 +1147,7 @@ FocusScope {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: view.galBtn + 8
-                    width: (view.galW - 2 * view.galPad) / 4 + 6
+                    width: (view.galW - 2 * view.galPad) / 4 - view.galNameGap
                     horizontalAlignment: Text.AlignHCenter
                     text: parent.it.entry.title
                     color: "white"

@@ -62,6 +62,9 @@ shot cc-custom "UO" 3600
 mkdir -p "$ASSETS/lginputhook"
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_AMBIENT=1 HOMEPLUS_INPUTHOOK_BINDS="$ASSETS/lginputhook/keybinds.json"
 shot settings-cc "UODDDDRODDO" 4600
+# Add a Control with its first group's row full (the C3's layout): the next group goes under it
+service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_CC='[{"id":"power","size":"large"},{"id":"network","size":"wide"},{"id":"screenOff","size":"wide"},{"id":"sound","size":"wide"},{"id":"sleepTimer","size":"wide"},{"id":"pictureMode","size":"wide"},{"id":"eyeComfort","size":"wide"},{"id":"brightness","size":"wide"},{"id":"inputs","size":"small"},{"id":"accessibility","size":"small"},{"id":"settings","size":"small"}]'
+shot cc-gallery-groups "UOHOLDDDDRO" 6000
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=1
 shot jellyfin "" 4500
 shot plex "R" 4500

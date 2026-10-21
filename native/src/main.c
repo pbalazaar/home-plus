@@ -2672,13 +2672,14 @@ static float cc_edit_dim(void)
 /* The gallery's layout: each group's name, then its controls four to a row, buttons with their names
  * under them (as iOS 18's Add a Control shows them). Wider than the grid (its right edge the grid's),
  * so names read from the couch */
-#define GAL_W 600
+#define GAL_W 680
 #define GAL_PAD 24
 #define GAL_HEAD 66
 #define GAL_GROUP 34
 #define GAL_BTN 72
 #define GAL_ROW 144
 #define GAL_NAME_PX 20
+#define GAL_NAME_GAP 16 /* between neighbours' names: a longer one takes two lines */
 static void cc_gallery_build(void)
 {
     for (int i = 0; i < MAX_CAT; i++) tex_free(&S.cc.gal_label[i][0]), tex_free(&S.cc.gal_label[i][1]);
@@ -2687,13 +2688,13 @@ static void cc_gallery_build(void)
     S.cc.list_title = text_render(S.f_semi, 24, "Add a Control", 0, &S.cc.ltw, &S.cc.lth);
     float cw = (GAL_W - 2 * GAL_PAD) / 4.0f, y = GAL_HEAD;
     const char *group = "";
-    int col = 4;
+    int col = 0;
     S.cc.gal_n = S.cc.gal_nhead = 0;
     for (int i = 0; i < S.cc.ncat; i++) { /* the catalogue is in its groups' order */
         const __typeof__(S.cc.cat[0]) *e = &S.cc.cat[i];
         if (!e->available || cc_find(e->id) >= 0) continue;
-        if (strcmp(e->group, group) && S.cc.gal_nhead < 6) { /* a new group: its name */
-            if (col < 4) y += GAL_ROW;
+        if (strcmp(e->group, group) && S.cc.gal_nhead < 6) { /* a new group: its name, under the last one's controls */
+            if (S.cc.gal_n) y += GAL_ROW;
             group = e->group;
             S.cc.gal_head[S.cc.gal_nhead] = text_render(S.f_semi, 22, group, 0, &S.cc.gal_hw[S.cc.gal_nhead], &S.cc.gal_hh[S.cc.gal_nhead]);
             S.cc.gal_hy[S.cc.gal_nhead++] = y;
@@ -2707,7 +2708,7 @@ static void cc_gallery_build(void)
         S.cc.gal_cat[k] = i;
         S.cc.gal_x[k] = GAL_PAD + col * cw + (cw - GAL_BTN) / 2;
         S.cc.gal_y[k] = y;
-        int room = (int)cw + 6, w0, h0, split = -1, best = 1 << 30; /* (a name may reach into the gap) */
+        int room = (int)cw - GAL_NAME_GAP, w0, h0, split = -1, best = 1 << 30;
         Tex *t = text_render(S.f_medium, GAL_NAME_PX, e->title, 0, &w0, &h0);
         tex_free(&t);
         for (const char *sp = e->title; w0 > room && (sp = strchr(sp, ' ')); sp++) { /* two lines: the split whose longer line is shortest */

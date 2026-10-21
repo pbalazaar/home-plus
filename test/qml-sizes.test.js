@@ -38,7 +38,7 @@ test('qml sizes: the overlay\'s grid is where Home+\'s is, in the same units', (
 
 test('qml sizes: the overlay\'s gallery is Home+\'s', () => {
   for (const [q, c] of [['galW', 'GAL_W'], ['galPad', 'GAL_PAD'], ['galHead', 'GAL_HEAD'], ['galGroup', 'GAL_GROUP'],
-    ['galBtn', 'GAL_BTN'], ['galRow', 'GAL_ROW'], ['galNamePx', 'GAL_NAME_PX']]) {
+    ['galBtn', 'GAL_BTN'], ['galRow', 'GAL_ROW'], ['galNamePx', 'GAL_NAME_PX'], ['galNameGap', 'GAL_NAME_GAP']]) {
     assert.equal(prop(q), define(c), `${q} is ${c}`);
   }
 });
