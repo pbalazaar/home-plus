@@ -152,7 +152,8 @@ appears in your own SSH command line** — it kills the session. Use:
   keybinds.json whenever the file changes ("Keybinds reloaded due to config file change").
 - Home+'s binds outlive a plain uninstall, so they're `exec` binds that check for Home+ and otherwise
   do the key's LG job: Home `[ -f <app>/appinfo.json ] && exec luna-send ... launch Home+; exec
-  luna-send ... launch com.webos.app.home`, Settings settings-key.sh or LG's Quick Settings (`OUR_BINDS`).
+  luna-send ... launch com.webos.app.home`, Settings settings-key.sh or LG's Quick Settings, Input
+  input-key.sh or LG's Input picker (`OUR_BINDS`).
   They test a packaged file, not the folder: the app folder also holds the service's `api-token`, which
   isn't the package's. At start and whenever keybinds.json changes, the service upgrades the old
   forms (`OLD_BINDS`): a `launch` of Home+ on 773 (LG Input Hook's "Launch App") and 0.11's
@@ -173,6 +174,17 @@ appears in your own SSH command line** — it kills the session. Use:
 - The remote's Settings key is lginputhook code 139. Its actions are pass, ignore, replace, exec
   (`/bin/sh`, root) and launch; none is conditional and exec/launch swallow the key. LG's Quick
   Settings open with `systemUIManager/launch {"appId":"com.webos.app.quicksettings"}`.
+- The Input key is code 241 (KEY_VIDEO_NEXT; seen on the C3's Magic Remote). Without a bind LG's
+  compositor opens its Input picker, `systemUIManager/launch {"appId":"com.webos.app.quickinputpicker"}`.
+  Bound (Settings -> Remote -> Input Button), it opens the Control Center on its inputs alone, in Home+
+  (the `inputs` event) or over the app in front (the overlay with `{list: "inputs"}`); pressed again
+  over an open panel, the service asks that panel (`{again: "input"}`) rather than open a new one, so
+  its frames go on.
+- What LG's compositor itself draws, and switches for it, are in its config
+  (`/etc/configd/layers/base/com.webos.surfacemanager.json`, read live with
+  `com.webos.service.config/getConfigs`): its system UIs (Quick Settings, the Input picker, the on-screen
+  remote, "nudge" banners) and `volumeOSD` (its volume bar), `disableSourcePicker`, `disableQuickSettings`.
+  Its key handlers are `/usr/lib/qt5/qml/KeyFilters/appLaunch.js` and `systemUi.js`.
 - `listApps` gives `removable` and `systemApp`. LG's home deletes store apps with
   `applicationManager/removeLaunchPoint {"launchPointId":"<id>_default"}`; dev apps use
   `appInstallService/dev/remove`.

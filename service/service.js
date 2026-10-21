@@ -360,9 +360,9 @@ setTimeout(installBootScript, 2000);
 const INPUTHOOK_BINDS = process.env.HOMEPLUS_INPUTHOOK_BINDS || '/home/root/.config/lginputhook/keybinds.json'; /* tests: elsewhere */
 const OUR_IDS = [NATIVE_ID, 'com.atvlauncher.native', 'com.atvlauncher.app'];
 
-// a bind that's Home+'s: it launches Home+ (the Home key), or runs our script (the Settings key)
+// a bind that's Home+'s: it launches Home+ (the Home key), or runs our script (the Settings and Input keys)
 const ourBind = (b) => !!b && (OUR_IDS.includes(b.id) ||
-  [NATIVE_ID, SETTINGS_KEY_SCRIPT, HOME_SCRIPT, SETTINGS_SCRIPT].some((s) => String(b.command || '').includes(s)));
+  [NATIVE_ID, SETTINGS_KEY_SCRIPT, INPUT_KEY_SCRIPT, HOME_SCRIPT, SETTINGS_SCRIPT, INPUT_SCRIPT].some((s) => String(b.command || '').includes(s)));
 
 function dropInputhookBinds() {
   // lginputhook keybinds that are Home+'s are removed; other binds stay
@@ -382,6 +382,13 @@ function dropInputhookBinds() {
 const SETTINGS_KEY = '139';
 const SETTINGS_KEY_SCRIPT = path.join(__dirname, 'settings-key.sh');
 
+// ---- The remote's Input key (LG Input Hook's code 241, KEY_VIDEO_NEXT): the Control Center's inputs,
+// in Home+ or over whatever's on screen, else LG's Input picker. The hook runs input-key.sh, which asks us.
+
+const INPUT_KEY = '241';
+const INPUT_KEY_SCRIPT = path.join(__dirname, 'input-key.sh');
+const INPUT_PICKER = 'com.webos.app.quickinputpicker';
+
 function readBinds() {
   try { return JSON.parse(fs.readFileSync(INPUTHOOK_BINDS, 'utf8')) || {}; } catch (e) { return null; }
 }
@@ -395,6 +402,7 @@ function readBinds() {
 const HOME_KEY = '773';
 const HOME_SCRIPT = path.join(path.dirname(INPUTHOOK_BINDS), 'homeplus-home.sh');
 const SETTINGS_SCRIPT = path.join(path.dirname(INPUTHOOK_BINDS), 'homeplus-settings.sh');
+const INPUT_SCRIPT = path.join(path.dirname(INPUTHOOK_BINDS), 'homeplus-input.sh');
 const lunaSend = (uri, params) => `luna-send -n 1 ${uri} '${JSON.stringify(params)}'`;
 const KEY_SCRIPTS = {
   [HOME_SCRIPT]: `#!/bin/sh
@@ -406,11 +414,17 @@ exec ${lunaSend(APPMGR + '/launch', { id: LG_HOME })}
 # Home+'s Settings button, run by LG Input Hook: Home+'s Control Center, or LG's Quick Settings once Home+ is gone.
 [ -f ${SETTINGS_KEY_SCRIPT} ] && exec sh ${SETTINGS_KEY_SCRIPT}
 exec ${lunaSend('luna://com.webos.service.systemUIManager/launch', { appId: 'com.webos.app.quicksettings' })}
+`,
+  [INPUT_SCRIPT]: `#!/bin/sh
+# Home+'s Input button, run by LG Input Hook: Home+'s inputs, or LG's Input picker once Home+ is gone.
+[ -f ${INPUT_KEY_SCRIPT} ] && exec sh ${INPUT_KEY_SCRIPT}
+exec ${lunaSend('luna://com.webos.service.systemUIManager/launch', { appId: INPUT_PICKER })}
 `
 };
-const OUR_BINDS = { /* Home: Home+, else LG's home screen. Settings: our script, else LG's Quick Settings */
+const OUR_BINDS = { /* Home: Home+, else LG's home screen. Settings, Input: our script, else LG's Quick Settings, Input picker */
   [HOME_KEY]: { action: 'exec', command: `sh ${HOME_SCRIPT}` },
-  [SETTINGS_KEY]: { action: 'exec', command: `sh ${SETTINGS_SCRIPT}` }
+  [SETTINGS_KEY]: { action: 'exec', command: `sh ${SETTINGS_SCRIPT}` },
+  [INPUT_KEY]: { action: 'exec', command: `sh ${INPUT_SCRIPT}` }
 };
 
 function writeKeyScripts() {
@@ -425,7 +439,8 @@ function writeKeyScripts() {
 // other of ours that isn't the current one
 const OLD_BINDS = {
   [HOME_KEY]: (b) => (b.action === 'launch' && OUR_IDS.includes(b.id)) || (ourBind(b) && b.command !== OUR_BINDS[HOME_KEY].command),
-  [SETTINGS_KEY]: (b) => b.action === 'exec' && ourBind(b) && b.command !== OUR_BINDS[SETTINGS_KEY].command
+  [SETTINGS_KEY]: (b) => b.action === 'exec' && ourBind(b) && b.command !== OUR_BINDS[SETTINGS_KEY].command,
+  [INPUT_KEY]: (b) => b.action === 'exec' && ourBind(b) && b.command !== OUR_BINDS[INPUT_KEY].command
 };
 
 function upgradeBinds() {
@@ -458,42 +473,56 @@ if (isRoot()) {
   watch();
 }
 
-function settingsKeyState() {
+// a key's bind (the Settings or Input key's): LG Input Hook is there to make one, and it's Home+'s
+function keyState(key) {
   const binds = readBinds();
-  return { available: binds !== null || fs.existsSync(path.dirname(INPUTHOOK_BINDS)), on: !!binds && ourBind(binds[SETTINGS_KEY]) };
+  return { available: binds !== null || fs.existsSync(path.dirname(INPUTHOOK_BINDS)), on: !!binds && ourBind(binds[key]) };
 }
+const settingsKeyState = () => keyState(SETTINGS_KEY);
 
-function setSettingsKey(on) {
-  if (!settingsKeyState().available) throw new Error('LG Input Hook isn\'t installed');
+function setKeyBind(key, on) {
+  if (!keyState(key).available) throw new Error('LG Input Hook isn\'t installed');
   const binds = readBinds() || {};
   if (on) {
     writeKeyScripts();
-    binds[SETTINGS_KEY] = OUR_BINDS[SETTINGS_KEY];
+    binds[key] = OUR_BINDS[key];
   }
-  else if (ourBind(binds[SETTINGS_KEY])) delete binds[SETTINGS_KEY]; /* someone else's bind stays */
+  else if (ourBind(binds[key])) delete binds[key]; /* someone else's bind stays */
   fs.writeFileSync(INPUTHOOK_BINDS, JSON.stringify(binds, null, 2));
-  log('settings key:', on ? 'Control Center' : 'LG Quick Settings');
+  log(key === INPUT_KEY ? 'input key:' : 'settings key:', on ? 'Home+' : 'LG');
 }
 
-// The Settings key: Home+'s Control Center. In front of Home+ the launcher opens its own; over
-// anything else it's a system UI that LG's compositor runs (native/qml/), as it runs LG's Quick
-// Settings, so the video underneath keeps playing. LG's Quick Settings if that can't open.
+// The Settings key: Home+'s Control Center; the Input key: its inputs, on their own. In front of Home+
+// the launcher opens its own; over anything else it's a system UI that LG's compositor runs
+// (native/qml/), as it runs LG's Quick Settings, so the video underneath keeps playing. LG's Quick
+// Settings (or Input picker) if that can't open. The Input key again, while it's open, turns it to its
+// inputs, or closes it if they're on show; it's asked of the open panel, which keeps its frames.
 async function remoteKey(key) {
-  if (key !== 'settings') throw new Error(`not a key Home+ handles: ${key}`);
+  if (key !== 'settings' && key !== 'input') throw new Error(`not a key Home+ handles: ${key}`);
   if (lastForeground === NATIVE_ID) {
-    emit('controlCenter');
+    emit(key === 'input' ? 'inputs' : 'controlCenter');
     return { opened: 'controlCenter' };
   }
+  if (key === 'input' && overlayOpen) {
+    await luna(SYSUI + '/launch', { appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY',
+      defaultWindowType: 'overlay', params: { again: 'input', port: IMAGE_PORT, token: TOKEN } });
+    return { opened: 'overlay' };
+  }
   try {
-    return { opened: (await openOverlay()) ? 'overlay' : 'nothing' }; /* nothing: another app came to the front */
+    return { opened: (await openOverlay(key === 'input' ? 'inputs' : '')) ? 'overlay' : 'nothing' }; /* nothing: another app came to the front */
   } catch (e) {
     log('control center overlay:', e.message);
+  }
+  if (key === 'input') {
+    await inputPicker();
+    return { opened: 'inputPicker' };
   }
   await quickSettings();
   return { opened: 'quickSettings' };
 }
 
 const quickSettings = () => luna(SYSUI + '/launch', { appId: 'com.webos.app.quicksettings' });
+const inputPicker = () => luna(SYSUI + '/launch', { appId: INPUT_PICKER });
 
 // ---- The Control Center over other apps. A second launch (the Settings key again) closes it;
 // so does another app coming to the front.
@@ -506,13 +535,15 @@ let overlayGen = 0; /* counts each open, and each thing that cancels one on its 
 let overlayBusy = false; /* an open on its way */
 let overlayAsked = 0; /* when it was asked for: how long it takes to show is logged */
 let overlayInputs = []; /* the inputs it offered: the only apps it may open */
+let overlayList = ''; /* opened on a list of its own ('inputs': the Input key): if it fails, LG's picker for it */
 
-// false: cancelled on the way (another app came to the front)
-async function openOverlay() {
+// false: cancelled on the way (another app came to the front). list: 'inputs' opens it on them alone
+async function openOverlay(list = '') {
   if (!fs.existsSync(OVERLAY_QML)) throw new Error('not installed');
   const gen = ++overlayGen;
   overlayBusy = true;
   overlayAsked = Date.now();
+  overlayList = list;
   try {
     const prefs = readConfig().prefs || {}; /* the launcher's: its clock, Settings -> Control Center and Accessibility */
     const frames = prefs.reduceTransparency ? '' : framesDir(); /* solid panels: no frames */
@@ -529,7 +560,7 @@ async function openOverlay() {
     if (fs.existsSync('/tmp/homeplus-cc-fps')) state.debugFps = true; /* its frame rate, on screen */
     const r = await luna(SYSUI + '/launch', {
       appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
-      params: { state, port: IMAGE_PORT, token: TOKEN, frame: frames && 'file://' + path.join(frames, 'frame.png') } /* the API: the compositor may only call LG's services over luna */
+      params: { state, port: IMAGE_PORT, token: TOKEN, frame: frames && 'file://' + path.join(frames, 'frame.png'), list } /* the API: the compositor may only call LG's services over luna */
     });
     if (!r || r.returnValue === false) {
       if (frames) fs.rm(frames, { recursive: true, force: true }, () => {});
@@ -659,7 +690,7 @@ function overlayMain() {
 // LG's compositor compiles a system UI's QML the first time it opens (~250 ms more): when the Settings
 // key opens the Control Center, have it compiled once, unseen, a little after the service starts.
 function preloadOverlay() {
-  if (!fs.existsSync(OVERLAY_QML) || !settingsKeyState().on || process.getuid?.() !== 0) return;
+  if (!fs.existsSync(OVERLAY_QML) || !(settingsKeyState().on || keyState(INPUT_KEY).on) || process.getuid?.() !== 0) return;
   if (overlayOpen || overlayBusy) return; /* (it would close it) */
   luna(SYSUI + '/launch', {
     appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
@@ -689,7 +720,7 @@ async function overlayEvent(p) {
   } else if (p.event === 'failed') {
     overlayOpen = false;
     log('control center overlay failed:', String(p.error || '').replace(/\s+/g, ' ').slice(0, 300));
-    await quickSettings();
+    await (overlayList === 'inputs' ? inputPicker() : quickSettings());
   } else if (p.event === 'open' && p.app) {
     if (!overlayInputs.includes(p.app)) throw new Error(`not an input: ${p.app}`);
     await luna(APPMGR + '/launch', { id: p.app });
@@ -744,7 +775,7 @@ async function uninstall() {
   const steps = {};
   await unmountRedirect().catch(() => {});
   try { [INITD, BOOT_LOG].forEach((f) => fs.rmSync(f, { force: true })); steps.bootScript = true; } catch (e) { steps.bootScript = e.message; }
-  try { steps.inputhookBinds = dropInputhookBinds(); [HOME_SCRIPT, SETTINGS_SCRIPT].forEach((f) => fs.rmSync(f, { force: true })); } catch (e) { steps.inputhookBinds = e.message; }
+  try { steps.inputhookBinds = dropInputhookBinds(); Object.keys(KEY_SCRIPTS).forEach((f) => fs.rmSync(f, { force: true })); } catch (e) { steps.inputhookBinds = e.message; }
   try { fs.rmSync(path.dirname(findConfigPath()), { recursive: true, force: true }); steps.settings = true; } catch (e) { steps.settings = e.message; }
   steps.elevationFiles = dropElevation();
   log('uninstall:', steps);
@@ -1174,7 +1205,8 @@ async function handleApi(req, res) {
       const cfg = readConfig();
       if (req.method === 'POST') {
         const b = await readBody(req);
-        if (typeof b.settingsKey === 'boolean') setSettingsKey(b.settingsKey); /* the Settings key's bind */
+        if (typeof b.settingsKey === 'boolean') setKeyBind(SETTINGS_KEY, b.settingsKey); /* the Settings key's bind */
+        if (typeof b.inputKey === 'boolean') setKeyBind(INPUT_KEY, b.inputKey); /* the Input key's */
         if (b.mode !== undefined || b.asked) {
           if (['redirect', 'watch'].includes(b.mode)) { cfg.homeMode = b.mode; cfg.homeOverride = true; }
           if (b.mode === 'off') cfg.homeOverride = false;
@@ -1184,7 +1216,7 @@ async function handleApi(req, res) {
           await applyHomeMode();
         }
       }
-      return sendJSON(res, 200, { mode: homeMode(cfg), noFlashActive: !!redirectTarget, noFlashAvailable: await noFlashAvailable(), settingsKey: settingsKeyState(),
+      return sendJSON(res, 200, { mode: homeMode(cfg), noFlashActive: !!redirectTarget, noFlashAvailable: await noFlashAvailable(), settingsKey: settingsKeyState(), inputKey: keyState(INPUT_KEY),
         piccap: !!picCapture && await picCapture.available() }); /* Settings -> Control Center offers Blur Over Video */
     }
     if (url.pathname === '/api/events') return listen(req, res);

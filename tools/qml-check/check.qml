@@ -147,10 +147,49 @@ Item {
             expect(w.exited, "the Settings key again closes it");
             log(function (got) {
                 expect(got.some(function (g) { return g.url === "/api/overlay" && g.body.event === "closed"; }), "the service hears it closed");
-                finish();
             });
+            relaunch({ list: "inputs" }); // the Input key: a window of its own, as on the TV
+            break;
+        case 18:
+            expect(v && v.listKind === 2 && v.listOnly, "the Input key: the inputs alone");
+            if (!v) return finish();
+            v.back(); expect(v.closing, "Back closes them, as they came alone");
+            break;
+        case 19:
+        case 20:
+            break; // it animates out
+        case 21:
+            expect(w.exited, "and it's gone");
+            relaunch({});
+            break;
+        case 22:
+            w.lifeCycleStatus.launch({ params: { again: "input" } });
+            expect(v.listKind === 2 && !v.listOnly, "the Input key over the controls: their inputs");
+            v.back(); expect(v.listKind === 0 && !v.closing, "Back: the controls again");
+            w.lifeCycleStatus.launch({ params: { again: "input" } });
+            w.lifeCycleStatus.launch({ params: { again: "input" } });
+            expect(v.closing, "the Input key again, with the inputs on show: it closes");
+            break;
+        case 23:
+        case 24:
+            break;
+        case 25:
+            expect(w.exited, "closed");
+            relaunch(null);
+            win.item.lifeCycleStatus.launch({ params: { again: "input", port: 47999, token: "t0ken" } });
+            expect(win.item.exited && !win.item.view, "the Input key again, but the panel has gone: nothing opens");
+            finish();
             break;
         }
+    }
+
+    function relaunch(extra) { // a new window (LG's compositor makes one each time), launched with the sample and `extra`
+        win.source = "";
+        win.source = Qt.resolvedUrl("../../native/qml/ControlCenter.qml");
+        if (!extra) return;
+        var params = { state: JSON.parse(JSON.stringify(sample)), token: "t0ken", port: 47999, frame: "" };
+        for (var k in extra) params[k] = extra[k];
+        win.item.lifeCycleStatus.launch({ params: params });
     }
 
     function order(v) { // the controls' ids, in order

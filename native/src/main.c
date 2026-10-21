@@ -181,7 +181,7 @@ typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELE
                ACT_HOME_MODE, ACT_SOUNDS,
                ACT_SETUP_RETRY, ACT_HOME_YES, ACT_HOME_NO, ACT_HOME_TOGGLE, ACT_REMOVE_ASK, ACT_REMOVE,
                ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY, ACT_CC_BLUR_VIDEO,
-               ACT_PAGE, ACT_CLOCK, ACT_DIM, ACT_OFF, ACT_ORBIT, ACT_CALM, ACT_HIDDEN, ACT_SETTINGS_KEY,
+               ACT_PAGE, ACT_CLOCK, ACT_DIM, ACT_OFF, ACT_ORBIT, ACT_CALM, ACT_HIDDEN, ACT_SETTINGS_KEY, ACT_INPUT_KEY,
                ACT_CC_EDIT, ACT_CC_ADD, ACT_CC_SIZE, ACT_CC_REMOVE, ACT_CC_RESET } Action;
 
 /* First run: the service has to be running and elevated (root, via Homebrew
@@ -262,6 +262,7 @@ static struct {
     Uint32 idle_dim_ms, idle_off_ms; /* OLED idle stages (0 = default) */
     int noflash_active, noflash_available; /* available: LG's home is a web app we can replace */
     int settings_key, settings_key_available; /* the remote's Settings key opens the Control Center (LG Input Hook) */
+    int input_key;                    /* ... and its Input key, the Control Center's inputs */
     int cc_blur_video, piccap; /* Settings -> Control Center: Blur Over Video (over other apps, with PicCap installed) */
     Uint32 trakt_poll; /* while showing a Trakt code: next status check */
     int moving;
@@ -388,6 +389,7 @@ static struct {
         int prw, prh;
         /* a list control (Picture, Inputs) opens its list in the Control Center's place */
         int list, list_kind, list_index, list_n, list_first; /* kind: the one on show (or fading out) */
+        int list_only;               /* opened by the Input key on the inputs alone: Back closes them */
         float list_t, list_v;
         Tex *list_title, *list_row[24], *list_val[24];
         /* list 3, the gallery (iOS 18's Add a Control): what this TV has that isn't placed, as round
@@ -1044,7 +1046,7 @@ static void parse_control(const char *json)
         else snprintf(in->name, sizeof in->name, "%s", jstr(v, "label"));
         in->plugged = cJSON_IsTrue(cJSON_GetObjectItem(v, "plugged"));
     }
-    if (S.cc.list == 1) cc_list_texts(); /* the tick follows the picture mode */
+    if (S.cc.list == 1 || S.cc.list == 2) cc_list_texts(); /* the tick follows the picture mode; the inputs come in */
     cJSON_Delete(o);
 }
 
@@ -1112,6 +1114,7 @@ static void on_elevate(Result *r);
 static void sw_fill(const char *json);
 static void sw_reset(void);
 static void settings_key(void);
+static void input_key(void);
 static void cc_save(void);
 static void cc_add(int cat);
 static void cc_post(const char *body);
@@ -1420,6 +1423,7 @@ static void handle_result(Result *r)
         break;
     case TAG_EVENTS:
         if (r->body && strstr(r->body, "\"controlCenter\"")) settings_key();
+        if (r->body && strstr(r->body, "\"inputs\"")) input_key();
         if (r->body) { /* asked for from the Control Center over another app, which brings Home+ to the front */
             int want = strstr(r->body, "\"settings\"") ? OPEN_SETTINGS : strstr(r->body, "\"recents\"") ? OPEN_RECENTS
                      : strstr(r->body, "\"accessibility\"") ? OPEN_ACCESSIBILITY : 0;
@@ -1438,6 +1442,7 @@ static void handle_result(Result *r)
                 cJSON *sk = cJSON_GetObjectItem(o, "settingsKey");
                 S.settings_key = cJSON_IsTrue(cJSON_GetObjectItem(sk, "on"));
                 S.settings_key_available = cJSON_IsTrue(cJSON_GetObjectItem(sk, "available"));
+                S.input_key = cJSON_IsTrue(cJSON_GetObjectItem(cJSON_GetObjectItem(o, "inputKey"), "on"));
                 S.piccap = cJSON_IsTrue(cJSON_GetObjectItem(o, "piccap"));
                 if (!strcmp(S.home_mode, "redirect") && !S.noflash_active && r->tag == TAG_HOME_SET)
                     toast("No-flash mode isn\xE2\x80\x99t available on this TV; using standard mode", 5000);
@@ -2048,11 +2053,13 @@ static void settings_page(int page, int index)
         sheet_open("Remote");
         settings_row("Home Button", home_on ? "Opens Home+" : "Opens LG Home", ACT_HOME_TOGGLE, 0, 0, 0);
         if (home_on && S.noflash_available) settings_row("No Flash", S.noflash_active ? "On" : "Off", ACT_HOME_MODE, 0, 0, 0);
-        if (S.settings_key_available) /* needs LG Input Hook, which catches the key */
+        if (S.settings_key_available) { /* needs LG Input Hook, which catches the keys */
             settings_row("Settings Button", S.settings_key ? "Control Center" : "LG Quick Settings", ACT_SETTINGS_KEY, 0, 0, 0);
+            settings_row("Input Button", S.input_key ? "Home+ Inputs" : "LG Input Picker", ACT_INPUT_KEY, 0, 0, 0);
+        }
         if (!S.noflash_available)
-            sheet_body(S.settings_key_available ? "The Settings button can open the Control Center,\n"
-                                                  "over other apps too."
+            sheet_body(S.settings_key_available ? "The Settings and Input buttons can open the\n"
+                                                  "Control Center and its inputs, over other apps too."
                                                 : "On this TV, LG Input Hook from Homebrew Channel opens Home+\n"
                                                   "without LG\xE2\x80\x99s home screen showing first (see the README).");
         break;
@@ -2336,6 +2343,13 @@ static void run_action(Action act, int arg)
                              : "The Settings button opens LG\xE2\x80\x99s Quick Settings", 3000);
         settings_again();
         break;
+    case ACT_INPUT_KEY:
+        S.input_key = !S.input_key;
+        net_post("/api/home", S.input_key ? "{\"inputKey\":true}" : "{\"inputKey\":false}", TAG_HOME);
+        toast(S.input_key ? "The Input button opens Home+\xE2\x80\x99s inputs, over other apps too"
+                          : "The Input button opens LG\xE2\x80\x99s Input picker", 3000);
+        settings_again();
+        break;
     case ACT_HOME_TOGGLE: {
         int on = S.home_mode[0] && strcmp(S.home_mode, "off");
         set_home_mode(on ? "off" : S.noflash_available ? "redirect" : "watch", 1);
@@ -2615,7 +2629,7 @@ static void cc_post(const char *body)
 static void cc_open(void)
 {
     S.cc.open = 1;
-    S.cc.editing = S.cc.list = 0;
+    S.cc.editing = S.cc.list = S.cc.list_only = 0;
     cc_problem(NULL);
     S.cc.picked = S.cc.ran = -1;
     int net = cc_find("network"); /* nearest the clock, and harmless (unlike Power Off) */
@@ -2632,7 +2646,7 @@ static void cc_close(void)
         S.cc.picked = -1;
         cc_save();
     }
-    S.cc.open = S.cc.editing = S.cc.list = 0;
+    S.cc.open = S.cc.editing = S.cc.list = S.cc.list_only = 0;
 }
 
 /* saves the list as it is on screen (the service answers with the whole state) */
@@ -2839,6 +2853,7 @@ static void cc_list_key(SDL_Keycode k)
     }
     if (k == SDLK_UP && S.cc.list_index > 0) S.cc.list_index--;
     else if (k == SDLK_DOWN && S.cc.list_index < S.cc.list_n - 1) S.cc.list_index++;
+    else if (is_back(k) && S.cc.list_only) cc_close();
     else if (is_back(k)) S.cc.list = 0;
     if (S.cc.list_index < S.cc.list_first) S.cc.list_first = S.cc.list_index;
     if (S.cc.list_index >= S.cc.list_first + CC_LIST_ROWS) S.cc.list_first = S.cc.list_index - CC_LIST_ROWS + 1;
@@ -4828,6 +4843,21 @@ static void settings_key(void)
     }
     if (S.zone != ZONE_TOP) enter_top(S.focus % COLS);
     cc_open();
+}
+
+/* The remote's Input key (LG Input Hook), while Home+ is in front: the Control Center's inputs, as
+ * over other apps. Opened for them alone, Back closes them; the key again closes them either way. */
+static void input_key(void)
+{
+    wake(0); /* a dimmed or dark screen comes back too */
+    if (S.cc.open && S.cc.list == 2) {
+        cc_close();
+        return;
+    }
+    int was_open = S.cc.open;
+    if (!was_open) settings_key(); /* opens the Control Center, as the Settings key does */
+    cc_list_open(2);
+    S.cc.list_only = !was_open;
 }
 
 /* window -> logical coordinates (the GL drawable may not be 1920x1080) */

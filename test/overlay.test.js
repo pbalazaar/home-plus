@@ -159,6 +159,34 @@ test('overlay: without its QML (an older package), the Settings key opens LG\'s 
   }
 });
 
+test('overlay: the Input key opens it on its inputs alone; again, the open panel turns to them, with its frames', async () => {
+  assert.deepEqual((await call('POST', '/api/key', { body: { key: 'input' } })).json, { opened: 'overlay' });
+  const first = calls('luna://com.webos.service.systemUIManager/launch').at(-1).params;
+  assert.equal(first.params.list, 'inputs');
+  assert.ok(first.params.state.inputs.length, 'the inputs it offers');
+  const frames = path.dirname(fileURLToPath(first.params.frame));
+  assert.deepEqual((await call('POST', '/api/key', { body: { key: 'input' } })).json, { opened: 'overlay' });
+  const again = calls('luna://com.webos.service.systemUIManager/launch').at(-1).params;
+  assert.equal(again.appId, 'com.github.pmiraka.homeplus.cc');
+  assert.deepEqual(again.params, { again: 'input', port, token }, 'asked of the panel on screen: no new state, no new frames');
+  assert.ok(fs.existsSync(frames), 'its frames go on');
+  await call('POST', '/api/overlay', { body: { event: 'closed' } });
+});
+
+test('overlay: when it can\'t open, or fails to load, the Input key gives LG\'s Input picker', async () => {
+  await call('POST', '/api/key', { body: { key: 'input' } });
+  await call('POST', '/api/overlay', { body: { event: 'failed', error: 'a mistake in the QML' } });
+  assert.deepEqual(calls('luna://com.webos.service.systemUIManager/launch').at(-1).params, { appId: 'com.webos.app.quickinputpicker' });
+  const qml = path.join(dir, 'app', 'qml');
+  fs.renameSync(qml, qml + '.away');
+  try {
+    assert.deepEqual((await call('POST', '/api/key', { body: { key: 'input' } })).json, { opened: 'inputPicker' });
+    assert.deepEqual(calls('luna://com.webos.service.systemUIManager/launch').at(-1).params, { appId: 'com.webos.app.quickinputpicker' });
+  } finally {
+    fs.renameSync(qml + '.away', qml);
+  }
+});
+
 test('overlay: with Reduce Transparency (solid panels), no frames of the video are taken', async () => {
   await call('POST', '/api/prefs', { body: { reduceTransparency: true } });
   try {

@@ -4,7 +4,9 @@ import SystemUIComponent 1.0
 // Home+'s Control Center over other apps. LG's compositor runs this file as a system UI, an
 // overlay like LG's own Quick Settings, when the remote's Settings key is pressed and Home+ isn't
 // in front: the service opens it (systemUIManager/launch) with the controls' state in its params,
-// and the video underneath keeps playing. A second launch (the Settings key again) closes it.
+// and the video underneath keeps playing. A second launch (the Settings key again) closes it. The
+// remote's Input key opens it on its inputs alone ({list: "inputs"}); again ({again: "input"}), it
+// turns an open panel to its inputs, or closes it if they're on show.
 // The panel itself is ControlCenterView.qml, loaded here so that a mistake in it can't take
 // anything else down: it's reported, and the service opens LG's Quick Settings instead.
 StarfishSystemUIWindow {
@@ -40,12 +42,18 @@ StarfishSystemUIWindow {
             root.exit();
             return;
         }
-        if (view) { // the Settings key again
-            view.close();
+        port = params.port || port;
+        token = params.token || token;
+        if (view) { // the Settings key again; the Input key again
+            if (params.again === "input" && view.listKind !== 2) view.openList(2);
+            else view.close();
             return;
         }
-        port = params.port || port;
-        token = params.token || "";
+        if (params.again) { // the Input key again, but the panel has gone: the next press opens it anew
+            call("overlay", { "event": "closed" });
+            root.exit();
+            return;
+        }
         webOSShell.setWindowProperty("_WEBOS_ACCESS_POLICY_KEYS_BACK", "true"); // Back is ours: out of a sheet, editing, then closed
         webOSShell.setWindowProperty("delayCloseWindowTimeout", 1000);          // time to animate out when LG closes it
         var c = Qt.createComponent("ControlCenterView.qml");
@@ -55,7 +63,7 @@ StarfishSystemUIWindow {
         }
         var state = params.state || {};
         state.frame = params.frame || ""; // where the service puts frames of the video, for the glass
-        view = c.createObject(root, { "cc": state, "host": root });
+        view = c.createObject(root, { "cc": state, "host": root, "listOnly": params.list === "inputs" });
         if (!view) {
             failed("couldn't create the panel");
             return;

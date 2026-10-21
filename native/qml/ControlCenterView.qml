@@ -61,6 +61,7 @@ FocusScope {
 
     property int focusIndex: 0     // a control (0..n-1); while editing, the + slot (n) and Reset (n + 1)
     property int listKind: 0       // in the Control Center's place: 1 picture modes, 2 inputs, 3 the gallery
+    property bool listOnly: false  // opened by the Input key on the inputs alone: Back closes it (main.c: list_only)
     property int listIndex: 0
     property var listItems: []
     property bool closing: false
@@ -251,6 +252,7 @@ FocusScope {
         load(cc);
         var net = find("network"); // nearest the clock, and harmless (unlike Power Off)
         if (net >= 0) focusIndex = net;
+        if (listOnly) openList(2);
         idle.restart();
         settled.start();
         askFrame();
@@ -599,6 +601,7 @@ FocusScope {
 
     function back() {
         if (sheet) sheet = null;
+        else if (listKind && listOnly) close();
         else if (listKind) listKind = 0;
         else if (picked >= 0) { picked = -1; save(); }
         else if (editing) { // done (every change is already saved)

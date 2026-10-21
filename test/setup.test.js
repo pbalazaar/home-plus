@@ -15,6 +15,7 @@ const { startService, until } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
 const SCRIPT = path.join(ROOT, 'service', 'settings-key.sh'); /* where the service is, its script is */
+const INPUT_KEY_SCRIPT = path.join(ROOT, 'service', 'input-key.sh');
 const windows = process.platform === 'win32' && 'needs symlinks and sh'; /* a reason to skip */
 let svc, dir, app, initd, bindsFile;
 const binds = () => JSON.parse(fs.readFileSync(bindsFile, 'utf8'));
@@ -104,6 +105,20 @@ test('setup: the keys do what they do without Home+ once it\'s gone', { skip: wi
   } finally {
     fs.writeFileSync(script, text);
   }
+
+  /* the Input script (written with the others; its bind is made in Settings), the same way */
+  const input = path.join(path.dirname(bindsFile), 'homeplus-input.sh'), itext = fs.readFileSync(input, 'utf8');
+  const istand = path.join(dir, 'input-key.sh');
+  fs.writeFileSync(istand, 'echo "input-key.sh ran" >>"$CALLS"\n');
+  try {
+    fs.writeFileSync(input, itext.split(INPUT_KEY_SCRIPT).join(istand));
+    assert.equal(press(`sh ${input}`), 'input-key.sh ran');
+    fs.writeFileSync(input, itext.split(INPUT_KEY_SCRIPT).join(path.join(dir, 'removed', 'input-key.sh')));
+    assert.equal(press(`sh ${input}`),
+      'luna-send -n 1 luna://com.webos.service.systemUIManager/launch {"appId":"com.webos.app.quickinputpicker"}', 'LG\'s Input picker');
+  } finally {
+    fs.writeFileSync(input, itext);
+  }
 });
 
 test('setup: a Home bind made later in LG Input Hook\'s app gets the same check at once', async () => {
@@ -142,7 +157,7 @@ test('setup: Remove Home+ takes away its boot script and log, its binds and its 
   assert.equal(fs.existsSync(path.join(dir, 'webosbrew', 'homeplus-boot.log')), false, 'its log');
   assert.ok(fs.existsSync(path.join(initd, '90-someone-else')), 'other boot scripts stay');
   assert.deepEqual(binds(), theirs);
-  for (const f of ['homeplus-home.sh', 'homeplus-settings.sh'])
+  for (const f of ['homeplus-home.sh', 'homeplus-settings.sh', 'homeplus-input.sh'])
     assert.equal(fs.existsSync(path.join(path.dirname(bindsFile), f)), false, `the binds' ${f}`);
   assert.equal(fs.existsSync(path.join(dir, 'config')), false, 'settings, sign-ins and pictures');
 });

@@ -147,6 +147,31 @@ test('api: the Settings key binds through LG Input Hook, and only Home+\'s bind 
   assert.deepEqual(binds()[773], home);
 });
 
+test('api: the Input key binds through LG Input Hook too, beside the Settings key\'s', async () => {
+  const binds = () => JSON.parse(fs.readFileSync(path.join(dir, 'lginputhook', 'keybinds.json'), 'utf8'));
+  const home = binds()[773];
+  assert.deepEqual((await call('GET', '/api/home')).json.inputKey, { available: true, on: false });
+  await call('POST', '/api/home', { body: { settingsKey: true } });
+  const on = await call('POST', '/api/home', { body: { inputKey: true } });
+  assert.deepEqual(on.json.inputKey, { available: true, on: true });
+  const script = path.join(dir, 'lginputhook', 'homeplus-input.sh'); /* a plain command: LG Input Hook runs it without a shell */
+  assert.deepEqual(binds()[241], { action: 'exec', command: `sh ${script}` });
+  assert.match(fs.readFileSync(script, 'utf8'), /input-key\.sh\n.*com\.webos\.app\.quickinputpicker/, 'LG\'s Input picker once Home+ is gone');
+  assert.equal(binds()[139].command, `sh ${path.join(dir, 'lginputhook', 'homeplus-settings.sh')}`, 'the Settings key\'s stays');
+  await call('POST', '/api/home', { body: { inputKey: false } });
+  assert.equal(binds()[241], undefined);
+  assert.equal(binds()[139].action, 'exec', 'and still does');
+  await call('POST', '/api/home', { body: { settingsKey: false } });
+  assert.deepEqual(binds()[773], home);
+});
+
+test('api: the Input key, with Home+ in front, reaches the launcher as an event', async () => {
+  const waiting = call('GET', '/api/events');
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.deepEqual((await call('POST', '/api/key', { body: { key: 'input' } })).json, { opened: 'controlCenter' });
+  assert.deepEqual((await waiting).json, { events: ['inputs'] });
+});
+
 test('api: the Settings key, with Home+ in front, reaches the launcher as an event', async () => {
   const waiting = call('GET', '/api/events'); /* the launcher's request, answered when something happens */
   await new Promise((resolve) => setTimeout(resolve, 100));
