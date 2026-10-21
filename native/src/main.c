@@ -918,6 +918,11 @@ static int cc_find(const char *id);
 /* a control's name and value (whole: a long one scrolls while it has focus) */
 static void cc_texts(CCItem *c, const char *title, const char *value)
 {
+    /* Compact tile names; the catalogue keeps the full names for discovery. */
+    if (!strcmp(c->id, "ambientLight")) title = "Ambient";
+    else if (!strcmp(c->id, "screenCapture")) title = "Capture";
+    else if (!strcmp(c->id, "brightness")) title = "Brightness";
+    else if (!strcmp(c->id, "toneMapping")) title = "Tone Map";
     if (!c->title || strcmp(c->title_s, title)) {
         snprintf(c->title_s, sizeof c->title_s, "%s", title);
         tex_free(&c->title);
@@ -2621,18 +2626,19 @@ static void cc_list_texts(void)
 
 /* The gallery's layout: each group's name, then its controls four to a row, buttons with their names
  * under them (as iOS 18's Add a Control shows them) */
-#define GAL_PAD 16
+#define GAL_WIDTH 600
+#define GAL_PAD 24
 #define GAL_HEAD 66
 #define GAL_GROUP 34
 #define GAL_BTN 72
-#define GAL_ROW 126
+#define GAL_ROW 144
 static void cc_gallery_build(void)
 {
     for (int i = 0; i < MAX_CAT; i++) tex_free(&S.cc.gal_label[i][0]), tex_free(&S.cc.gal_label[i][1]);
     for (int i = 0; i < 6; i++) tex_free(&S.cc.gal_head[i]);
     tex_free(&S.cc.list_title);
     S.cc.list_title = text_render(S.f_semi, 24, "Add a Control", 0, &S.cc.ltw, &S.cc.lth);
-    float cw = (4 * CC_U + 3 * CC_G - 2 * GAL_PAD) / 4.0f, y = GAL_HEAD;
+    float cw = (GAL_WIDTH - 2 * GAL_PAD) / 4.0f, y = GAL_HEAD;
     const char *group = "";
     int col = 4;
     S.cc.gal_n = S.cc.gal_nhead = 0;
@@ -2642,7 +2648,7 @@ static void cc_gallery_build(void)
         if (strcmp(e->group, group) && S.cc.gal_nhead < 6) { /* a new group: its name */
             if (col < 4) y += GAL_ROW;
             group = e->group;
-            S.cc.gal_head[S.cc.gal_nhead] = text_render(S.f_semi, 18, group, 0, &S.cc.gal_hw[S.cc.gal_nhead], &S.cc.gal_hh[S.cc.gal_nhead]);
+            S.cc.gal_head[S.cc.gal_nhead] = text_render(S.f_semi, 22, group, 0, &S.cc.gal_hw[S.cc.gal_nhead], &S.cc.gal_hh[S.cc.gal_nhead]);
             S.cc.gal_hy[S.cc.gal_nhead++] = y;
             y += GAL_GROUP;
             col = 0;
@@ -2655,23 +2661,23 @@ static void cc_gallery_build(void)
         S.cc.gal_x[k] = GAL_PAD + col * cw + (cw - GAL_BTN) / 2;
         S.cc.gal_y[k] = y;
         int room = (int)cw + 6, w0, h0, split = -1, best = 1 << 30; /* (a name may reach into the gap) */
-        Tex *t = text_render(S.f_medium, 15, e->title, 0, &w0, &h0);
+        Tex *t = text_render(S.f_medium, 20, e->title, 0, &w0, &h0);
         tex_free(&t);
         for (const char *sp = e->title; w0 > room && (sp = strchr(sp, ' ')); sp++) { /* two lines: the split whose longer line is shortest */
             char first[48];
             int w1, w2, h;
             snprintf(first, sizeof first, "%.*s", (int)(sp - e->title), e->title);
-            t = text_render(S.f_medium, 15, first, 0, &w1, &h), tex_free(&t);
-            t = text_render(S.f_medium, 15, sp + 1, 0, &w2, &h), tex_free(&t);
+            t = text_render(S.f_medium, 20, first, 0, &w1, &h), tex_free(&t);
+            t = text_render(S.f_medium, 20, sp + 1, 0, &w2, &h), tex_free(&t);
             if ((w1 > w2 ? w1 : w2) < best) best = w1 > w2 ? w1 : w2, split = (int)(sp - e->title);
         }
         if (split >= 0) { /* "Dynamic" / "Tone Mapping" */
             char first[48];
             snprintf(first, sizeof first, "%.*s", split, e->title);
-            S.cc.gal_label[k][0] = text_render(S.f_medium, 15, first, room, &S.cc.gal_lw[k][0], &S.cc.gal_lh[k][0]);
-            S.cc.gal_label[k][1] = text_render(S.f_medium, 15, e->title + split + 1, room, &S.cc.gal_lw[k][1], &S.cc.gal_lh[k][1]);
+            S.cc.gal_label[k][0] = text_render(S.f_medium, 20, first, room, &S.cc.gal_lw[k][0], &S.cc.gal_lh[k][0]);
+            S.cc.gal_label[k][1] = text_render(S.f_medium, 20, e->title + split + 1, room, &S.cc.gal_lw[k][1], &S.cc.gal_lh[k][1]);
         } else {
-            S.cc.gal_label[k][0] = text_render(S.f_medium, 15, e->title, room, &S.cc.gal_lw[k][0], &S.cc.gal_lh[k][0]);
+            S.cc.gal_label[k][0] = text_render(S.f_medium, 20, e->title, room, &S.cc.gal_lw[k][0], &S.cc.gal_lh[k][0]);
         }
         col++;
     }
@@ -2784,7 +2790,7 @@ static void cc_long_press(void)
     if (S.cc.index >= S.cc.n) return;
     const CCItem *c = &S.cc.it[S.cc.index];
     int e = cc_cat(c->id);
-    sheet_open(c->title_s);
+    sheet_open(e >= 0 ? S.cc.cat[e].title : c->title_s);
     static const char *const NAME[5] = { "", "Small", "Wide", "", "Large" };
     for (int k = 0; e >= 0 && S.cc.cat[e].sizes[k]; k++) {
         int u = S.cc.cat[e].sizes[k];
@@ -4227,7 +4233,7 @@ static void draw_cc_list(float a)
  * as round buttons with their names under them; the focused one white, like the controls themselves */
 static void draw_cc_gallery(float a)
 {
-    float x = cc_grid_x(), y = cc_grid_y(), w = 4 * CC_U + 3 * CC_G, h = S.cc.gal_h;
+    float x = RIGHT - GAL_WIDTH, y = cc_grid_y(), w = GAL_WIDTH, h = S.cc.gal_h;
     if (!S.reduce_motion) y -= 12 * (1 - a); /* it settles in */
     r_shadow(x, y, w, h, 34, 30, 12, 0.35f * a);
     panel(0, x, y, w, h, 34, 1, 0, a);
@@ -4269,7 +4275,15 @@ static void draw_control_center(void)
     float stagger = S.cc.n > 1 ? fminf(0.04f, 0.45f / (S.cc.n - 1)) : 0, span = 1 - stagger * (S.cc.n > 1 ? S.cc.n - 1 : 0);
     Uint32 now = SDL_GetTicks();
     float ed = S.cc.editing ? open : 0; /* (also behind the gallery: still editing) */
-    if (ed > 0.004f) r_fill(0, 0, 0, (Uint8)(150 * ed)); /* editing: the home screen steps back, as iOS's does */
+    if (ed > 0.004f) {
+        r_fill(0, 0, 0, (Uint8)(150 * ed));
+        /* A solid editing surface keeps the dock out of the hint and Reset area.
+         * Use the same grid geometry as hit testing, including a full six-row layout. */
+        float ex = cc_grid_x() - 24, ey = cc_grid_y() - 24;
+        float eh = cc_rows() * (CC_U + CC_G) + 156;
+        r_shape(ex, ey, RIGHT - ex + 24, eh, 34, 24, 24, 28,
+                (Uint8)(255 * ed * (1 - lt)), 0, 1, 1);
+    }
     for (int i = 0; i < S.cc.n; i++) {
         CCItem *c = &S.cc.it[i];
         float x, y, w, h;
@@ -4350,7 +4364,7 @@ static void draw_control_center(void)
         draw_text(ht, hw, hh, RIGHT - hw, cc_grid_y() + cc_rows() * (CC_U + CC_G) + 4, (Uint8)(TEXT_STATIC * a));
         if (cc_rect(S.cc.n + 1, &x, &y, &w, &h)) { /* Reset: red, like sheets' destructive buttons */
             float g = fminf(fmaxf(S.cc.reset_s, 0), 1);
-            panel(0, x, y, w, h, h / 2, 1, g, a);
+            r_shape(x, y, w, h, h / 2, 48, 48, 54, (Uint8)(255 * a), 0, 1, 1);
             if (g > 0.01f) r_shape(x, y, w, h, h / 2, 245, 245, 247, (Uint8)(255 * a * g), 0, 1, 1);
             r_image(S.cc.reset, x + (w - S.cc.rsw) / 2, y + (h - S.cc.rsh) / 2, S.cc.rsw, S.cc.rsh, 255, (Uint8)(90 - 40 * g), (Uint8)(80 - 40 * g),
                     (Uint8)(255 * a), 0);

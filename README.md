@@ -6,7 +6,7 @@ A tvOS-style home screen for rooted LG webOS TVs, in a Liquid Glass look, with C
 
 ![Continue Watching in the Top Shelf](docs/screenshots/continue-watching.jpg)
 
-*Screenshots show a real TV's apps and Continue Watching, rendered with the desktop preview. The Jellyfin and Plex ones use placeholder shows.*
+*Screenshots show a real TV's apps and Continue Watching, rendered with the desktop preview. The Jellyfin and Plex ones use placeholder shows; Control Center examples use preview data.*
 
 > **Not affiliated with LG, Apple, Stremio, Trakt, Jellyfin, Plex or TMDB.** Home+ uses the TMDB API but is not endorsed or certified by TMDB. Home+ is an independent project. tvOS and Liquid Glass are Apple's names for Apple's designs; Home+ only borrows the look. It runs on **rooted** TVs and uses Stremio's, Trakt's and Plex's web APIs unofficially. Use it at your own risk.
 
@@ -25,7 +25,7 @@ A tvOS-style home screen for rooted LG webOS TVs, in a Liquid Glass look, with C
 ## Requirements
 
 - A **rooted** LG TV running webOS, with the **[Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel)** installed.
-- **Tested on:** LG C3 (OLED), webOS 23.20.59. Other recent webOS TVs may well work, but haven't been tried. If you try one, please open an issue saying how it went.
+- **Tested on:** LG C3 (OLED), webOS 23.20.59. Other recent webOS TVs may well work, but haven't been tried. If you try one, please [submit a compatibility report](../../issues/new?template=compatibility.yml), including successful installations.
 - **Optional:**
   - for Continue Watching, any of: a [Stremio](https://www.stremio.com) account and the Stremio app; a [Jellyfin](https://jellyfin.org) server and the Jellyfin app; a [Plex](https://www.plex.tv) server and the Plex app;
   - a [Trakt](https://trakt.tv) account;
@@ -71,6 +71,8 @@ From the top row, press **Up** to reach the clock at the top right, as on tvOS; 
 ![Control Center](docs/screenshots/control-center.jpg)
 
 **Control Center**, like tvOS's, opens from the clock: glass tiles under it for **Power Off**, **Wi-Fi** (your network; OK opens LG's network settings), **Screen Off** (sound keeps playing; any key brings the picture back), **Sound** (OK switches between TV speakers and HDMI ARC or eARC, and any other output the TV has used, like Optical: not a full picker), **Sleep Timer** (the minutes left; OK steps through LG's 10 to 240 minutes, and the TV turns off when it runs out), **Picture** (the picture mode; OK lists the modes LG offers for what's on, which differ for HDR and Dolby Vision), **Eye Comfort** (OK turns it on or off), and round buttons for **Inputs** (Live TV and the HDMI ports by LG's names, with what's plugged in, like "Soundbar · PS5"), **Recents**, **Accessibility** and **Settings**. A name too long for its tile scrolls while the tile has focus. Picture and Inputs open their list in the Control Center's place.
+
+![Add a Control gallery](docs/screenshots/control-gallery.jpg)
 
 **Make it yours**, like iOS 18's: hold **OK** on a control and choose **Edit Controls**. The controls wobble; **OK** picks one up and the arrows move it, holding **OK** changes its size (Small, Wide, Large) or removes it, and the **+** slot adds one: **Sound Mode**, **OLED Brightness**, **Energy Saving**, **Game Optimizer** and **Dynamic Tone Mapping** (whichever your TV has), and **Ambient Light** and **Screen Capture** when HyperHDR and PicCap are installed (they turn HyperHDR's LEDs and PicCap's capture on and off). **Reset** puts it back, and **Back** is done; every change is saved as you make it. Each action is also a service method, so anything that can send a luna call (a script, a home automation, a key-mapping tool) can use it:
 

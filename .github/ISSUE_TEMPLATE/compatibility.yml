@@ -1,0 +1,46 @@
+name: TV compatibility report
+description: Tell us how Home+ works on your TV, including successful installations.
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Home+ version
+      placeholder: 0.11.0
+    validations:
+      required: true
+  - type: input
+    id: tv
+    attributes:
+      label: TV model and webOS firmware version
+      description: Include the full model and firmware shown in About This TV.
+      placeholder: LG OLED55C3, webOS 23.20.59
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Installation and Home button setup
+      description: How you installed Home+, Homebrew Channel version, and LG Input Hook version if used.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: What you tested
+      description: Mark each item as working, failing, or not tested. Include failures even if most things work.
+      value: |
+        - First launch and setup:
+        - Launching apps and HDMI inputs:
+        - Home button, including after a TV restart:
+        - Remote arrows, OK, Back and pointer:
+        - Control Center (name the controls tested):
+        - Continue Watching (name the services tested):
+        - Standby and wake:
+        - Returning to LG Home / disabling takeover:
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Other observations
+      description: Slow responses, visual issues, or photos of the display. Remove account details before posting.
