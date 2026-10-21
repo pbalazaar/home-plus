@@ -33,6 +33,12 @@ StarfishSystemUIWindow {
     }
 
     function open(params) {
+        if (params.preload) { // compiled now, so the first time it opens is as quick as the rest
+            var p = Qt.createComponent("ControlCenterView.qml");
+            if (p.status !== Component.Ready) console.warn("[Home+] Control Center: " + p.errorString());
+            root.exit();
+            return;
+        }
         if (view) { // the Settings key again
             view.close();
             return;
@@ -59,7 +65,9 @@ StarfishSystemUIWindow {
         });
         root.show();
         view.forceActiveFocus();
+        shown.start();
     }
+    Timer { id: shown; interval: 16; onTriggered: root.call("overlay", { "event": "opened" }) } // after its first frame
 
     function failed(why) {
         console.warn("[Home+] Control Center: " + why);

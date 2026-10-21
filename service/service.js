@@ -489,10 +489,12 @@ const SYSUI = 'luna://com.webos.service.systemUIManager';
 const OVERLAY_ID = 'com.github.pmiraka.homeplus.cc';
 const OVERLAY_QML = path.join(APP_DIR, 'qml', 'ControlCenter.qml');
 let overlayOpen = false;
+let overlayAsked = 0; /* when it was asked for: how long it takes to show is logged */
 let overlayInputs = []; /* the inputs it offered: the only apps it may open */
 
 async function openOverlay() {
   if (!fs.existsSync(OVERLAY_QML)) throw new Error('not installed');
+  overlayAsked = Date.now();
   const state = await control.state();
   overlayInputs = (state.inputs || []).map((i) => i.appId);
   state.clock24 = !!(readConfig().prefs || {}).clock24; /* the launcher's clock */
@@ -548,6 +550,17 @@ function overlayMain() {
   return `file://${path.join(APP_DIR, name, 'ControlCenter.qml')}`;
 }
 
+// LG's compositor compiles a system UI's QML the first time it opens (~250 ms more): when the Settings
+// key opens the Control Center, have it compiled once, unseen, a little after the service starts.
+function preloadOverlay() {
+  if (!fs.existsSync(OVERLAY_QML) || !settingsKeyState().on || process.getuid?.() !== 0) return;
+  luna(SYSUI + '/launch', {
+    appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
+    params: { preload: true }
+  }).then((r) => log('control center overlay: preloaded', r && r.returnValue === false ? r.errorText : ''));
+}
+if (!process.env.HOMEPLUS_PREVIEW) setTimeout(preloadOverlay, 20000);
+
 function closeOverlay() {
   if (!overlayOpen) return;
   overlayOpen = false;
@@ -556,9 +569,13 @@ function closeOverlay() {
 
 // What it asks for (POST /api/overlay): {"event": "open", "target": "network" | "recents" |
 // "accessibility" | "settings"}, or {"event": "open", "app"} for an input it offered; {"event":
-// "closed"}; and {"event": "failed", "error"}, when its panel didn't load: LG's Quick Settings instead.
+// "opened"} (on screen) and {"event": "closed"}; and {"event": "failed", "error"}, when its panel
+// didn't load: LG's Quick Settings instead.
 async function overlayEvent(p) {
-  if (p.event === 'closed') {
+  if (p.event === 'opened') {
+    if (overlayAsked) log('control center overlay: on screen', Date.now() - overlayAsked, 'ms after the key');
+    overlayAsked = 0;
+  } else if (p.event === 'closed') {
     overlayOpen = false;
   } else if (p.event === 'failed') {
     overlayOpen = false;
