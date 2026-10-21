@@ -467,4 +467,7 @@ int is_hidden(const char *id);
 void app_color(const App *a, Uint8 *r, Uint8 *g, Uint8 *b);
 int keep_in_view(int first, int i, int visible, int n, int margin);
 
+/* tiles.c */
+void make_logo(App *a, const unsigned char *px, int w, int h);
+
 #endif
