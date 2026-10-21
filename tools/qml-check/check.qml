@@ -188,6 +188,16 @@ Item {
             relaunch(null);
             win.item.lifeCycleStatus.launch({ params: { again: "input", port: 47999, token: "t0ken" } });
             expect(win.item.exited && !win.item.view, "the Input key again, but the panel has gone: nothing opens");
+            break;
+        case 26:
+            relaunch({});
+            win.item.lifeCycleStatus.close(undefined); // LG closes it, and gives no reason
+            break;
+        case 27:
+        case 28:
+            break; // it animates out
+        case 29:
+            expect(w.exited, "LG closing it without a reason closes it");
             finish();
             break;
         }
