@@ -72,12 +72,14 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
 - Packages: `node tools/build.mjs` → `dist/com.github.pmiraka.homeplus_<version>_all.ipk` (one
   package: launcher, service, boot script, licence notices). Versions in `native/appinfo.json` and
   `service/package.json` must match.
-- CI (`.github/workflows/build.yml`) builds every push; pushing a `v*` tag publishes a release.
+- CI (`.github/workflows/ci.yml`) builds and tests every push; pushing a `v*` tag publishes a release
+  once its build, service tests and screens have passed. The toolchain is checked against
+  `docker/toolchain.sha256` (change it with `SDK_RELEASE`); the actions are pinned to commits.
 - Desktop preview (Linux): `tools/native-preview/run.sh` → `preview/native-*.png`
   (`HOMEPLUS_PREVIEW_OUT` for another folder). On a Mac: `tools/native-preview/Dockerfile` (Debian with
   `libsdl2-dev xvfb xauth libgles2 libegl1 libgl1-mesa-dri python3-pil nodejs`; the Makefile finds the
   arm64 libSDL2 by itself). The harness's service believes it's root unless `HOMEPLUS_PREVIEW_UNROOTED`.
-- Tests (`tools/test.sh`, CI: `.github/workflows/test.yml`): the service's unit tests and HTTP API
+- Tests (`tools/test.sh`, CI: `.github/workflows/ci.yml`): the service's unit tests and HTTP API
   tests in `test/` (Node's test runner; `node --test test/*.test.js`), every preview scene rendered and
   checked (`screens`), the .ipk built and checked (`package`: `tools/check-package.mjs` — contents,
   versions, modes, 32-bit ARM, only SDL 2.0.14 functions). Service modules read their mock URLs from env

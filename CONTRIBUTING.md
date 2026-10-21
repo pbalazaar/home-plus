@@ -26,7 +26,7 @@ The launcher is built with the webOS TV toolchain, [openlgtv/buildroot-nc4](http
 tools/docker-build.sh       # -> dist/com.github.pmiraka.homeplus_<version>_all.ipk
 ```
 
-**Linux, without Docker:** download `arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz` (or `-aarch64.tar.gz` on an ARM machine) from the toolchain's [releases](https://github.com/openlgtv/buildroot-nc4/releases). `docker/Dockerfile` names the release Home+ uses. Unpack it, run its `relocate-sdk.sh` once, then, with `make` and Node 16 or newer:
+**Linux, without Docker:** download `arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz` (or `-aarch64.tar.gz` on an ARM machine) from the toolchain's [releases](https://github.com/openlgtv/buildroot-nc4/releases). `docker/Dockerfile` names the release Home+ uses, and `docker/toolchain.sha256` has its files' checksums (`sha256sum -c`). Unpack it, run its `relocate-sdk.sh` once, then, with `make` and Node 16 or newer:
 
 ```sh
 WEBOS_SDK=/path/to/arm-webos-linux-gnueabi_sdk-buildroot tools/build-release.sh
@@ -97,4 +97,4 @@ For maintainers:
    git push origin v0.11.0
    ```
 
-CI builds the package, checks it and publishes a release with the `.ipk` attached.
+CI builds the package, checks it and runs every test; once all of that has passed, it publishes a release with the `.ipk` attached.

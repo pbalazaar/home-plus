@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds the native launcher for the TV and packages dist/*.ipk.
 # Needs WEBOS_SDK (the openlgtv/buildroot-nc4 toolchain), make and Node 16+.
-# Used by docker/Dockerfile and .github/workflows/release.yml.
+# Used by docker/Dockerfile and .github/workflows/ci.yml.
 set -eu
 cd "$(dirname "$0")/.."
 : "${WEBOS_SDK:?set WEBOS_SDK to the arm-webos-linux-gnueabi_sdk-buildroot directory}"

@@ -261,7 +261,7 @@ tools/test.sh                          # run the tests (tools/test.sh all: every
 
 Without Docker, unpack the toolchain, run its `relocate-sdk.sh`, then `WEBOS_SDK=/path/to/arm-webos-linux-gnueabi_sdk-buildroot tools/build-release.sh`. `tools/native-preview/run.sh` renders screenshots on a Linux desktop. It runs the real service against a stand-in for webOS, and the shots land in `preview/`.
 
-Every push is built and tested by GitHub Actions. Pushing a `v*` tag publishes a release with the `.ipk` attached. To send a change, see [CONTRIBUTING.md](CONTRIBUTING.md); everyone here follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as [SECURITY.md](SECURITY.md) explains. What Home+ does for accessibility, and what it can't do yet, is in [ACCESSIBILITY.md](ACCESSIBILITY.md).
+Every push is built and tested by GitHub Actions. Pushing a `v*` tag does the same, and once everything has passed, publishes a release with the `.ipk` attached. To send a change, see [CONTRIBUTING.md](CONTRIBUTING.md); everyone here follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as [SECURITY.md](SECURITY.md) explains. What Home+ does for accessibility, and what it can't do yet, is in [ACCESSIBILITY.md](ACCESSIBILITY.md).
 
 ## How it works
 

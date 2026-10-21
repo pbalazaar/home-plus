@@ -1,0 +1,140 @@
+# Builds and tests every push to main and every pull request:
+# - build: the .ipk for the TV, checked, attached to the run as the "homeplus-ipk" artifact;
+# - service: the service's tests, on Linux (running the service on the TV's Node 16) and on Windows;
+# - screens: the launcher's screens, rendered on a Linux desktop and checked (attached as the
+#   "screens" artifact, to look at in a review), and the Control Center's QML, loaded and driven.
+# Pushing a tag like v1.0.0 does the same, and once all of it has passed, publishes a GitHub release
+# with the package and its manifest attached.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read # only the release job writes (the release)
+
+concurrency: # a new push to a branch or pull request replaces its older run; a tag's run is never cut short
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  # openlgtv/buildroot-nc4 release; keep in step with docker/Dockerfile. Its files' SHA-256s are in
+  # docker/toolchain.sha256, and change with it.
+  SDK_RELEASE: 2026.08-webos
+  SDK_FILE: arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz
+  WEBOS_SDK: /home/runner/toolchain/arm-webos-linux-gnueabi_sdk-buildroot
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Cache the webOS toolchain
+        id: sdk-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/toolchain
+          key: webos-sdk-${{ env.SDK_RELEASE }}-x86_64-${{ hashFiles('docker/toolchain.sha256') }}
+
+      - name: Fetch the webOS toolchain, and check it's the one Home+ is built with
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/$SDK_FILE" "https://github.com/openlgtv/buildroot-nc4/releases/download/${SDK_RELEASE}/${SDK_FILE}"
+          (cd "$RUNNER_TEMP" && grep " $SDK_FILE\$" "$GITHUB_WORKSPACE/docker/toolchain.sha256" | sha256sum -c -)
+          mkdir -p /home/runner/toolchain
+          tar xzf "$RUNNER_TEMP/$SDK_FILE" -C /home/runner/toolchain
+          rm "$RUNNER_TEMP/$SDK_FILE"
+
+      - name: Point the toolchain at its location
+        run: "$WEBOS_SDK/relocate-sdk.sh"
+
+      - name: Build
+        run: tools/build-release.sh
+
+      - name: Check the package
+        run: node tools/check-package.mjs
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: homeplus-ipk
+          path: |
+            dist/*.ipk
+            dist/*.manifest.json
+
+  service:
+    name: Service (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            tv-node: 16 # the TV's Node: the API tests run the service on it
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: matrix.tv-node
+        with:
+          node-version: ${{ matrix.tv-node }}
+      - name: Run the service on the TV's Node
+        if: matrix.tv-node
+        run: echo "HOMEPLUS_SERVICE_NODE=$(node -p process.execPath)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Service tests
+        run: node --test test/*.test.js
+
+  screens:
+    name: Launcher screens
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Install the preview's packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libsdl2-dev xvfb xauth libgles2 libegl1 libgl1-mesa-dri python3-pil \
+            qmlscene qml-module-qtquick2 qml-module-qtgraphicaleffects qml-module-qtmultimedia
+      - name: Render and check every screen
+        run: tools/test.sh screens
+      - name: Load and drive the Control Center's QML
+        run: tools/test.sh qml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: screens
+          path: build/screens/
+          if-no-files-found: ignore
+
+  release:
+    name: Release
+    needs: [build, service, screens]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # the release
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: homeplus-ipk # the package the build job made and checked
+          path: dist
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }} # (no checkout here)
+        run: gh release create "$GITHUB_REF_NAME" dist/*.ipk dist/*.manifest.json --title "Home+ $GITHUB_REF_NAME" --generate-notes
