@@ -58,14 +58,33 @@ test('qml sizes: the overlay\'s gallery is Home+\'s', () => {
 
 test('qml sizes: the overlay\'s lists and sheets are Home+\'s', () => {
   for (const [q, c] of [['listRowH', 'CC_LIST_ROW_H'], ['listGap', 'CC_LIST_GAP'], ['listHead', 'CC_LIST_HEAD'], ['listPx', 'CC_LIST_PX'],
-    ['detailPx', 'CC_DETAIL_PX'], ['rowA', 'CC_ROW_A'], ['detailA', 'CC_DETAIL_A'], ['problemPx', 'CC_PROBLEM_PX'],
-    ['sheetW', 'SHEET_W'], ['sheetPad', 'PAD'], ['sheetBtn', 'SHEET_BH'], ['sheetGap', 'SHEET_GAP'], ['sheetTitlePx', 'SHEET_TITLE_PX'],
-    ['sheetBodyPx', 'SHEET_BODY_PX'], ['sheetButtonPx', 'SHEET_BUTTON_PX'], ['sheetTitleA', 'SHEET_TITLE_A'], ['sheetBodyA', 'SHEET_BODY_A'],
-    ['sheetLabelA', 'SHEET_LABEL_A']]) {
+    ['detailPx', 'CC_DETAIL_PX'], ['sheetW', 'SHEET_W'], ['sheetPad', 'PAD'], ['sheetBtn', 'SHEET_BH'], ['sheetGap', 'SHEET_GAP'],
+    ['sheetTitlePx', 'SHEET_TITLE_PX'], ['sheetBodyPx', 'SHEET_BODY_PX'], ['sheetButtonPx', 'SHEET_BUTTON_PX'], ['hintPx', 'HINT_PX'],
+    ['textStatic', 'TEXT_STATIC'], ['textSecondary', 'TEXT_SECONDARY'], ['textTertiary', 'TEXT_TERTIARY']]) {
     assert.equal(prop(q), define(c), `${q} is ${c}`);
   }
   assert.match(C, /"Picture Mode" : "Inputs"/, 'Home+ calls its list Picture Mode');
   assert.match(QML, /"Picture Mode" : "Inputs"/, 'and so does the overlay');
+});
+
+test('qml sizes: the editing hints say the same in both', () => {
+  const hints = [...C.matchAll(/S\.cc\.(?:edit_hint|move_hint|no_room) = text_render\(S\.f_medium, HINT_PX, "([^"]+)"/g)]
+    .map((m) => m[1].replace(/\\xC2\\xB7/g, '·'));
+  assert.equal(hints.length, 3, 'Home+ has three');
+  for (const h of hints) assert.ok(QML.includes(`"${h}"`), `the overlay says "${h}"`);
+});
+
+/* what's on screen: the string literals of the launcher and the overlay that aren't JSON, paths or formats' innards */
+function onScreen(src) {
+  return [...src.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => m[1]).filter((t) => /[A-Za-z]{2,} [A-Za-z]/.test(t) && !/[{}\/]|\\"/.test(t));
+}
+
+test('copy: apostrophes are curly, and no room is "No room"', () => {
+  for (const [file, src] of [['main.c', C], ['ControlCenterView.qml', QML]]) {
+    const straight = onScreen(src).filter((t) => /[A-Za-z]'[a-z]/.test(t));
+    assert.deepEqual(straight, [], `${file}: straight apostrophes`);
+    assert.doesNotMatch(src, /No Room/, `${file}: "No room", as the hints are in sentence case`);
+  }
 });
 
 test('qml sizes: one red for what can\'t be undone, on glass and on white, in both', () => {

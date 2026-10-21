@@ -75,15 +75,16 @@
 #define SHEET_TITLE_PX 30              /* its title, its words, its buttons */
 #define SHEET_BODY_PX 26
 #define SHEET_BUTTON_PX 31
-#define SHEET_TITLE_A 200              /* of 255: its title, its words, a button's label (focused: all of it) */
-#define SHEET_BODY_A 185
-#define SHEET_LABEL_A 235
 #define RED_ON_GLASS 255, 90, 80       /* what can't be undone: its label on glass, */
 #define RED_ON_WHITE 215, 40, 40       /* and on a focused (white) button */
 #define ICON_FIT 256                   /* icons feed logos, covers and the big Top Shelf tile */
 #define THUMB_FIT_W 480                /* rail thumbnails: cards, and briefly the background */
 #define THUMB_FIT_H 270
 #define TEXT_STATIC 218                /* OLED: static text stays at ~85% white */
+#define TEXT_SECONDARY 179             /* 70%: values, details, sheets' words, hints */
+#define TEXT_TERTIARY 140              /* 55%: group names, a row's âº, Settings' values */
+#define HINT_PX 26                     /* a hint: what the remote's keys do here */
+#define HEADING_PX 27                  /* the clock, and the Top Shelf's heading as big */
 
 #define MAX_APPS 128
 #define MAX_RAIL 16
@@ -114,9 +115,6 @@ enum { SRC_NONE, SRC_STREMIO, SRC_JELLYFIN, SRC_PLEX, SRC_COUNT };
 #define CC_LIST_HEAD 66  /* and its title's band */
 #define CC_LIST_PX 24    /* a row's name, and its tick */
 #define CC_DETAIL_PX 18  /* a row's detail: "Nothing Connected" */
-#define CC_ROW_A 235     /* of 255: a row's name (and tick) when it isn't focused, */
-#define CC_DETAIL_A 179  /* and its detail (70%) */
-#define CC_PROBLEM_PX 22 /* what went wrong, in the hint's place under the grid: "No room for it at that size" */
 static const struct { const char *name; int icon; } CC_ICONS[] = { /* the service names a control's glyph */
     { "power", ICON_POWER }, { "wifi", ICON_WIFI }, { "ethernet", ICON_ETHERNET }, { "screenOff", ICON_SCREEN_OFF },
     { "sound", ICON_SOUND }, { "timer", ICON_TIMER }, { "input", ICON_INPUT }, { "recents", ICON_RECENTS },
@@ -813,13 +811,13 @@ static void rail_fill(cJSON *arr, int src, const char *app, const char *heading,
     if (src != S.rail_source || strcmp(app, S.rail_app)) { /* another carousel: its heading, from its first title */
         char hint[160];
         tex_free(&S.heading_tex);
-        S.heading_tex = text_render(S.f_semi, 27, heading, 0, &S.hw, &S.hh); /* as big as the clock's */
-        snprintf(hint, sizeof hint, "Press OK to open %s", opens);
+        S.heading_tex = text_render(S.f_semi, HEADING_PX, heading, 0, &S.hw, &S.hh); /* as big as the clock's */
+        snprintf(hint, sizeof hint, "OK opens %s", opens);
         tex_free(&S.rail_hint);
-        S.rail_hint = text_render(S.f_medium, 26, hint, 0, &S.rail_hint_w, &S.rail_hint_h);
+        S.rail_hint = text_render(S.f_medium, HINT_PX, hint, 0, &S.rail_hint_w, &S.rail_hint_h);
         snprintf(hint, sizeof hint, "Left and right for more  \xC2\xB7  OK opens %s", opens); /* while you step through them */
         tex_free(&S.rail_browse);
-        S.rail_browse = text_render(S.f_medium, 26, hint, 0, &S.rail_browse_w, &S.rail_browse_h);
+        S.rail_browse = text_render(S.f_medium, HINT_PX, hint, 0, &S.rail_browse_w, &S.rail_browse_h);
         S.rail_source = src;
         snprintf(S.rail_app, sizeof S.rail_app, "%s", app);
         S.rail_sig[0] = 0;
@@ -1370,7 +1368,7 @@ static void handle_result(Result *r)
                 net_wake_service();
                 S.next_retry = SDL_GetTicks() + 2000;
             }
-            toast(S.wake_tries < 10 ? "Starting the Home+ service\xE2\x80\xA6" : "Home+ service isn't responding. Is the Home+ Service package installed?", 600000);
+            toast(S.wake_tries < 10 ? "Starting the Home+ service\xE2\x80\xA6" : "The Home+ service isn\xE2\x80\x99t responding. Restart the TV, or reinstall Home+.", 600000);
         }
         if (S.service_ok && S.toast_until > SDL_GetTicks() + 100000) S.toast_until = 0;
         break;
@@ -1381,11 +1379,12 @@ static void handle_result(Result *r)
     case TAG_CONTROL:
         if (r->status == 200) {
             parse_control(r->body);
-        } else if (S.cc.ran >= 0 && S.cc.ran < S.cc.n) { /* a control the TV refused shakes, and shows how things are */
+        } else if (S.cc.ran >= 0 && S.cc.ran < S.cc.n) { /* a control the TV refused shakes, says so, and shows how things are */
             S.cc.it[S.cc.ran].shake = SDL_GetTicks();
+            cc_problem("The TV didn\xE2\x80\x99t do that");
             net_get_json("/api/control", TAG_CONTROL, 0, 0);
         } else if (r->status) {
-            toast("The TV didn\xE2\x80\x99t do that.", 3000);
+            toast("The TV didn\xE2\x80\x99t do that", 3000);
         }
         S.cc.ran = -1;
         break;
@@ -1441,7 +1440,7 @@ static void handle_result(Result *r)
                 S.settings_key_available = cJSON_IsTrue(cJSON_GetObjectItem(sk, "available"));
                 S.piccap = cJSON_IsTrue(cJSON_GetObjectItem(o, "piccap"));
                 if (!strcmp(S.home_mode, "redirect") && !S.noflash_active && r->tag == TAG_HOME_SET)
-                    toast("No-flash mode isn\xE2\x80\x99t available on this TV; using standard mode.", 5000);
+                    toast("No-flash mode isn\xE2\x80\x99t available on this TV; using standard mode", 5000);
                 cJSON_Delete(o);
             }
         }
@@ -1595,7 +1594,7 @@ static void handle_result(Result *r)
             S.away = 0;
             S.launching = 0;
             if (S.recents.zooming) sw_reset();
-            toast("Couldn\xE2\x80\x99t open that app.", 3500);
+            toast("Couldn\xE2\x80\x99t open that app", 3500);
         }
         break;
     }
@@ -2603,7 +2602,7 @@ static int cc_find(const char *id)
 static void cc_problem(const char *text)
 {
     tex_free(&S.cc.problem);
-    if (text) S.cc.problem = text_render(S.f_medium, CC_PROBLEM_PX, text, 4 * CC_U + 3 * CC_G, &S.cc.prw, &S.cc.prh);
+    if (text) S.cc.problem = text_render(S.f_medium, HINT_PX, text, 4 * CC_U + 3 * CC_G, &S.cc.prw, &S.cc.prh);
 }
 
 /* asks the service to do something (the overlay's run()): what went wrong before is let go */
@@ -3008,11 +3007,11 @@ static void activate(void)
             if (S.rail_source == SRC_FEATURED) {
                 snprintf(hint, sizeof hint, "Search for \xE2\x80\x9C%s\xE2\x80\x9D in %s", name, a->title);
                 launch(a->id, hint);
-                snprintf(hint, sizeof hint, "Opening %s. Search for \xE2\x80\x9C%s\xE2\x80\x9D", a->title, name);
+                snprintf(hint, sizeof hint, "Opening %s. Search for \xE2\x80\x9C%s\xE2\x80\x9D.", a->title, name);
             } else {
                 snprintf(hint, sizeof hint, "\xE2\x80\x9C%s\xE2\x80\x9D is in %s\xE2\x80\x99s Continue Watching", name, a->title);
                 launch(a->id, hint);
-                snprintf(hint, sizeof hint, "Opening %s. Look for \xE2\x80\x9C%s\xE2\x80\x9D in Continue Watching", a->title, name);
+                snprintf(hint, sizeof hint, "Opening %s. Look for \xE2\x80\x9C%s\xE2\x80\x9D in Continue Watching.", a->title, name);
             }
             toast(hint, 6000);
         }
@@ -3437,7 +3436,7 @@ static void update_clock(void)
     if (S.clock24) snprintf(buf, sizeof buf, "%02d:%02d", t->tm_hour, t->tm_min);
     else snprintf(buf, sizeof buf, "%d:%02d %s", h12, t->tm_min, t->tm_hour < 12 ? "AM" : "PM");
     tex_free(&S.clock_tex);
-    S.clock_tex = text_render(S.f_semi, 27, buf, 0, &S.clock_w, &S.clock_h);
+    S.clock_tex = text_render(S.f_semi, HEADING_PX, buf, 0, &S.clock_w, &S.clock_h);
     S.clock_min = m;
 }
 
@@ -3819,7 +3818,7 @@ static void draw_app_text(App *a, Uint8 alpha, float dy)
         if (!S.connect_tex[src]) {
             char t[120];
             snprintf(t, sizeof t, "Connect %s in Settings \xE2\x86\x92 Accounts to see Continue Watching", SRC_NAME[src]);
-            S.connect_tex[src] = text_render(S.f_medium, 28, t, 0, &S.connect_w[src], &S.connect_h[src]);
+            S.connect_tex[src] = text_render(S.f_medium, HINT_PX, t, 0, &S.connect_w[src], &S.connect_h[src]);
         }
         sub = S.connect_tex[src], sw = S.connect_w[src], sh = S.connect_h[src];
     }
@@ -3829,7 +3828,7 @@ static void draw_app_text(App *a, Uint8 alpha, float dy)
         sh = S.top_hh[S.top_index];
     }
     draw_text(sub, sw, sh, LEFT, 340 + a->bh + 10 + dy,
-              (Uint8)(alpha * 0.92f * (1 - fminf(fmaxf(S.cc.t, 0), 1)))); /* the Control Center says what OK does */
+              (Uint8)(TEXT_SECONDARY * alpha / 255 * (1 - fminf(fmaxf(S.cc.t, 0), 1)))); /* the Control Center says what OK does */
 }
 
 static void draw_pic(Pic p, Uint8 alpha)
@@ -3884,7 +3883,7 @@ static void draw_rail_content(RailItem *cur, Uint8 alpha, float title, float ske
         draw_text(cur->title_tex, cur->tw, cur->th, LEFT - 3, y, ta);
         y += cur->th + 8;
     }
-    draw_text(cur->meta_tex, cur->mw, cur->mh, LEFT, y, (Uint8)(ta * 0.92f));
+    draw_text(cur->meta_tex, cur->mw, cur->mh, LEFT, y, (Uint8)(TEXT_STATIC * ta / 255));
     y += cur->mh + 14;
     if (cur->progress > 0) {
         const float bw = 240, bh = 5;
@@ -3893,8 +3892,8 @@ static void draw_rail_content(RailItem *cur, Uint8 alpha, float title, float ske
         y += bh + 16;
     }
     float cc = 1 - fminf(fmaxf(S.cc.t, 0), 1); /* the Control Center, open, says what OK does */
-    if (S.zone == ZONE_RAIL && S.rail_browse) draw_text(S.rail_browse, S.rail_browse_w, S.rail_browse_h, LEFT, y, (Uint8)(alpha * 0.85f));
-    else draw_text(S.rail_hint, S.rail_hint_w, S.rail_hint_h, LEFT, y, (Uint8)(alpha * 0.7f * cc)); /* it can't resume from here */
+    if (S.zone == ZONE_RAIL && S.rail_browse) draw_text(S.rail_browse, S.rail_browse_w, S.rail_browse_h, LEFT, y, (Uint8)(TEXT_SECONDARY * alpha / 255));
+    else draw_text(S.rail_hint, S.rail_hint_w, S.rail_hint_h, LEFT, y, (Uint8)(TEXT_SECONDARY * alpha / 255 * cc)); /* it can't resume from here */
     y += S.rail_hint_h + 22;
     int browsing = S.zone == ZONE_RAIL;
     for (int i = 0; n > 1 && i < n; i++) {
@@ -4113,7 +4112,7 @@ static void draw_scene(int backdrop)
     if (S.moving) { /* how to finish, in a capsule at the top while an app is being moved */
         static Tex *hint;
         static int hw, hh;
-        if (!hint) hint = text_render(S.f_medium, 26, "Move it with the arrows  \xC2\xB7  OK or Back when it\xE2\x80\x99s in place", 0, &hw, &hh);
+        if (!hint) hint = text_render(S.f_medium, HINT_PX, "Arrows move it  \xC2\xB7  OK puts it down", 0, &hw, &hh);
         float pw = hw + 56, px = (W - pw) / 2;
         panel(backdrop, px, SAFE_Y, pw, BAR, BAR / 2, 1, 0, 1);
         draw_text(hint, hw, hh, px + 28, SAFE_Y + (BAR - hh) / 2.0f, TEXT_STATIC);
@@ -4171,7 +4170,7 @@ static void draw_sheet_button(const SheetItem *it, int focused, float bx, float 
         r_shape(bx, y, bw, BH, BH / 2, 12, 12, 16, (Uint8)(95 * a / 255), 0, 1, 1);
         r_shape(bx, y, bw, BH, BH / 2, 255, 255, 255, (Uint8)(18 * a / 255), 0, 1, 1);
         lr = lg = lb = 255;
-        la = (Uint8)(SHEET_LABEL_A * a / 255);
+        la = (Uint8)(TEXT_STATIC * a / 255);
     }
     if (it->destructive) lr = RED[!!focused][0], lg = RED[!!focused][1], lb = RED[!!focused][2];
     r_image(it->tex, tx, ty, (float)it->w, (float)it->h, lr, lg, lb, la, 0);
@@ -4188,13 +4187,13 @@ static void draw_sheet_button(const SheetItem *it, int focused, float bx, float 
         static int cw, ch;
         if (!chev) chev = text_render(S.f_semi, 34, "\xE2\x80\xBA", 0, &cw, &ch);
         Uint8 c = focused ? 120 : 255;
-        r_image(chev, right - cw, y + (BH - ch) / 2 - 2, (float)cw, (float)ch, c, c, focused ? 126 : 255, (Uint8)(a * (focused ? 1 : 0.5f)), 0);
+        r_image(chev, right - cw, y + (BH - ch) / 2 - 2, (float)cw, (float)ch, c, c, focused ? 126 : 255, (Uint8)(focused ? a : TEXT_TERTIARY * a / 255), 0);
         right -= cw + 14;
     }
     if (it->val) {
         Uint8 c = focused ? 88 : 255;
         r_image(it->val, right - it->vw, y + (BH - it->vh) / 2, (float)it->vw, (float)it->vh, c, c, focused ? 94 : 255,
-                (Uint8)(a * (focused ? 1 : 0.58f)), 0);
+                (Uint8)(focused ? a : TEXT_TERTIARY * a / 255), 0);
     }
 }
 
@@ -4225,10 +4224,10 @@ static void draw_sheet(void)
     float c = (t - 0.55f) / 0.45f; /* content fades in once the panel is nearly there */
     Uint8 ca = (Uint8)(255 * (c < 0 ? 0 : c > 1 ? 1 : c));
     if (!ca) return;
-    draw_text(S.sheet.title, S.sheet.tw, S.sheet.th, px + (pw - S.sheet.tw) / 2, py + PAD, (Uint8)(SHEET_TITLE_A * ca / 255));
+    draw_text(S.sheet.title, S.sheet.tw, S.sheet.th, px + (pw - S.sheet.tw) / 2, py + PAD, (Uint8)(TEXT_STATIC * ca / 255));
     float y = py + PAD + S.sheet.th + 24;
     for (int i = 0; i < S.sheet.nbody; i++) {
-        draw_text(S.sheet.body[i], S.sheet.bw[i], S.sheet.bh[i], px + (pw - S.sheet.bw[i]) / 2, y, (Uint8)(SHEET_BODY_A * ca / 255));
+        draw_text(S.sheet.body[i], S.sheet.bw[i], S.sheet.bh[i], px + (pw - S.sheet.bw[i]) / 2, y, (Uint8)(TEXT_SECONDARY * ca / 255));
         y += S.sheet.bh[i] + 6;
     }
     if (S.sheet.nbody) y += 18;
@@ -4361,11 +4360,11 @@ static void draw_cc_list(float a)
         float ry = y + head + r * (rh + gap), rx = x + 14, rw = w - 28;
         int f = i == S.cc.list_index;
         if (f) r_shape(rx, ry, rw, rh, rh / 2, 245, 245, 247, al, 0, 1, 1);
-        Uint8 c = f ? 28 : 255, ra = (Uint8)(f ? al : CC_ROW_A * al / 255);
+        Uint8 c = f ? 28 : 255, ra = (Uint8)(f ? al : TEXT_STATIC * al / 255);
         r_image(S.cc.list_row[i], rx + 24, ry + (rh - S.cc.lrh[i]) / 2, S.cc.lrw[i], S.cc.lrh[i], c, c, c, ra, 0);
         if (S.cc.list_val[i]) /* the tick as its name; a detail dimmer */
             r_image(S.cc.list_val[i], rx + rw - 24 - S.cc.lvw[i], ry + (rh - S.cc.lvh[i]) / 2, S.cc.lvw[i], S.cc.lvh[i], c, c, c,
-                    S.cc.list_kind == 1 ? ra : (Uint8)(CC_DETAIL_A * al / 255), 0);
+                    S.cc.list_kind == 1 ? ra : (Uint8)(TEXT_SECONDARY * al / 255), 0);
     }
 }
 
@@ -4381,12 +4380,12 @@ static void draw_cc_gallery(float a)
     draw_text(S.cc.list_title, S.cc.ltw, S.cc.lth, x + (w - S.cc.ltw) / 2, y + (GAL_HEAD - S.cc.lth) / 2 + 3, al);
     for (int g = 0; g < S.cc.gal_nhead; g++) /* the group's name, small, on the left like iOS's */
         draw_text(S.cc.gal_head[g], S.cc.gal_hw[g], S.cc.gal_hh[g], x + GAL_PAD + 8, y + S.cc.gal_hy[g] + GAL_GROUP_TOP,
-                  (Uint8)(al * 0.6f));
+                  (Uint8)(TEXT_TERTIARY * al / 255));
     if (!S.cc.gal_n) { /* nothing left to add */
         static Tex *none;
         static int nw, nh;
         if (!none) none = text_render(S.f_medium, 20, "Every control this TV has is placed.", 0, &nw, &nh);
-        draw_text(none, nw, nh, x + (w - nw) / 2, y + GAL_HEAD + 14, (Uint8)(al * 0.7f));
+        draw_text(none, nw, nh, x + (w - nw) / 2, y + GAL_HEAD + 14, (Uint8)(TEXT_SECONDARY * al / 255));
     }
     for (int k = 0; k < S.cc.gal_n; k++) {
         const __typeof__(S.cc.cat[0]) *e = &S.cc.cat[S.cc.gal_cat[k]];
@@ -4401,7 +4400,7 @@ static void draw_cc_gallery(float a)
         float ly = by + GAL_BTN + 8;
         for (int l = 0; l < 2 && S.cc.gal_label[k][l]; l++) {
             draw_text(S.cc.gal_label[k][l], S.cc.gal_lw[k][l], S.cc.gal_lh[k][l], bx + GAL_BTN / 2.0f - S.cc.gal_lw[k][l] / 2.0f, ly,
-                      (Uint8)(al * (f ? 1 : 0.75f)));
+                      (Uint8)(f ? al : TEXT_STATIC * al / 255));
             ly += S.cc.gal_lh[k][l] - 2;
         }
     }
@@ -4470,7 +4469,7 @@ static void draw_control_center(void)
             float vh = c->value ? c->vh : 0, ty = cy - (c->th + vh) / 2;
             Uint32 since = i == S.cc.index && S.cc.open && !S.cc.editing ? S.cc.focus_at : 0; /* only the focused one scrolls */
             draw_marquee(c->title, c->tw, c->th, tx, ty, room, col, ca, since);
-            draw_marquee(c->value, c->vw, c->vh, tx, ty + c->th, room, col, (Uint8)(ca * 0.72f), since);
+            draw_marquee(c->value, c->vw, c->vh, tx, ty + c->th, room, col, (Uint8)(TEXT_SECONDARY * ca / 255), since);
         } else { /* Small: the glyph; a stepper's new value shows under it for a moment */
             float is = 40 * sc;
             if (disc) cc_disc(cx, cy, is * 1.4f, g, ti);
@@ -4491,15 +4490,15 @@ static void draw_control_center(void)
             r_image(cc_glyph(ICON_PLUS, 0), x + (w - 34) / 2, y + (h - 34) / 2, 34, 34, col, col, col, (Uint8)(255 * a), 0);
         }
         if (!S.cc.edit_hint) { /* what OK does, under the grid */
-            S.cc.edit_hint = text_render(S.f_medium, 22, "OK to move  \xC2\xB7  Hold for options", 0, &S.cc.ehw, &S.cc.ehh);
-            S.cc.move_hint = text_render(S.f_medium, 22, "Arrows move it  \xC2\xB7  OK puts it down", 0, &S.cc.mhw, &S.cc.mhh);
-            S.cc.no_room = text_render(S.f_medium, 22, "No Room  \xC2\xB7  Hold OK on one for options", 0, &S.cc.nrw, &S.cc.nrh);
+            S.cc.edit_hint = text_render(S.f_medium, HINT_PX, "OK picks it up  \xC2\xB7  Hold for options", 0, &S.cc.ehw, &S.cc.ehh);
+            S.cc.move_hint = text_render(S.f_medium, HINT_PX, "Arrows move it  \xC2\xB7  OK puts it down", 0, &S.cc.mhw, &S.cc.mhh);
+            S.cc.no_room = text_render(S.f_medium, HINT_PX, "No room  \xC2\xB7  Hold OK on one for options", 0, &S.cc.nrw, &S.cc.nrh);
             S.cc.reset = text_render(S.f_semi, 24, "Reset", 0, &S.cc.rsw, &S.cc.rsh);
         }
         Tex *ht = S.cc.picked >= 0 ? S.cc.move_hint : S.cc.plus_row < 0 ? S.cc.no_room : S.cc.edit_hint;
         int hw = ht == S.cc.move_hint ? S.cc.mhw : ht == S.cc.no_room ? S.cc.nrw : S.cc.ehw;
         int hh = ht == S.cc.move_hint ? S.cc.mhh : ht == S.cc.no_room ? S.cc.nrh : S.cc.ehh;
-        if (!S.cc.problem) draw_text(ht, hw, hh, RIGHT - hw, cc_grid_y() + cc_rows() * (CC_U + CC_G) + 4, (Uint8)(TEXT_STATIC * a));
+        if (!S.cc.problem) draw_text(ht, hw, hh, RIGHT - hw, cc_grid_y() + cc_rows() * (CC_U + CC_G) + 4, (Uint8)(TEXT_SECONDARY * a));
         if (cc_rect(S.cc.n + 1, &x, &y, &w, &h)) { /* Reset: red, like sheets' destructive buttons */
             static const Uint8 G[3] = { RED_ON_GLASS }, F[3] = { RED_ON_WHITE };
             float g = fminf(fmaxf(S.cc.reset_s, 0), 1);
@@ -4540,8 +4539,8 @@ static void draw_switcher(void)
         static int cw[2], ch[2];
         static const char *const text[2] = { "No apps running", "Couldn\xE2\x80\x99t load recent apps" };
         int which = S.recents.failed;
-        if (!cap[which]) cap[which] = text_render(S.f_medium, 30, text[which], 0, &cw[which], &ch[which]);
-        draw_text(cap[which], cw[which], ch[which], (W - cw[which]) / 2.0f, SW_CY - ch[which] / 2.0f, (Uint8)(ca * 0.8f));
+        if (!cap[which]) cap[which] = text_render(S.f_medium, HINT_PX, text[which], 0, &cw[which], &ch[which]);
+        draw_text(cap[which], cw[which], ch[which], (W - cw[which]) / 2.0f, SW_CY - ch[which] / 2.0f, (Uint8)(TEXT_SECONDARY * ca / 255));
         return;
     }
     for (int i = 0; i < S.recents.n; i++)
@@ -4550,9 +4549,9 @@ static void draw_switcher(void)
     if (S.recents.zooming) return;
     static Tex *hint, *close_all;
     static int hw, hh, cw, ch;
-    if (!hint) hint = text_render(S.f_medium, 26, "OK opens  \xC2\xB7  Up closes", 0, &hw, &hh);
+    if (!hint) hint = text_render(S.f_medium, HINT_PX, "OK opens  \xC2\xB7  Up closes", 0, &hw, &hh);
     if (!close_all) close_all = text_render(S.f_medium, SHEET_BUTTON_PX, "Close All", 0, &cw, &ch);
-    draw_text(hint, hw, hh, (W - hw) / 2.0f, SW_CY + SW_H / 2.0f + 48, (Uint8)(ca * 0.62f));
+    draw_text(hint, hw, hh, (W - hw) / 2.0f, SW_CY + SW_H / 2.0f + 48, (Uint8)(TEXT_SECONDARY * ca / 255));
     SheetItem it = { 0 };
     it.tex = close_all;
     it.w = cw;
@@ -4636,16 +4635,16 @@ static int load_assets(void)
     S.scrim_v = gfx_gradient(1, 0.0f, 0.6f);
     S.scrim_h = gfx_gradient(0, 0.72f, 0.0f); /* text over daylight artwork stays readable */
     S.scrim_top = gfx_gradient(1, 0.45f, 0.0f);
-    S.heading_tex = text_render(S.f_semi, 24, "Continue Watching \xC2\xB7 Stremio", 0, &S.hw, &S.hh);
-    S.rail_hint = text_render(S.f_medium, 26, "Press OK to open Stremio", 0, &S.rail_hint_w, &S.rail_hint_h);
+    S.heading_tex = text_render(S.f_semi, HEADING_PX, "Continue Watching \xC2\xB7 Stremio", 0, &S.hw, &S.hh);
+    S.rail_hint = text_render(S.f_medium, HINT_PX, "OK opens Stremio", 0, &S.rail_hint_w, &S.rail_hint_h);
     static const char *const top_names[TOP_COUNT] = { "Control Center" };
     for (int i = 0; i < TOP_COUNT; i++) {
         char hint[96];
         snprintf(hint, sizeof hint, "OK opens %s  \xC2\xB7  Down returns to your apps", top_names[i]);
-        S.top_hint[i] = text_render(S.f_medium, 28, hint, 0, &S.top_hw[i], &S.top_hh[i]);
+        S.top_hint[i] = text_render(S.f_medium, HINT_PX, hint, 0, &S.top_hw[i], &S.top_hh[i]);
     }
-    S.sub_tex = text_render(S.f_medium, 28, "Press OK to open \xC2\xB7 Hold for options", 0, &S.sw, &S.sh);
-    S.sub_first_tex = text_render(S.f_medium, 28, "Press OK to open \xC2\xB7 Hold for options \xC2\xB7 Back for Recents", 0,
+    S.sub_tex = text_render(S.f_medium, HINT_PX, "OK opens  \xC2\xB7  Hold for options", 0, &S.sw, &S.sh);
+    S.sub_first_tex = text_render(S.f_medium, HINT_PX, "OK opens  \xC2\xB7  Hold for options  \xC2\xB7  Back for Recents", 0,
                                   &S.sfw, &S.sfh); /* Back on the first app opens Recents */
     S.top_tex[TOP_SETTINGS] = gfx_icon(ICON_CONTROLS, 64); /* the Control Center's glyph: drawn at 30 px, 64 stays sharp */
     S.cc.picked = S.cc.ran = -1; /* the controls come from the service (their glyphs are made when first drawn) */

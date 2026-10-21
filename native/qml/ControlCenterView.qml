@@ -30,15 +30,12 @@ FocusScope {
     readonly property color red: "#ff5a50"    // what can't be undone: its label on glass (main.c: RED_ON_GLASS),
     readonly property color redOnWhite: "#d72828" // and on a focused (white) button (RED_ON_WHITE)
 
-    // Home+'s lists and sheets (main.c: CC_LIST_*, CC_*_PX, CC_*_A; SHEET_*, PAD): opacities are of 255
+    // Home+'s lists, sheets and hints (main.c: CC_LIST_*, CC_DETAIL_PX; SHEET_*, PAD; HINT_PX)
     readonly property int listRowH: 56
     readonly property int listGap: 6
     readonly property int listHead: 66
     readonly property int listPx: 24
     readonly property int detailPx: 18
-    readonly property int rowA: 235
-    readonly property int detailA: 179
-    readonly property int problemPx: 22
     readonly property int sheetW: 720
     readonly property int sheetPad: 40
     readonly property int sheetBtn: 80
@@ -46,9 +43,18 @@ FocusScope {
     readonly property int sheetTitlePx: 30
     readonly property int sheetBodyPx: 26
     readonly property int sheetButtonPx: 31
-    readonly property int sheetTitleA: 200
-    readonly property int sheetBodyA: 185
-    readonly property int sheetLabelA: 235
+    readonly property int hintPx: 26
+    // text not on white, of 255 (main.c: TEXT_STATIC, TEXT_SECONDARY, TEXT_TERTIARY): what stays on
+    // screen; values, details, sheets' words, hints; group names
+    readonly property int textStatic: 218
+    readonly property int textSecondary: 179
+    readonly property int textTertiary: 140
+    // how long things take (Home+ moves on springs; these are their nearest steps): a press, a frame
+    // crossfading; focus, fades, moves, lists, sheets, closing; opening; a control settling in its place
+    readonly property int quick: 90
+    readonly property int standard: 220
+    readonly property int slow: 320
+    readonly property int settle: 450
 
     readonly property bool still: !!cc.reduceMotion      // Settings -> Accessibility: Reduce Motion
     readonly property bool solid: !!cc.reduceTransparency // ... and Reduce Transparency
@@ -119,7 +125,7 @@ FocusScope {
         visible: false; width: 160; height: 90; sourceSize: Qt.size(160, 90); cache: false; asynchronous: true
         onStatusChanged: if (status === Image.Ready) view.show(1); else if (status === Image.Error) view.hasFrame = false
     }
-    NumberAnimation { id: fadeTo; target: view; property: "fade"; duration: 90; easing.type: Easing.InOutQuad
+    NumberAnimation { id: fadeTo; target: view; property: "fade"; duration: view.quick; easing.type: Easing.InOutQuad
         onStopped: if (view.frameDue) view.loadFrame() }
     function show(which) { // the first frame at once; then each fades in
         if (!hasFrame) fade = which;
@@ -264,7 +270,7 @@ FocusScope {
         var asked = edits;
         host.call("control", body, function (r) {
             if (r.returnValue === false) {
-                problem = r.errorText || "That didn't work";
+                problem = "The TV didn’t do that"; // as Home+ says it (the service's log has why)
                 var t = grid.itemAt(focusIndex);
                 if (t) t.shake();
                 return;
@@ -588,7 +594,7 @@ FocusScope {
         clock.leave();
         bye.start();
     }
-    Timer { id: bye; interval: 320; onTriggered: view.closed() }
+    Timer { id: bye; interval: view.slow; onTriggered: view.closed() } // after the closing ones
     Timer { id: idle; interval: 60000; onTriggered: view.close() } // left open, untouched
 
     function back() {
@@ -650,7 +656,7 @@ FocusScope {
     // how much the picture steps back while editing: under the glass too, which shows the picture
     // (so the glass over something bright, Reset say, dims with it)
     property real editDim: editing && !closing ? 0.4 : 0
-    Behavior on editDim { NumberAnimation { duration: 250 } }
+    Behavior on editDim { NumberAnimation { duration: view.standard } }
 
     // ---- the clock, as Home+'s header while its Control Center is open (main.c: draw_clock): the
     // time on its own, and the Control Center's circle, grown and white. Over another app it's over
@@ -660,7 +666,7 @@ FocusScope {
     // no picture to go by, the corner dims a little, always.
 
     property real live: hasFrame && !solid ? 1 : 0 // the picture, for the corner as for the glass
-    Behavior on live { NumberAnimation { duration: 240; easing.type: Easing.InOutQuad } }
+    Behavior on live { NumberAnimation { duration: view.standard; easing.type: Easing.InOutQuad } }
     ShaderEffect {
         x: view.rightEdge - 80 - 760; y: 0; width: view.width - x; height: 80 + 560
         visible: view.live > 0
@@ -749,8 +755,8 @@ FocusScope {
             Image { id: ccGlyph; anchors.centerIn: parent; width: 34; height: 34; source: "glyphs/controls.png"; smooth: true; mipmap: true; visible: false }
             Tint { anchors.fill: ccGlyph; src: ccGlyph; color: view.ink }
         }
-        NumberAnimation on drop { id: clockIn; from: 0; to: 1; duration: 320; easing.type: Easing.OutCubic }
-        NumberAnimation { id: clockOut; target: clock; property: "drop"; to: 0; duration: 220; easing.type: Easing.InCubic }
+        NumberAnimation on drop { id: clockIn; from: 0; to: 1; duration: view.slow; easing.type: Easing.OutCubic }
+        NumberAnimation { id: clockOut; target: clock; property: "drop"; to: 0; duration: view.standard; easing.type: Easing.InCubic }
     }
 
     // ---- the controls
@@ -774,15 +780,15 @@ FocusScope {
             visible: model.row >= 0 // no room for it
             x: view.gridX + Math.max(0, model.col) * (view.unit + view.gap)
             y: view.gridY + Math.max(0, model.row) * (view.unit + view.gap)
-            Behavior on x { enabled: !view.opening; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-            Behavior on y { enabled: !view.opening; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on x { enabled: !view.opening; NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
+            Behavior on y { enabled: !view.opening; NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
             width: model.w * view.unit + (model.w - 1) * view.gap
             height: model.h * view.unit + (model.h - 1) * view.gap
             z: isPicked ? 3 : focused ? 2 : 1
             opacity: Math.min(1, drop * 2.5) * (view.listKind ? 0 : 1)
-            Behavior on opacity { enabled: tile.drop >= 1; NumberAnimation { duration: 200 } }
-            Behavior on lit { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-            Behavior on lift { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+            Behavior on opacity { enabled: tile.drop >= 1; NumberAnimation { duration: view.standard } }
+            Behavior on lit { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
+            Behavior on lift { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
 
             transform: [
                 Scale {
@@ -801,19 +807,19 @@ FocusScope {
             SequentialAnimation {
                 id: dropIn
                 PauseAnimation { duration: tile.delay }
-                NumberAnimation { target: tile; property: "drop"; from: 0; to: 1; duration: 450; easing.type: view.still ? Easing.OutCubic : Easing.OutBack; easing.overshoot: 0.9 }
+                NumberAnimation { target: tile; property: "drop"; from: 0; to: 1; duration: view.settle; easing.type: view.still ? Easing.OutCubic : Easing.OutBack; easing.overshoot: 0.9 }
             }
-            NumberAnimation { id: popIn; target: tile; property: "drop"; from: 0.4; to: 1; duration: 260; easing.type: Easing.OutBack }
+            NumberAnimation { id: popIn; target: tile; property: "drop"; from: 0.4; to: 1; duration: view.standard; easing.type: Easing.OutBack }
             Component.onCompleted: if (view.opening) dropIn.start(); else popIn.start()
             SequentialAnimation {
                 id: dropOut
                 PauseAnimation { duration: (view.gridRows - 1 - Math.max(0, model.row)) * 12 } // the bottom row first
-                NumberAnimation { target: tile; property: "drop"; to: 0; duration: 200; easing.type: Easing.InCubic }
+                NumberAnimation { target: tile; property: "drop"; to: 0; duration: view.standard; easing.type: Easing.InCubic }
             }
             function leave() { dropIn.stop(); popIn.stop(); dropOut.start(); }
 
             SequentialAnimation {
-                id: shaking // the TV said no
+                id: shaking // the TV said no (a shake has its own steps, as the marquee does)
                 NumberAnimation { target: tile; property: "shakeX"; to: 9; duration: 50 }
                 NumberAnimation { target: tile; property: "shakeX"; to: -8; duration: 80 }
                 NumberAnimation { target: tile; property: "shakeX"; to: 5; duration: 70 }
@@ -867,7 +873,7 @@ FocusScope {
                     width: glyphBox.size * (tile.large ? 1.35 : 1.4); height: width; radius: width / 2
                     color: tile.lit > 0.5 ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.24)
                     opacity: model.disc ? 1 : 0
-                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    Behavior on opacity { NumberAnimation { duration: view.standard } }
                 }
                 Image {
                     id: glyph
@@ -884,7 +890,7 @@ FocusScope {
                     anchors.fill: glyph
                     src: glyph
                     color: !model.available ? "white" : tile.lit > 0.5 ? (model.active ? view.teal : view.ink) : (model.active ? view.cyan : "white")
-                    Behavior on color { ColorAnimation { duration: 160 } }
+                    Behavior on color { ColorAnimation { duration: view.standard } }
                 }
             }
 
@@ -922,7 +928,7 @@ FocusScope {
                     width: parent.width
                     text: model.value
                     color: tile.lit > 0.5 ? view.ink : "white"
-                    opacity: 0.72
+                    opacity: view.textSecondary / 255
                     font.family: medium.name
                     font.weight: Font.Medium
                     font.pixelSize: 18
@@ -947,9 +953,9 @@ FocusScope {
             }
             SequentialAnimation {
                 id: flashing
-                NumberAnimation { target: flashText; property: "opacity"; to: 1; duration: 120 }
-                PauseAnimation { duration: 1200 }
-                NumberAnimation { target: flashText; property: "opacity"; to: 0; duration: 500 }
+                NumberAnimation { target: flashText; property: "opacity"; to: view.textStatic / 255; duration: view.quick }
+                PauseAnimation { duration: 1200 - view.quick }
+                NumberAnimation { target: flashText; property: "opacity"; to: 0; duration: 600 } // (main.c: gone by 1.8 s)
             }
             function flash() { flashing.restart(); }
 
@@ -972,8 +978,8 @@ FocusScope {
         visible: view.editing && view.plusRow >= 0 && !view.listKind && !view.closing
         x: view.gridX + Math.max(0, view.plusCol) * (view.unit + view.gap)
         y: view.gridY + Math.max(0, view.plusRow) * (view.unit + view.gap)
-        Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-        Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+        Behavior on x { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
+        Behavior on y { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
         width: view.unit; height: view.unit
         Rectangle {
             anchors.fill: parent
@@ -991,12 +997,12 @@ FocusScope {
         x: view.rightEdge - width
         y: view.gridY + view.rows * (view.unit + view.gap) + 4
         text: view.picked >= 0 ? "Arrows move it  ·  OK puts it down"
-            : view.plusRow < 0 ? "No Room  ·  Hold OK on one for options" : "OK to move  ·  Hold for options"
+            : view.plusRow < 0 ? "No room  ·  Hold OK on one for options" : "OK picks it up  ·  Hold for options"
         color: "white"
-        opacity: 0.85
+        opacity: view.textSecondary / 255
         font.family: medium.name
         font.weight: Font.Medium
-        font.pixelSize: 22
+        font.pixelSize: view.hintPx
         style: Text.Raised
         styleColor: "#60000000"
     }
@@ -1036,10 +1042,10 @@ FocusScope {
         visible: view.problem !== "" && !view.listKind
         text: view.problem
         color: "white"
-        opacity: 0.85
+        opacity: view.textStatic / 255
         font.family: medium.name
         font.weight: Font.Medium
-        font.pixelSize: view.problemPx
+        font.pixelSize: view.hintPx
         wrapMode: Text.WordWrap
         style: Text.Raised
         styleColor: "#80000000"
@@ -1050,7 +1056,7 @@ FocusScope {
     Item {
         id: list
         property real t: (view.listKind === 1 || view.listKind === 2) && !view.closing ? 1 : 0
-        Behavior on t { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+        Behavior on t { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
         readonly property int rowH: view.listRowH
         readonly property int rowGap: view.listGap
         readonly property int head: view.listHead
@@ -1098,7 +1104,7 @@ FocusScope {
                     width: Math.min(300, parent.width - 48 - detail.width)
                     text: parent.it.label || ""
                     color: parent.f ? view.ink : "white"
-                    opacity: parent.f ? 1 : view.rowA / 255
+                    opacity: parent.f ? 1 : view.textStatic / 255
                     font.family: medium.name
                     font.weight: Font.Medium
                     font.pixelSize: view.listPx
@@ -1111,7 +1117,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     text: parent.it.ticked ? "✓" : parent.it.detail || ""
                     color: parent.f ? view.ink : "white"
-                    opacity: parent.it.ticked ? (parent.f ? 1 : view.rowA / 255) : view.detailA / 255
+                    opacity: parent.it.ticked ? (parent.f ? 1 : view.textStatic / 255) : view.textSecondary / 255
                     font.family: medium.name
                     font.weight: Font.Medium
                     font.pixelSize: parent.it.ticked ? view.listPx : view.detailPx
@@ -1132,7 +1138,7 @@ FocusScope {
     Item {
         id: gal
         property real t: view.listKind === 3 && !view.closing ? 1 : 0
-        Behavior on t { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+        Behavior on t { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
         x: view.rightEdge - view.galW
         y: view.gridY - 12 * (1 - t)
         width: view.galW
@@ -1164,8 +1170,9 @@ FocusScope {
             y: view.galHead + 14
             text: "Every control this TV has is placed."
             color: "white"
-            opacity: 0.7
+            opacity: view.textSecondary / 255
             font.family: medium.name
+            font.weight: Font.Medium
             font.pixelSize: 20
         }
         Repeater { // each group's name, small, on the left like iOS's
@@ -1175,9 +1182,9 @@ FocusScope {
                 y: view.galleryHeads[index].y + view.galGroupTop
                 text: view.galleryHeads[index].text
                 color: "white"
-                opacity: 0.6
-                font.family: medium.name
-                font.weight: Font.Medium
+                opacity: view.textTertiary / 255
+                font.family: semi.name
+                font.weight: Font.DemiBold
                 font.pixelSize: 22
             }
         }
@@ -1204,7 +1211,7 @@ FocusScope {
                     horizontalAlignment: Text.AlignHCenter
                     text: parent.it.entry.title
                     color: "white"
-                    opacity: parent.f ? 1 : 0.75
+                    opacity: parent.f ? 1 : view.textStatic / 255
                     font.family: medium.name
                     font.weight: Font.Medium
                     font.pixelSize: view.galNamePx
@@ -1231,14 +1238,14 @@ FocusScope {
         color: "black"
         opacity: view.sheet ? 80 / 255 : 0
         visible: opacity > 0.01
-        Behavior on opacity { NumberAnimation { duration: 180 } }
+        Behavior on opacity { NumberAnimation { duration: view.standard } }
         MouseArea { anchors.fill: parent; enabled: !!view.sheet; hoverEnabled: true } // clicks behind a sheet do nothing
     }
     Item {
         id: sheetBox
         property var s: view.sheet || ({ title: "", body: "", items: [] })
         property real t: view.sheet ? 1 : 0
-        Behavior on t { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+        Behavior on t { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
         readonly property real buttonsY: (sheetBody.visible ? sheetBody.y + sheetBody.height : sheetTitle.y + sheetTitle.height) + 24 // its buttons
         readonly property real rad: view.sheetBtn / 2 + view.sheetPad // corners concentric with the buttons
         width: Math.max(view.sheetW, sheetTitle.width + 2 * view.sheetPad, sheetBody.width + 2 * view.sheetPad)
@@ -1266,7 +1273,7 @@ FocusScope {
             anchors.horizontalCenter: parent.horizontalCenter
             text: sheetBox.s.title
             color: "white"
-            opacity: view.sheetTitleA / 255
+            opacity: view.textStatic / 255
             font.family: semi.name
             font.weight: Font.DemiBold
             font.pixelSize: view.sheetTitlePx
@@ -1285,7 +1292,7 @@ FocusScope {
                     width: Math.min(implicitWidth, 900)
                     text: modelData
                     color: "white"
-                    opacity: view.sheetBodyA / 255
+                    opacity: view.textSecondary / 255
                     font.family: medium.name
                     font.weight: Font.Medium
                     font.pixelSize: view.sheetBodyPx
@@ -1299,7 +1306,7 @@ FocusScope {
                 property var it: sheetBox.s.items[index]
                 property bool f: index === view.sheetIndex
                 property color labelColor: it.destructive ? (f ? view.redOnWhite : view.red) : f ? view.ink : "white"
-                property real labelOpacity: f ? 1 : view.sheetLabelA / 255
+                property real labelOpacity: f ? 1 : view.textStatic / 255
                 x: view.sheetPad
                 y: sheetBox.buttonsY + index * (view.sheetBtn + view.sheetGap)
                 width: sheetBox.width - 2 * view.sheetPad
