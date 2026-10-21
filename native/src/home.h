@@ -475,9 +475,6 @@ static inline float smooth01(float a, float b, float x)
 void request_data(void);
 void enter_top(int col);
 void focus_rect(float *x, float *y, float *w, float *h);
-void settings_page(int page, int index);
-float swatch_x(float bx, float bw, int i);
-void open_settings_sheet(void);
 int is_back(SDL_Keycode k);
 void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop);
 int wake(int key);
@@ -616,5 +613,16 @@ void on_media_signin(Result *r);
 void on_trakt_signin(Result *r);
 int source_installed(int src);
 int stremio_installed(void);
+
+/* settings.c */
+void settings_page(int page, int index);
+void settings_again(void);
+float swatch_x(float bx, float bw, int i);
+int swatch_at(float mx);
+void icon_tint_set(int i);
+void open_settings_sheet(void);
+
+/* actions.c */
+void run_action(Action act, int arg, const char *id);
 
 #endif

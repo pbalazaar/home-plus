@@ -5,7 +5,7 @@
 # Compiled against vendored SDL 2.0.14 headers so the binary only uses
 # functions the TV's libSDL2 actually has.
 
-SRC := src/main.c src/util.c src/tiles.c src/draw.c src/sheet.c src/recents.c src/cc.c src/cc_list.c src/shelf.c src/apps.c src/setup.c src/accounts.c src/gfx.c src/render.c src/sound.c src/net.c src/luna.c src/preview.c third_party/cJSON.c
+SRC := src/main.c src/util.c src/tiles.c src/draw.c src/sheet.c src/recents.c src/cc.c src/cc_list.c src/shelf.c src/apps.c src/setup.c src/accounts.c src/settings.c src/actions.c src/gfx.c src/render.c src/sound.c src/net.c src/luna.c src/preview.c third_party/cJSON.c
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers \
           -Ithird_party -Ithird_party/SDL2 -D_REENTRANT
 
