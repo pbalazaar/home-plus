@@ -23,7 +23,7 @@ The launcher is built with the webOS TV toolchain, [openlgtv/buildroot-nc4](http
 **macOS or Linux, with Docker** (Intel or Apple Silicon):
 
 ```sh
-tools/docker-build.sh       # -> dist/com.github.pmiraka.homeplus_<version>_all.ipk
+tools/docker-build.sh       # -> dist/com.github.pbalazaar.homeplus_<version>_all.ipk
 ```
 
 **Linux, without Docker:** download `arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz` (or `-aarch64.tar.gz` on an ARM machine) from the toolchain's [releases](https://github.com/openlgtv/buildroot-nc4/releases). `docker/Dockerfile` names the release Home+ uses, and `docker/toolchain.sha256` has its files' checksums (`sha256sum -c`). Unpack it, run its `relocate-sdk.sh` once, then, with `make` and Node 16 or newer:

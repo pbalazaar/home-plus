@@ -11,7 +11,7 @@
 #include <stddef.h>
 
 #define SERVICE_PORT 47823
-#define APP_ID "com.github.pmiraka.homeplus"
+#define APP_ID "com.github.pbalazaar.homeplus"
 #define SERVICE_ID APP_ID ".service"
 
 /* Blocking request. Returns the HTTP status (0 on connection failure, or an answer of more than

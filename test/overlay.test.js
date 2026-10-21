@@ -99,7 +99,7 @@ test('overlay: the Settings key opens it over the app in front, with the control
   const r = await call('POST', '/api/key', { body: { key: 'settings' } });
   assert.deepEqual(r.json, { opened: 'overlay' });
   const launch = calls('luna://com.webos.service.systemUIManager/launch').at(-1);
-  assert.equal(launch.params.appId, 'com.github.pmiraka.homeplus.cc');
+  assert.equal(launch.params.appId, 'com.github.pbalazaar.homeplus.cc');
   assert.equal(launch.params.windowType, '_WEBOS_SYSTEM_UI_TYPE_OVERLAY');
   const m = /^file:\/\/(.+)\/(qml-[0-9a-z]+)\/ControlCenter\.qml$/.exec(launch.params.main);
   assert.ok(m, `opened from a link named for the files' time: ${launch.params.main}`);
@@ -129,7 +129,7 @@ test('overlay: it asks for what it can\'t do itself, and nothing else', async ()
   assert.deepEqual(calls('luna://com.webos.applicationManager/launch').at(-1).params,
     { id: 'com.webos.app.firstuse-overlay', params: { target: 'network' } }, "LG's network settings, as its Quick Settings open them");
   assert.equal((await call('POST', '/api/overlay', { body: { event: 'open', target: 'settings' } })).status, 200);
-  assert.deepEqual(calls('luna://com.webos.applicationManager/launch').at(-1).params, { id: 'com.github.pmiraka.homeplus' });
+  assert.deepEqual(calls('luna://com.webos.applicationManager/launch').at(-1).params, { id: 'com.github.pbalazaar.homeplus' });
   const r = await call('POST', '/api/overlay', { body: { event: 'open', app: 'com.example.anything' } });
   assert.equal(r.status, 500);
   assert.match(r.json.errorText, /not an input/, 'only the inputs it offered');
@@ -167,7 +167,7 @@ test('overlay: the Input key opens it on its inputs alone; again, the open panel
   const frames = path.dirname(fileURLToPath(first.params.frame));
   assert.deepEqual((await call('POST', '/api/key', { body: { key: 'input' } })).json, { opened: 'overlay' });
   const again = calls('luna://com.webos.service.systemUIManager/launch').at(-1).params;
-  assert.equal(again.appId, 'com.github.pmiraka.homeplus.cc');
+  assert.equal(again.appId, 'com.github.pbalazaar.homeplus.cc');
   assert.deepEqual(again.params, { again: 'input', port, token }, 'asked of the panel on screen: no new state, no new frames');
   assert.ok(fs.existsSync(frames), 'its frames go on');
   await call('POST', '/api/overlay', { body: { event: 'closed' } });

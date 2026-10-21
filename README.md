@@ -34,7 +34,7 @@ A tvOS-style home screen for rooted LG webOS TVs, in a Liquid Glass look, with C
 
 ## Install
 
-1. Download `com.github.pmiraka.homeplus_<version>_all.ipk` from [Releases](../../releases).
+1. Download `com.github.pbalazaar.homeplus_<version>_all.ipk` from [Releases](../../releases).
 2. Install it with [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop) (Apps → Install), or with `ares-install`.
 3. Open **Home+** from the app list.
 
@@ -47,8 +47,11 @@ If something stops it, the screen says what and offers **Try Again**:
 | Homebrew Channel Needed | The Homebrew Channel isn't installed, or isn't running as root. |
 | Couldn't Get Permission | The Homebrew Channel refused to give Home+ root access. Check that the TV is rooted and the Homebrew Channel is up to date. |
 | Home+ Couldn't Start | Home+'s background service didn't answer. Restarting the TV usually fixes this. |
+| Uninstall the Old Home+ | The Home+ from before its app ID changed is still installed, and its service is the one answering. See below. |
 
 Updates install the same way. An update resets the service's root access, and Home+ sets it up again the next time it starts.
+
+**Updating from Home+ 0.14.0 or earlier:** Home+'s app ID changed from `com.github.pmiraka.homeplus` to `com.github.pbalazaar.homeplus`, so webOS sees the new Home+ as another app. Uninstall the old one first, the way you installed it (with webOS Dev Manager, say, or over SSH: `luna-send -n 1 luna://com.webos.appInstallService/dev/remove '{"id":"com.github.pmiraka.homeplus"}'`), but not with its Settings → Remove Home+, which deletes your settings and sign-ins. Then install the new one: your settings, sign-ins, layout and remote buttons carry over. `tools/install.sh` does this by itself.
 
 ## Using Home+
 
@@ -80,7 +83,7 @@ From the top row, press **Up** to reach the clock at the top right, as on tvOS; 
 **Make it yours**, like iOS 18's: hold **OK** on a control and choose **Edit Controls**. The controls wobble; **OK** picks one up and the arrows move it, holding **OK** changes its size (Small, Wide, Large) or removes it, and the **+** slot adds one: **Sound Mode**, **OLED Brightness**, **Energy Saving**, **Game Optimizer** and **Dynamic Tone Mapping** (whichever your TV has), and **Ambient Light** and **Screen Capture** when HyperHDR and PicCap are installed (they turn HyperHDR's LEDs and PicCap's capture on and off). There's room for seven rows: a size or a control that won't fit is turned down, and the Control Center says so. **Reset** puts it back, and **Back** is done; every change is saved as you make it. Each action is also a service method, so a script, a home automation or a key-mapping tool running on the TV can use it with `luna-send` (as root: Home+'s luna methods answer only `luna-send` and Home+ itself, not other apps):
 
 ```sh
-luna-send -n 1 luna://com.github.pmiraka.homeplus.service/control '{"action":"screenOff"}'
+luna-send -n 1 luna://com.github.pbalazaar.homeplus.service/control '{"action":"screenOff"}'
 # actions: powerOff, screenOff, sound ("next" or an output), sleepTimer ("next", "off" or minutes),
 #          pictureMode (a mode, like "cinema" or "filmMaker"), eyeComfort ("next", "on" or "off"), input (an input's app id),
 #          run (a control's id, like "soundMode" or "ambientLight": it steps or switches), reset (the default controls)
@@ -128,7 +131,7 @@ Pressing **OK** on a card opens the app. The LG apps can't be sent to a specific
 You can also sign in over SSH (Homebrew Channel → Settings → SSH Server):
 
 ```sh
-luna-send -n 1 luna://com.github.pmiraka.homeplus.service/stremioLogin '{"email":"you@example.com","password":"…"}'
+luna-send -n 1 luna://com.github.pbalazaar.homeplus.service/stremioLogin '{"email":"you@example.com","password":"…"}'
 ```
 
 The password goes only to `api.strem.io`. Either way, the TV keeps only the session key that Stremio returns.
@@ -141,7 +144,7 @@ Trakt needs an API app of your own (it's free):
 1. Create one at <https://trakt.tv/oauth/applications/new>, with `urn:ietf:wg:oauth:2.0:oob` as the redirect URI.
 2. Give Home+ its Client ID and Secret, over SSH:
    ```sh
-   luna-send -n 1 luna://com.github.pmiraka.homeplus.service/traktSetup '{"clientId":"…","clientSecret":"…"}'
+   luna-send -n 1 luna://com.github.pbalazaar.homeplus.service/traktSetup '{"clientId":"…","clientSecret":"…"}'
    ```
 3. On the TV, go to **Settings → Accounts → Trakt**, then enter the code it shows at <https://trakt.tv/activate>.
 
@@ -158,7 +161,7 @@ The titles are what you're partway through, then the next episode of each show y
 **A server Home+ can't find** (on another network, or behind a reverse proxy): give it the address over SSH, then sign in as above.
 
 ```sh
-luna-send -n 1 luna://com.github.pmiraka.homeplus.service/jellyfinServer '{"url":"https://jellyfin.example.com"}'
+luna-send -n 1 luna://com.github.pbalazaar.homeplus.service/jellyfinServer '{"url":"https://jellyfin.example.com"}'
 ```
 
 ### Plex
@@ -176,7 +179,7 @@ Streaming apps (Netflix, Prime Video, Disney+, Apple TV, Max and others) show wh
 1. Make a TMDB account, then go to **Settings → API** and request an API key (or copy the API Read Access Token).
 2. Give it to Home+ over SSH:
    ```sh
-   luna-send -n 1 luna://com.github.pmiraka.homeplus.service/tmdbSetup '{"key":"…"}'
+   luna-send -n 1 luna://com.github.pbalazaar.homeplus.service/tmdbSetup '{"key":"…"}'
    ```
 
 Home+ checks the key with TMDB before keeping it, and `{"key":""}` removes it. The catalogs are your TV's LG store country's; if you watch from elsewhere, give the two-letter country code with `{"region":"AL"}` (`""` goes back to the TV's). Apps with no picture of their own (YouTube, Smart IPTV and the like) rotate through what's trending on TMDB instead, under "Trending Now".
@@ -190,7 +193,7 @@ With **Settings → Home Button** set to **Opens Home+**, Home+ watches for LG's
 To remove that flash, use lginputhook (1.5.1 or later, from the Homebrew Channel). It catches the Home button before LG's home screen starts. In the LG Input Hook app, add a keybind for button **773**, choose **Launch App** and pick **Home+**. Or put this in `/home/root/.config/lginputhook/keybinds.json`:
 
 ```json
-{"773": {"action": "launch", "id": "com.github.pmiraka.homeplus"}}
+{"773": {"action": "launch", "id": "com.github.pbalazaar.homeplus"}}
 ```
 
 Home+ turns that keybind into a command that opens Home+ only while it's installed, and LG's home screen otherwise, so the Home button keeps working if Home+ is ever removed without **Remove Home+**. The Settings button's keybind (see [Using Home+](#using-home)) falls back to LG's Quick Settings the same way.
@@ -220,7 +223,7 @@ Change the timings, or turn any of these off, in **Settings → Display & OLED**
 ```sh
 rm -f /var/lib/webosbrew/init.d/50-homeplus /var/lib/webosbrew/homeplus-boot.log
 rm -rf /var/lib/homeplus
-luna-send -n 1 luna://com.webos.appInstallService/dev/remove '{"id":"com.github.pmiraka.homeplus"}'
+luna-send -n 1 luna://com.webos.appInstallService/dev/remove '{"id":"com.github.pbalazaar.homeplus"}'
 ```
 
 If you added the lginputhook keybinds, delete them in the LG Input Hook app.
@@ -254,7 +257,7 @@ If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot s
 The launcher is built with the webOS TV toolchain ([openlgtv/buildroot-nc4](https://github.com/openlgtv/buildroot-nc4)), which runs on Linux. The easiest route is Docker, which works on Linux and macOS, Intel or Apple Silicon. On Windows, use WSL 2 ([how](CONTRIBUTING.md#building)).
 
 ```sh
-tools/docker-build.sh                  # -> dist/com.github.pmiraka.homeplus_<version>_all.ipk
+tools/docker-build.sh                  # -> dist/com.github.pbalazaar.homeplus_<version>_all.ipk
 tools/install.sh <tv-ip>               # copy it to the TV over SSH, install, set up root, open it
 tools/test.sh                          # run the tests (tools/test.sh all: every check CI runs)
 ```
@@ -269,7 +272,7 @@ Home+ is designed by its author, who makes every decision about what it does and
 
 ## How it works
 
-One package, `com.github.pmiraka.homeplus`, holds three things:
+One package, `com.github.pbalazaar.homeplus`, holds three things:
 - **The launcher** (`native/`): C with SDL2 and OpenGL ES 2, using the TV's own libraries. Our renderer (`native/src/render.c`) draws the glass, shapes and shadows with shaders. A frame is a few dozen quads, and glass works on a half-resolution copy of the screen. Animations are springs, and nothing is redrawn while nothing moves.
 - **The service** (`service/`): a Node.js webOS service that runs as root once the Homebrew Channel elevates it. It lists, opens and closes apps and serves their icons. It also talks to Stremio, Trakt, Jellyfin and Plex, and handles the Home button.
 - **The boot script** (`init.d/`): makes the Homebrew Channel re-elevate and start the service at every boot. The service links it into the Homebrew Channel's `/var/lib/webosbrew/init.d/`: a link, not a copy, so it goes with the package.

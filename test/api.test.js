@@ -18,13 +18,13 @@ const call = (...args) => svc.call(...args);
 
 test.before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-api-'));
-  fs.writeFileSync(path.join(dir, 'apps.txt'), 'netflix|Netflix,youtube|YouTube,stremio|Stremio');
+  fs.writeFileSync(path.join(dir, 'apps.txt'), 'netflix|Netflix,youtube|YouTube,stremio|Stremio,com.github.pmiraka.homeplus|Home+'); /* (and the old Home+, not uninstalled yet) */
   for (let i = 0; i < 5; i++) fs.writeFileSync(path.join(dir, `show${i}.jpg`), `a picture of show ${i}`); /* the mock Stremio's */
   fs.mkdirSync(path.join(dir, 'lginputhook')); /* LG Input Hook, with the Home key bound to Home+ */
-  fs.writeFileSync(path.join(dir, 'lginputhook', 'keybinds.json'), JSON.stringify({ 773: { action: 'launch', id: 'com.github.pmiraka.homeplus' } }));
+  fs.writeFileSync(path.join(dir, 'lginputhook', 'keybinds.json'), JSON.stringify({ 773: { action: 'launch', id: 'com.github.pbalazaar.homeplus' } }));
   svc = await startService(dir, {
     HOMEPLUS_PREVIEW_TMDB: '1',
-    HOMEPLUS_PREVIEW_FOREGROUND: 'com.github.pmiraka.homeplus', /* Home+ is in front */
+    HOMEPLUS_PREVIEW_FOREGROUND: 'com.github.pbalazaar.homeplus', /* Home+ is in front */
     HOMEPLUS_INPUTHOOK_BINDS: path.join(dir, 'lginputhook', 'keybinds.json')
   });
 });
@@ -39,6 +39,7 @@ test('api: /api/status answers without the token (the launcher asks before it ha
   assert.equal(r.status, 200);
   assert.equal(r.json.version, JSON.parse(fs.readFileSync(path.join(ROOT, 'service/package.json'), 'utf8')).version);
   assert.equal(r.json.token, true, 'the token file was written');
+  assert.equal(r.json.id, 'com.github.pbalazaar.homeplus.service', 'which service this is: the old Home+\'s answers on the same port');
 });
 
 test('api: everything else needs the token', async () => {
@@ -184,7 +185,7 @@ test('api: an app can be deleted from the TV, but not Home+ itself or what roots
   const apps = (await call('GET', '/api/apps')).json.apps;
   assert.equal(apps.find((a) => a.id === 'youtube').removable, true);
   assert.deepEqual((await call('POST', '/api/remove', { body: { id: 'youtube' } })).json, { returnValue: true, deleted: 'youtube' });
-  const self = await call('POST', '/api/remove', { body: { id: 'com.github.pmiraka.homeplus' } });
+  const self = await call('POST', '/api/remove', { body: { id: 'com.github.pbalazaar.homeplus' } });
   assert.ok(self.status >= 400);
   assert.match(self.json.errorText, /can't be deleted/);
   assert.ok((await call('POST', '/api/remove', { body: { id: 'not.installed' } })).status >= 400);

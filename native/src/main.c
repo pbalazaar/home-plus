@@ -206,7 +206,7 @@ typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELE
 /* First run: the service has to be running and elevated (root, via Homebrew
  * Channel) before Home+ can list apps. Each step that can fail has a screen. */
 enum { SETUP_CHECK, SETUP_STARTING, SETUP_ELEVATING, SETUP_RESTARTING, SETUP_NO_HBC, SETUP_DENIED,
-       SETUP_FAILED, SETUP_REMOVING, SETUP_DONE };
+       SETUP_FAILED, SETUP_OLD, SETUP_REMOVING, SETUP_DONE };
 #define HBC_ELEVATE "luna://org.webosbrew.hbchannel.service/elevateService"
 #define SHEET_BODY_LINES 5
 #define IDLE_DIM_MS (2 * 60 * 1000)  /* defaults; /api/prefs dimMinutes / offMinutes override */
@@ -2034,6 +2034,12 @@ static void setup_screen(void)
         title = "Home+ Couldn\xE2\x80\x99t Start";
         body = "Part of Home+ that runs in the background didn\xE2\x80\x99t respond.\nRestarting the TV usually fixes this.";
         break;
+    case SETUP_OLD:
+        title = "Uninstall the Old Home+";
+        body = "This Home+ has a new app ID, and the one it replaces is still installed.\n"
+               "Uninstall the old one, com.github.pmiraka.homeplus, then try again.\n"
+               "Not with its Remove Home+: that deletes your settings and sign-ins.";
+        break;
     case SETUP_REMOVING:
         title = "Removing Home+\xE2\x80\xA6";
         body = "Turning off the Home button takeover and clearing Home+\xE2\x80\x99s settings.";
@@ -2045,7 +2051,7 @@ static void setup_screen(void)
     sheet_open(title);
     sheet_body(body);
     S.sheet.locked = 1;
-    if (S.setup == SETUP_NO_HBC || S.setup == SETUP_DENIED || S.setup == SETUP_FAILED)
+    if (S.setup == SETUP_NO_HBC || S.setup == SETUP_DENIED || S.setup == SETUP_FAILED || S.setup == SETUP_OLD)
         sheet_add("Try Again", ACT_SETUP_RETRY, 0, 0);
 }
 
@@ -2091,6 +2097,11 @@ static void on_status(Result *r)
         } else {
             setup_set(SETUP_FAILED);
         }
+        return;
+    }
+    if (strcmp(jstr(o, "id"), SERVICE_ID)) { /* another service on our port: the old Home+'s (it says no id) */
+        cJSON_Delete(o);
+        setup_set(SETUP_OLD);
         return;
     }
     int elevated = cJSON_IsTrue(cJSON_GetObjectItem(o, "elevated"));
@@ -5087,7 +5098,7 @@ static void come_back(void)
     S.idle_stage = 0;
     if (S.setup == SETUP_DONE) request_data();
     /* only a setup that stopped on an error starts over; one in progress carries on */
-    else if (S.setup == SETUP_NO_HBC || S.setup == SETUP_DENIED || S.setup == SETUP_FAILED) setup_retry_now();
+    else if (S.setup == SETUP_NO_HBC || S.setup == SETUP_DENIED || S.setup == SETUP_FAILED || S.setup == SETUP_OLD) setup_retry_now();
 }
 
 /* Any input resets the OLED idle timer. Returns 1 when it only woke a dark

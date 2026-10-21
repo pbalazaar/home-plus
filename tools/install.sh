@@ -16,7 +16,7 @@ DIR=/tmp/homeplus-install # on the TV; removed again when the install is done
 
 # The native binary needs the webOS toolchain (Linux or Docker); package it when it has been built.
 node "$ROOT/tools/build.mjs"
-APP=$(ls -t "$ROOT"/dist/com.github.pmiraka.homeplus_*_all.ipk | head -1)
+APP=$(ls -t "$ROOT"/dist/com.github.pbalazaar.homeplus_*_all.ipk | head -1)
 NATIVE=
 
 echo "→ copying $(basename "$APP")${NATIVE:+ and $(basename "$NATIVE")} to $TV"
@@ -24,7 +24,7 @@ ssh $SSH_OPTS "root@$TV" "rm -rf $DIR && mkdir -p $DIR && cat > $DIR/install.sh"
 # Runs on the TV (busybox sh): sh install.sh [--autostart] <app.ipk> [<native.ipk>]
 DIR=$(dirname "$0")
 APPS=/media/developer/apps
-SVC=com.github.pmiraka.homeplus.service
+SVC=com.github.pbalazaar.homeplus.service
 ELEVATE=$APPS/usr/palm/services/org.webosbrew.hbchannel.service/elevate-service
 AUTOSTART=
 [ "$1" = --autostart ] && { AUTOSTART=1; shift; }
@@ -42,9 +42,9 @@ field() { sed -n "s/.*\"$1\":\"*\([^,\"}]*\).*/\1/p" | tail -1; } # echo <json> 
 
 # Never pkill -f here: the pattern could match this SSH session's own command line.
 stop_service() {
-  for p in $(pgrep -f pmiraka.homeplus.service); do [ "$p" != "$$" ] && kill "$p" 2>/dev/null; done
+  for p in $(pgrep -f pbalazaar.homeplus.service); do [ "$p" != "$$" ] && kill "$p" 2>/dev/null; done
   i=0
-  while pgrep -f pmiraka.homeplus.service >/dev/null; do
+  while pgrep -f pbalazaar.homeplus.service >/dev/null; do
     [ $i -ge 10 ] && { fail "couldn't stop $SVC"; return 1; }
     sleep 0.3; i=$((i + 1))
   done
@@ -102,10 +102,22 @@ install_ipk() {
 }
 
 echo "   closing Home+ and stopping its service"
-for id in com.github.pmiraka.homeplus; do
+for id in com.github.pbalazaar.homeplus; do
   luna luna://com.webos.applicationManager/closeByAppId "{\"id\":\"$id\"}" >/dev/null
 done
 stop_service
+
+# Home+ up to 0.14.0 had another id: it's another app to webOS, and its service would take Home+'s port.
+# It's uninstalled as a plain uninstall does it (not Remove Home+): settings, sign-ins and binds stay.
+OLD=com.github.pmiraka.homeplus
+if [ -d "$APPS/usr/palm/applications/$OLD" ]; then
+  luna luna://com.webos.applicationManager/closeByAppId "{\"id\":\"$OLD\"}" >/dev/null
+  for p in $(pgrep -f pmiraka.homeplus.service); do [ "$p" != "$$" ] && kill "$p" 2>/dev/null; done
+  luna luna://com.webos.appInstallService/dev/remove "{\"id\":\"$OLD\"}" 30000 >/dev/null
+  i=0
+  while [ -d "$APPS/usr/palm/applications/$OLD" ] && [ $i -lt 40 ]; do sleep 0.5; i=$((i + 1)); done
+  if [ -d "$APPS/usr/palm/applications/$OLD" ]; then fail "couldn't uninstall the old Home+ ($OLD)"; else ok "the old Home+ ($OLD) uninstalled; its settings stay"; fi
+fi
 
 for ipk; do # the app (with the service) first, then the native front end
   if [ $failed = 0 ]; then install_ipk "$ipk"; else echo "   - $(label_of "$ipk"): skipped"; fi
@@ -132,11 +144,11 @@ fi
 
 if [ -n "$AUTOSTART" ]; then # a link, as the service makes it (Homebrew Channel's rules: not a copy)
   mkdir -p /var/lib/webosbrew/init.d &&
-    ln -sf $APPS/usr/palm/applications/com.github.pmiraka.homeplus/init.d/50-homeplus /var/lib/webosbrew/init.d/50-homeplus &&
+    ln -sf $APPS/usr/palm/applications/com.github.pbalazaar.homeplus/init.d/50-homeplus /var/lib/webosbrew/init.d/50-homeplus &&
     ok "boot script linked" || fail "couldn't link the boot script"
 fi
 
-app=com.github.pmiraka.homeplus
+app=com.github.pbalazaar.homeplus
 reply=$(luna luna://com.webos.applicationManager/launch "{\"id\":\"$app\"}")
 i=0
 while [ $i -lt 20 ]; do

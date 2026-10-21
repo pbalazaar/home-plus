@@ -276,4 +276,7 @@ global.__stubApps = process.env.HOMEPLUS_PREVIEW_NO_APPS ? [] : APPS.map(([id, t
   id, title, version: '1.0', folderPath: assets, icon: `${id}.png`, iconColor: COLORS[id] || '',
   removable: !BUILT_IN.includes(id), systemApp: BUILT_IN.includes(id)
 }));
+// HOMEPLUS_PREVIEW_OLD: the old Home+'s service on Home+'s port (com.github.pmiraka.homeplus, its id up to
+// 0.14.0, installed beside the new one)
+if (process.env.HOMEPLUS_PREVIEW_OLD) require(path.join(serviceDir, 'package.json')).name = 'com.github.pmiraka.homeplus.service';
 require(path.join(serviceDir, 'service.js'));

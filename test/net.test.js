@@ -50,7 +50,7 @@ test('net: only http and https URLs', async () => {
 test('callers: the luna methods answer the TV\'s own tools and Home+, not other apps', () => {
   const { trusted } = require('../service/callers');
   assert.equal(trusted('com.webos.lunasend-14802'), true, 'luna-send: a terminal, LG Input Hook\'s scripts');
-  assert.equal(trusted('com.github.pmiraka.homeplus'), true, 'Home+');
+  assert.equal(trusted('com.github.pbalazaar.homeplus'), true, 'Home+');
   for (const s of ['youtube.leanback.v4', 'com.webos.app.browser', 'com.webos.lunasendpub-12', 'com.webos.lunasend-', 'com.webos.lunasend-1 x', '', undefined])
     assert.equal(trusted(s), false, `not ${s}`);
 });

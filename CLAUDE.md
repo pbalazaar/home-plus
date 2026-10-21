@@ -6,9 +6,13 @@ SDL2 2.0.14, GLES2/EGL/Wayland). The TV: `<tv-ip>`, root SSH via Homebrew Channe
 PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
 
 ## Pieces
-- One package, `com.github.pmiraka.homeplus` (launcher, service, boot script). The old
-  `com.atvlauncher.*` ids are gone; the service still skips them in app lists.
-- `service/` — Node 16 webOS service `com.github.pmiraka.homeplus.service`, elevated with Homebrew
+- One package, `com.github.pbalazaar.homeplus` (launcher, service, boot script). The old
+  `com.atvlauncher.*` ids are gone; the service still skips them in app lists. So is
+  `com.github.pmiraka.homeplus`, Home+'s id up to 0.14.0 (`OLD_ID`): a new id is another app, whose
+  service would take the port, so it's uninstalled first (`tools/install.sh` does it; the launcher's
+  "Uninstall the Old Home+" says so when `/api/status` isn't its own service's), and LG Input Hook
+  binds made for it count as Home+'s.
+- `service/` — Node 16 webOS service `com.github.pbalazaar.homeplus.service`, elevated with Homebrew
   Channel's `elevateService` (the launcher asks; see First run). Luna methods + a local HTTP API on `127.0.0.1:47823` (see README).
   Also: Home button takeover (`watch` mode, and `redirect` = no-flash bind mount over LG home's
   start page, approved by the owner), settings apps, recents, and Continue Watching from
@@ -52,7 +56,7 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   - Sounds play through QtMultimedia's `SoundEffect` (`Sounds.qml`, loaded on its own in case it can't).
   - No logs: to debug, put a `Text` on screen and take a screenshot. `touch /tmp/homeplus-cc-fps` shows its
     frame rate and the last key code. A failure to load is reported to the service (`overlay failed:` in its log).
-- `native/` — the launcher (`com.github.pmiraka.homeplus`): C, SDL2 + our own GLES2 renderer
+- `native/` — the launcher (`com.github.pbalazaar.homeplus`): C, SDL2 + our own GLES2 renderer
   (`src/render.c`: Liquid Glass shader, SDF shapes, Kawase blur; GL loaded at run time),
   `src/sound.c` (synthesised focus sounds), OLED idle stages and pixel orbit in `main.c`.
   App icon looks (Settings → Display & OLED → App Icons; prefs `iconLook`, `iconTint` from `TINTS`):
@@ -69,7 +73,7 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   `linux/arm64` Debian container with `make` and `nodejs` (run `relocate-sdk.sh` once after unpacking).
 - Easiest anywhere (macOS too): `tools/docker-build.sh` → `dist/*.ipk` (toolchain release
   `2026.08-webos`, Intel or Apple Silicon). Without Docker: `WEBOS_SDK=... tools/build-release.sh`.
-- Packages: `node tools/build.mjs` → `dist/com.github.pmiraka.homeplus_<version>_all.ipk` (one
+- Packages: `node tools/build.mjs` → `dist/com.github.pbalazaar.homeplus_<version>_all.ipk` (one
   package: launcher, service, boot script, licence notices). Versions in `native/appinfo.json` and
   `service/package.json` must match.
 - CI (`.github/workflows/ci.yml`) builds and tests every push; pushing a `v*` tag publishes a release
@@ -102,14 +106,14 @@ Copy the `.ipk`s to `/tmp` on the TV, then for each:
 `luna-send -w 60000 -i luna://com.webos.appInstallService/dev/install '{"id":"com.ares.defaultName","ipkUrl":"/tmp/<file>","subscribe":true}'`
 (stop it after ~20 s). `tools/install.sh` does all of this from a Mac or Linux machine. Opening
 Home+ then re-elevates the service by itself; by hand it's
-`elevate-service com.github.pmiraka.homeplus.service`.
+`elevate-service com.github.pbalazaar.homeplus.service`.
 Before installing, close the apps and stop the old service. **Never `pkill -f` a pattern that
 appears in your own SSH command line** — it kills the session. Use:
 `for p in $(pgrep -f homeplus.service); do [ "$p" != "$$" ] && kill "$p"; done`
 - The TV has no `timeout` command, which `tools/install.sh` relies on.
 - `luna-send` prints nothing unless it has a terminal: use `ssh -tt`. The install subscription
   never exits by itself. Run it in the background, wait until the installed file (e.g.
-  `/media/developer/apps/usr/palm/applications/com.github.pmiraka.homeplus/homeplus`) matches the
+  `/media/developer/apps/usr/palm/applications/com.github.pbalazaar.homeplus/homeplus`) matches the
   new build, then kill it. The install un-elevates the service; the launcher fixes that on its next start.
 - Screenshot: `luna-send -n 1 luna://com.webos.service.capture/executeOneShot '{"path":"/tmp/s.png","method":"DISPLAY","format":"PNG","width":1920,"height":1080}'`.
 
@@ -140,7 +144,8 @@ appears in your own SSH command line** — it kills the session. Use:
   then `appInstallService/dev/remove`s the package. A plain uninstall (Homebrew Channel) runs none of
   that: what's left must be harmless (the dead link, the binds' fallbacks below); `/var/lib/homeplus` stays.
 - Preview modes: `HOMEPLUS_PREVIEW_FRESH=1` (question not answered), `HOMEPLUS_PREVIEW_UNROOTED=1`
-  (unelevated service; with no luna-send on the host this shows the Homebrew Channel screen).
+  (unelevated service; with no luna-send on the host this shows the Homebrew Channel screen),
+  `HOMEPLUS_PREVIEW_OLD=1` (the old Home+'s service answers: "Uninstall the Old Home+").
 
 ## Known TV quirks
 - LG's SDL puts the *scancode* in `keysym.sym` (Right arrow arrives as 79); see `remote_key()`.

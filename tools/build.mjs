@@ -1,7 +1,7 @@
 // Builds the .ipk packages into dist/ without ares-cli or a system tar, so macOS and Linux
 // produce the same packages.
 // An .ipk is an `ar` archive of: debian-binary, control.tar.gz, data.tar.gz.
-//   node tools/build.mjs   -> dist/com.github.pmiraka.homeplus_<version>_all.ipk: the native
+//   node tools/build.mjs   -> dist/com.github.pbalazaar.homeplus_<version>_all.ipk: the native
 //                             launcher with its service and boot script (one package, as the
 //                             Homebrew Channel lists one). Run `make -C native webos` first.
 import crypto from 'node:crypto';

@@ -1,9 +1,9 @@
 {
-  "id": "com.github.pmiraka.homeplus.service",
+  "id": "com.github.pbalazaar.homeplus.service",
   "description": "Home+ helper service",
   "services": [
     {
-      "name": "com.github.pmiraka.homeplus.service",
+      "name": "com.github.pbalazaar.homeplus.service",
       "description": "Home+ helper service"
     }
   ],

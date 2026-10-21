@@ -3,7 +3,7 @@
  * Runs on the TV as a webOS JS service. Once elevated (see README) it can call
  * the application manager on the launcher's behalf, and it talks to the Stremio
  * API so the launcher never holds your Stremio auth key. The native launcher
- * (com.github.pmiraka.homeplus) uses its local HTTP API; Luna methods are for
+ * (com.github.pbalazaar.homeplus) uses its local HTTP API; Luna methods are for
  * terminal setup (Trakt, Stremio, Home button) and the boot script.
  */
 'use strict';
@@ -251,7 +251,11 @@ async function imageFile(kind, id) {
 //   homeTarget:   app to open (default: Home+)
 
 const DEFAULT_HOME_APPS = ['com.webos.app.home'];
-const NATIVE_ID = 'com.github.pmiraka.homeplus'; // the launcher; this service ships in its package
+const NATIVE_ID = 'com.github.pbalazaar.homeplus'; // the launcher; this service ships in its package
+// Home+'s id up to 0.14.0. A new id is another app to webOS, installed beside the old one until that's
+// uninstalled: a bind LG Input Hook's app made for it is still Home+'s, the old launcher stays out of
+// the app list, and Remove Home+ takes what it left too.
+const OLD_ID = 'com.github.pmiraka.homeplus';
 let lastForeground = '';
 let lastTakeover = 0;
 let takeoverLanded = true; // did the launcher reach the front after our last takeover?
@@ -388,7 +392,7 @@ setTimeout(installBootScript, 2000);
 // ---- Remove Home+: undo everything Home+ set up on the TV, then uninstall the package.
 
 const INPUTHOOK_BINDS = process.env.HOMEPLUS_INPUTHOOK_BINDS || '/home/root/.config/lginputhook/keybinds.json'; /* tests: elsewhere */
-const OUR_IDS = [NATIVE_ID, 'com.atvlauncher.native', 'com.atvlauncher.app'];
+const OUR_IDS = [NATIVE_ID, OLD_ID, 'com.atvlauncher.native', 'com.atvlauncher.app'];
 
 // a key's bind that's Home+'s: the one Home+ makes there (OUR_BINDS), or one it turns into that
 // (OLD_BINDS). Matched whole: a bind of yours that only mentions Home+ stays yours.
@@ -582,7 +586,7 @@ const inputPicker = () => luna(SYSUI + '/launch', { appId: INPUT_PICKER });
 // so does another app coming to the front.
 
 const SYSUI = 'luna://com.webos.service.systemUIManager';
-const OVERLAY_ID = 'com.github.pmiraka.homeplus.cc';
+const OVERLAY_ID = 'com.github.pbalazaar.homeplus.cc';
 const OVERLAY_QML = path.join(APP_DIR, 'qml', 'ControlCenter.qml');
 let overlayOpen = false;
 let overlayGen = 0; /* counts each open, and each thing that cancels one on its way (another app in front) */
@@ -818,7 +822,7 @@ function dropElevation() {
       const d = path.join(root, dir);
       if (!fs.statSync(d).isDirectory()) continue;
       for (const f of fs.readdirSync(d)) {
-        if (f.startsWith(NATIVE_ID)) { fs.rmSync(path.join(d, f), { force: true }); n++; }
+        if (f.startsWith(NATIVE_ID) || f.startsWith(OLD_ID)) { fs.rmSync(path.join(d, f), { force: true }); n++; }
       }
     }
   } catch (e) { /* not elevated this way */ }
@@ -913,7 +917,7 @@ register('setHomeOverride', (msg) => {
 // Used by the native launcher, which can't speak Luna
 // easily. Same rules as the image server: 127.0.0.1 only.
 
-const HIDDEN_APPS = [NATIVE_ID, 'com.webos.app.home',
+const HIDDEN_APPS = [NATIVE_ID, OLD_ID, 'com.webos.app.home',
   'com.webos.app.homeconnect', 'com.webos.app.voice'];
 
 function hexColor(c) {
@@ -1372,6 +1376,7 @@ const imageServer = http.createServer(async (req, res) => {
     tokenWritten = writeToken(); /* again: installing the launcher replaces its folder */
     const cfg = readConfig();
     return sendJSON(res, 200, {
+      id: pkg.name, /* (the launcher checks it's its own: the old Home+'s, still installed, takes the same port) */
       version: pkg.version, elevated: isRoot(), token: tokenWritten,
       bootScript: fs.existsSync(INITD), homeAsked: !!cfg.homeAsked, homeMode: homeMode(cfg)
     });

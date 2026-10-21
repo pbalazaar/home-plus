@@ -5,7 +5,7 @@
 // anyone: the boot script and the launcher wake the service with it.
 'use strict';
 
-const OWN_APP = 'com.github.pmiraka.homeplus';
+const OWN_APP = 'com.github.pbalazaar.homeplus';
 
 function trusted(sender) {
   const s = String(sender || '');

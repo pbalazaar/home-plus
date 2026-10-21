@@ -105,3 +105,6 @@ service HOMEPLUS_PREVIEW_FRESH=1
 shot first-run-home "" 3000
 service HOMEPLUS_PREVIEW_UNROOTED=1
 shot first-run-no-hbc "" 6000
+# the old Home+ (com.github.pmiraka.homeplus, Home+'s id up to 0.14.0) still installed: its service answers
+service HOMEPLUS_PREVIEW_OLD=1
+shot old-home-plus "" 3000

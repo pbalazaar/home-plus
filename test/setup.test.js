@@ -23,13 +23,13 @@ const binds = () => JSON.parse(fs.readFileSync(bindsFile, 'utf8'));
 const homeAction = (file = bindsFile) => { try { return JSON.parse(fs.readFileSync(file, 'utf8'))[773].action; } catch (e) { return null; } };
 /* everyone else's binds, one of them made by hand to open Home+: only mentioning Home+ doesn't make a bind Home+'s */
 const theirs = { 1: { action: 'launch', id: 'netflix' }, 2: { action: 'exec', command: 'echo hi' },
-  500: { action: 'exec', command: 'luna-send -n 1 luna://com.webos.applicationManager/launch \'{"id":"com.github.pmiraka.homeplus"}\'' } };
+  500: { action: 'exec', command: 'luna-send -n 1 luna://com.webos.applicationManager/launch \'{"id":"com.github.pbalazaar.homeplus"}\'' } };
 const others = (b) => ({ 1: b[1], 2: b[2], 500: b[500] });
 
 test.before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-setup-'));
   fs.writeFileSync(path.join(dir, 'apps.txt'), 'netflix|Netflix');
-  app = path.join(dir, 'applications', 'com.github.pmiraka.homeplus'); /* Home+, installed */
+  app = path.join(dir, 'applications', 'com.github.pbalazaar.homeplus'); /* Home+, installed */
   fs.mkdirSync(path.join(app, 'init.d'), { recursive: true });
   fs.copyFileSync(path.join(ROOT, 'native', 'appinfo.json'), path.join(app, 'appinfo.json'));
   fs.copyFileSync(path.join(ROOT, 'init.d', '50-homeplus'), path.join(app, 'init.d', '50-homeplus'));
@@ -41,7 +41,7 @@ test.before(async () => {
   bindsFile = path.join(dir, 'lginputhook', 'keybinds.json');
   fs.mkdirSync(path.dirname(bindsFile));
   fs.writeFileSync(bindsFile, JSON.stringify(Object.assign({
-    773: { action: 'launch', id: 'com.github.pmiraka.homeplus' }, /* made in LG Input Hook's app, as the README said */
+    773: { action: 'launch', id: 'com.github.pmiraka.homeplus' }, /* made in LG Input Hook's app, as the README said, for Home+ under its old id */
     139: { action: 'exec', command: `sh ${SCRIPT}` } /* made by Home+ 0.11 */
   }, theirs)));
   svc = await startService(dir, { HOMEPLUS_APP_DIR: app, HOMEPLUS_INITD_DIR: initd, HOMEPLUS_INPUTHOOK_BINDS: bindsFile });
@@ -66,7 +66,7 @@ test('setup: Home+\'s binds from before turn into ones that check for Home+, and
   /* plain commands (LG Input Hook runs a bind without a shell), each a script beside the binds */
   assert.deepEqual(b[773], { action: 'exec', command: `sh ${path.join(dirOf, 'homeplus-home.sh')}` });
   assert.deepEqual(b[139], { action: 'exec', command: `sh ${path.join(dirOf, 'homeplus-settings.sh')}` });
-  assert.match(fs.readFileSync(path.join(dirOf, 'homeplus-home.sh'), 'utf8'), /com\.github\.pmiraka\.homeplus.+\n.*com\.webos\.app\.home"/s);
+  assert.match(fs.readFileSync(path.join(dirOf, 'homeplus-home.sh'), 'utf8'), /com\.github\.pbalazaar\.homeplus.+\n.*com\.webos\.app\.home"/s);
   assert.match(fs.readFileSync(path.join(dirOf, 'homeplus-settings.sh'), 'utf8'), /settings-key\.sh.+\n.*com\.webos\.app\.quicksettings"/s);
   assert.deepEqual(others(b), theirs);
   assert.deepEqual((await svc.call('GET', '/api/home')).json.settingsKey, { available: true, on: true });
@@ -87,7 +87,7 @@ test('setup: the keys do what they do without Home+ once it\'s gone', { skip: wi
   const { 773: home, 139: settings } = binds();
   const appinfo = path.join(app, 'appinfo.json'), away = path.join(dir, 'appinfo.away');
 
-  assert.equal(press(home.command), 'luna-send -n 1 luna://com.webos.applicationManager/launch {"id":"com.github.pmiraka.homeplus"}');
+  assert.equal(press(home.command), 'luna-send -n 1 luna://com.webos.applicationManager/launch {"id":"com.github.pbalazaar.homeplus"}');
   fs.renameSync(appinfo, away); /* Home+, removed */
   try {
     assert.equal(press(home.command), 'luna-send -n 1 luna://com.webos.applicationManager/launch {"id":"com.webos.app.home"}', 'LG\'s home screen');
@@ -126,7 +126,7 @@ test('setup: the keys do what they do without Home+ once it\'s gone', { skip: wi
 
 test('setup: a Home bind made later in LG Input Hook\'s app gets the same check at once', async () => {
   const upgraded = binds()[773];
-  fs.writeFileSync(bindsFile, JSON.stringify(Object.assign(binds(), { 773: { action: 'launch', id: 'com.github.pmiraka.homeplus' } }), null, 2));
+  fs.writeFileSync(bindsFile, JSON.stringify(Object.assign(binds(), { 773: { action: 'launch', id: 'com.github.pbalazaar.homeplus' } }), null, 2));
   await until(() => homeAction() === 'exec', 8000, 'the Home bind to be upgraded');
   assert.deepEqual(binds()[773], upgraded);
   assert.deepEqual(others(binds()), theirs);
@@ -134,9 +134,9 @@ test('setup: a Home bind made later in LG Input Hook\'s app gets the same check 
 
 test('setup: a bind of yours on the Settings key that only mentions Home+ stays yours', async () => {
   const before = binds();
-  const yours = { action: 'exec', command: 'sh /home/root/com.github.pmiraka.homeplus-notes.sh' };
+  const yours = { action: 'exec', command: 'sh /home/root/com.github.pbalazaar.homeplus-notes.sh' };
   try { /* with the Home bind from LG Input Hook's app again: once it's upgraded, the service has looked at the file */
-    fs.writeFileSync(bindsFile, JSON.stringify(Object.assign(binds(), { 139: yours, 773: { action: 'launch', id: 'com.github.pmiraka.homeplus' } }), null, 2));
+    fs.writeFileSync(bindsFile, JSON.stringify(Object.assign(binds(), { 139: yours, 773: { action: 'launch', id: 'com.github.pbalazaar.homeplus' } }), null, 2));
     await until(() => homeAction() === 'exec', 8000, 'the Home bind to be upgraded');
     assert.deepEqual(binds()[139], yours, 'not turned into Home+\'s');
     assert.equal((await svc.call('GET', '/api/home')).json.settingsKey.on, false, 'not Home+\'s');
@@ -171,7 +171,7 @@ test('setup: LG Input Hook installed after the service started still gets its Ho
   const s = await startService(d, { HOMEPLUS_APP_DIR: app, HOMEPLUS_INITD_DIR: initd, HOMEPLUS_INPUTHOOK_BINDS: later, HOMEPLUS_BINDS_RETRY_MS: '200' });
   try {
     fs.mkdirSync(path.dirname(later)); /* LG Input Hook comes, and a Home bind is made in its app */
-    fs.writeFileSync(later, JSON.stringify({ 773: { action: 'launch', id: 'com.github.pmiraka.homeplus' } }));
+    fs.writeFileSync(later, JSON.stringify({ 773: { action: 'launch', id: 'com.github.pbalazaar.homeplus' } }));
     await until(() => homeAction(later) === 'exec', 8000, 'the Home bind to be upgraded');
   } finally {
     await s.stop();

@@ -8,7 +8,7 @@
 #    screen with Home+ - including at boot.
 # What it did goes to /var/lib/webosbrew/homeplus-boot.log (this boot's only).
 
-APP=com.github.pmiraka.homeplus
+APP=com.github.pbalazaar.homeplus
 SVC=$APP.service
 SVC_DIR=/media/developer/apps/usr/palm/services/$SVC
 ELEVATE=/media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/elevate-service
