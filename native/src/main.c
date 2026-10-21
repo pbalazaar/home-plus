@@ -2675,7 +2675,8 @@ static float cc_edit_dim(void)
 #define GAL_W 680
 #define GAL_PAD 24
 #define GAL_HEAD 66
-#define GAL_GROUP 34
+#define GAL_GROUP 52    /* a group's name, near the top: room between it and its controls */
+#define GAL_GROUP_TOP 6
 #define GAL_BTN 72
 #define GAL_ROW 144
 #define GAL_NAME_PX 20
@@ -4295,7 +4296,7 @@ static void draw_cc_gallery(float a)
     Uint8 al = (Uint8)(255 * a);
     draw_text(S.cc.list_title, S.cc.ltw, S.cc.lth, x + (w - S.cc.ltw) / 2, y + (GAL_HEAD - S.cc.lth) / 2 + 3, al);
     for (int g = 0; g < S.cc.gal_nhead; g++) /* the group's name, small, on the left like iOS's */
-        draw_text(S.cc.gal_head[g], S.cc.gal_hw[g], S.cc.gal_hh[g], x + GAL_PAD + 8, y + S.cc.gal_hy[g] + (GAL_GROUP - S.cc.gal_hh[g]) / 2,
+        draw_text(S.cc.gal_head[g], S.cc.gal_hw[g], S.cc.gal_hh[g], x + GAL_PAD + 8, y + S.cc.gal_hy[g] + GAL_GROUP_TOP,
                   (Uint8)(al * 0.6f));
     if (!S.cc.gal_n) { /* nothing left to add */
         static Tex *none;

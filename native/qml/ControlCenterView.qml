@@ -460,12 +460,13 @@ FocusScope {
 
     // ---- the gallery: what can be added, by group, as round buttons with their names under them;
     // wider than the grid, its right edge the grid's (main.c: cc_gallery_build; GAL_W, GAL_PAD,
-    // GAL_HEAD, GAL_GROUP, GAL_BTN, GAL_ROW, GAL_NAME_PX, GAL_NAME_GAP)
+    // GAL_HEAD, GAL_GROUP, GAL_GROUP_TOP, GAL_BTN, GAL_ROW, GAL_NAME_PX, GAL_NAME_GAP)
 
     readonly property int galW: 680
     readonly property int galPad: 24
     readonly property int galHead: 66
-    readonly property int galGroup: 34
+    readonly property int galGroup: 52 // a group's name, near the top: room between it and its controls
+    readonly property int galGroupTop: 6
     readonly property int galBtn: 72
     readonly property int galRow: 144
     readonly property int galNamePx: 20
@@ -1138,7 +1139,7 @@ FocusScope {
             model: view.galleryHeads.length
             delegate: Text {
                 x: view.galPad + 8
-                y: view.galleryHeads[index].y + (view.galGroup - height) / 2
+                y: view.galleryHeads[index].y + view.galGroupTop
                 text: view.galleryHeads[index].text
                 color: "white"
                 opacity: 0.6
