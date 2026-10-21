@@ -198,6 +198,7 @@ void run_action(Action act, int arg, const char *id)
         sheet_body("Its Continue Watching leaves the Top Shelf until you sign in again.");
         sheet_add("Sign Out", arg == SRC_COUNT ? ACT_TRAKT_UNLINK : ACT_MEDIA_UNLINK, arg, 1);
         sheet_add("Cancel", ACT_UP, 0, 0);
+        S.sheet.index = 1; /* Cancel first, so a stray OK keeps the sign-in */
         S.sheet.page = PAGE_CONFIRM;
         S.sheet.parent = PAGE_ACCOUNTS;
         S.sheet.parent_index = S.at_index;

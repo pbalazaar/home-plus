@@ -84,6 +84,9 @@ shot cc-gallery-groups "UOHOLDDDDRO" 6000
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=1
 shot jellyfin "" 4500
 shot plex "R" 4500
+# signing out asks first, and the question opens on Cancel: a stray OK keeps the sign-in (Up twice: Jellyfin's
+# Continue Watching, then the clock)
+shot signout-ask "UUODDDDRODDDDDOO" 6400
 # streaming apps: what's popular on them (a mock TMDB), turning, and stepping through with Up
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_TMDB=1
 shot popular "" 5200
