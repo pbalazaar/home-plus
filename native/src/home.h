@@ -403,12 +403,16 @@ typedef struct {
     int sheet_qr_s, qr_gen;
     int sheet_big_w, sheet_big_h;
     int hw, hh, sw, sh, sfw, sfh;
+    float special_s, special_v; /* focus animation of the "Hidden" tile */
 } State;
 
 extern State S;
 
 static const char *const SRC_ID[SRC_COUNT] = { "", "stremio", "jellyfin", "plex" };
 static const char *const SRC_NAME[SRC_COUNT] = { "", "Stremio", "Jellyfin", "Plex" };
+
+/* what the Control Center over another app can ask Home+ to open */
+enum { OPEN_SETTINGS = 1, OPEN_RECENTS, OPEN_ACCESSIBILITY };
 
 /* Tinted's colours on their row in App Icons: swatch i's centre, the row's right end like a value's */
 #define SWATCH_D 34
@@ -474,7 +478,7 @@ static inline float smooth01(float a, float b, float x)
 /* main.c */
 void request_data(void);
 void open_asked(int what);
-void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop);
+int update(float dt);
 
 /* util.c */
 void log_remote(const char *fmt, ...);
@@ -497,16 +501,17 @@ int keep_in_view(int first, int i, int visible, int n, int margin);
 void make_logo(App *a, const unsigned char *px, int w, int h);
 
 /* draw.c */
+void update_clock(void);
 void draw_text(Tex *t, int w, int h, float x, float y, Uint8 a);
 void sway(float *dx, float *dy);
 void glass(const Glass *g);
 void panel(int backdrop, float x, float y, float w, float h, float radius, float legible, float focus, float alpha);
-void ensure_label(App *a);
 void ensure_big(App *a);
-int draw_face(App *a, float x, float y, float w, float h, float rad, float lk, Uint8 alpha, float focus, int backdrop);
 void draw_skeleton(float x, float y, float w, float h, float radius, float alpha);
 void draw_scrims(Uint8 alpha);
+void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop);
 void draw_marquee(Tex *t, int tw, int th, float x, float y, float room, Uint8 c, Uint8 a, Uint32 since);
+int render(float dt, const char *shot);
 
 /* sheet.c */
 void sheet_close(void);
@@ -647,5 +652,8 @@ int next_wake_ms(void);
 void go_offscreen(void);
 void come_back(void);
 int wake(int key);
+
+/* results.c */
+void handle_result(Result *r);
 
 #endif
