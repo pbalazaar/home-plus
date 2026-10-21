@@ -59,9 +59,12 @@ jobs:
       - name: Install the preview's packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libsdl2-dev xvfb xauth libgles2 libegl1 libgl1-mesa-dri python3-pil
+          sudo apt-get install -y --no-install-recommends libsdl2-dev xvfb xauth libgles2 libegl1 libgl1-mesa-dri python3-pil \
+            qmlscene qml-module-qtquick2 qml-module-qtgraphicaleffects qml-module-qtmultimedia
       - name: Render and check every screen
         run: tools/test.sh screens
+      - name: Load and drive the Control Center's QML
+        run: tools/test.sh qml
       - uses: actions/upload-artifact@v4
         if: always()
         with:
