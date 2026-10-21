@@ -145,6 +145,20 @@ test('setup: LG Input Hook installed after the service started still gets its Ho
   }
 });
 
+test('setup: the config and the binds are written whole, and the config stays root\'s alone', async () => {
+  /* each is written beside itself, then takes its place: a power cut can't leave half of one */
+  assert.equal((await svc.call('POST', '/api/prefs', { body: { sounds: false } })).status, 200);
+  assert.equal((await svc.call('POST', '/api/home', { body: { inputKey: true } })).status, 200);
+  assert.equal((await svc.call('POST', '/api/home', { body: { inputKey: false } })).status, 200);
+  const halves = (d) => fs.readdirSync(d).filter((f) => f.endsWith('.tmp'));
+  assert.deepEqual(halves(path.join(dir, 'config')), []);
+  assert.deepEqual(halves(path.dirname(bindsFile)), []);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'config', 'config.json'), 'utf8')).prefs.sounds, false);
+  if (process.platform !== 'win32') { /* (the stand-in TV made it 0644: the service's own write makes it 0600) */
+    assert.equal(fs.statSync(path.join(dir, 'config', 'config.json')).mode & 0o777, 0o600, 'sign-ins: root\'s alone');
+  }
+});
+
 /* last: it removes Home+ */
 test('setup: Remove Home+ takes away its boot script and log, its binds and its settings, and nothing else', async () => {
   const copy = () => { try { return fs.lstatSync(path.join(initd, '50-homeplus')).isFile(); } catch (e) { return false; } };

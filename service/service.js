@@ -88,9 +88,27 @@ function readConfig() {
   try { return JSON.parse(fs.readFileSync(findConfigPath(), 'utf8')); } catch (e) { return {}; }
 }
 
+// Written whole or not at all: a power cut mid-write can't leave a truncated file behind (the new
+// one is written beside it, flushed to the disk, then takes its place). mode: the new file's.
+function writeFileAtomic(p, data, mode) {
+  const tmp = `${p}.${process.pid}.tmp`;
+  try {
+    const fd = fs.openSync(tmp, 'w', mode);
+    try {
+      fs.writeFileSync(fd, data);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, p);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch (e2) { /* never made */ }
+    throw e;
+  }
+}
+
 function writeConfig(cfg) {
-  const p = findConfigPath();
-  fs.writeFileSync(p, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+  writeFileAtomic(findConfigPath(), JSON.stringify(cfg, null, 2), 0o600); /* sign-ins: root's only */
 }
 
 function postJSON(url, body) {
@@ -372,7 +390,7 @@ function dropInputhookBinds() {
   for (const [key, b] of Object.entries(binds || {})) {
     if (ourBind(b)) { delete binds[key]; n++; }
   }
-  if (n) fs.writeFileSync(INPUTHOOK_BINDS, JSON.stringify(binds, null, 2));
+  if (n) writeBinds(binds);
   return n;
 }
 
@@ -391,6 +409,13 @@ const INPUT_PICKER = 'com.webos.app.quickinputpicker';
 
 function readBinds() {
   try { return JSON.parse(fs.readFileSync(INPUTHOOK_BINDS, 'utf8')) || {}; } catch (e) { return null; }
+}
+
+// LG Input Hook rereads the file whenever it changes, so it's written whole, as readable as it was
+function writeBinds(binds) {
+  let mode = 0o644;
+  try { mode = fs.statSync(INPUTHOOK_BINDS).mode & 0o777; } catch (e) { /* a new file */ }
+  writeFileAtomic(INPUTHOOK_BINDS, JSON.stringify(binds, null, 2), mode);
 }
 
 // ---- Home+'s binds outlive it when it's removed without Remove Home+ (from the Homebrew Channel,
@@ -431,7 +456,7 @@ function writeKeyScripts() {
   for (const [file, text] of Object.entries(KEY_SCRIPTS)) {
     let had = null;
     try { had = fs.readFileSync(file, 'utf8'); } catch (e) { /* not there yet */ }
-    if (had !== text) fs.writeFileSync(file, text, { mode: 0o755 });
+    if (had !== text) writeFileAtomic(file, text, 0o755); /* (a key's bind runs it: never half of one) */
   }
 }
 
@@ -449,7 +474,7 @@ function upgradeBinds() {
   const keys = Object.keys(OLD_BINDS).filter((k) => binds && binds[k] && OLD_BINDS[k](binds[k]));
   if (!keys.length) return;
   for (const k of keys) binds[k] = OUR_BINDS[k];
-  fs.writeFileSync(INPUTHOOK_BINDS, JSON.stringify(binds, null, 2));
+  writeBinds(binds);
   log('LG Input Hook binds now work without Home+:', keys);
 }
 
@@ -488,7 +513,7 @@ function setKeyBind(key, on) {
     binds[key] = OUR_BINDS[key];
   }
   else if (ourBind(binds[key])) delete binds[key]; /* someone else's bind stays */
-  fs.writeFileSync(INPUTHOOK_BINDS, JSON.stringify(binds, null, 2));
+  writeBinds(binds);
   log(key === INPUT_KEY ? 'input key:' : 'settings key:', on ? 'Home+' : 'LG');
 }
 
