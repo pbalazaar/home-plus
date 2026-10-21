@@ -216,6 +216,22 @@ test('setup: the service\'s files in /tmp aren\'t written through links put ther
   }
 });
 
+test('setup: FIFOs put at those names don\'t hold the service\'s start up', { skip: windows }, async () => {
+  /* a second service, its log, Recents and PicCap's mark FIFOs (opening one waits for its other end) */
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-setup-fifo-'));
+  fs.writeFileSync(path.join(d, 'apps.txt'), 'netflix|Netflix');
+  const logFile = path.join(d, 'homeplus-service.log'), recents = path.join(d, 'homeplus-recents.json'), mark = path.join(d, 'homeplus-piccap-paused');
+  for (const f of [logFile, recents, mark]) assert.equal(spawnSync('mkfifo', [f]).status, 0, `mkfifo ${f}`);
+  const s = await startService(d, { HOMEPLUS_LOG: logFile, HOMEPLUS_RECENTS_FILE: recents, HOMEPLUS_PICCAP_PAUSED: mark });
+  try {
+    assert.equal((await s.call('POST', '/api/close', { body: { id: 'netflix' } })).status, 200); /* (it writes Recents) */
+    for (const f of [logFile, recents]) assert.ok(fs.lstatSync(f).isFile(), `${path.basename(f)}: a file of the service's own now`);
+  } finally {
+    await s.stop();
+    fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
 /* last: it removes Home+ */
 test('setup: Remove Home+ takes away its boot script and log, its binds and its settings, and nothing else', async () => {
   const copy = () => { try { return fs.lstatSync(path.join(initd, '50-homeplus')).isFile(); } catch (e) { return false; } };
