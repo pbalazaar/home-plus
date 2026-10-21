@@ -2359,9 +2359,10 @@ static void run_action(Action act, int arg)
     }
     case ACT_REMOVE_ASK:
         sheet_open("Remove Home+?");
-        sheet_body("This deletes Home+\xE2\x80\x99s boot script, settings and sign-ins (Stremio, Trakt),\nturns off the Home button takeover and uninstalls Home+.");
+        sheet_body("This deletes Home+\xE2\x80\x99s boot script, settings and sign-ins,\nturns off the Home button takeover and uninstalls Home+.");
         sheet_add("Remove Home+", ACT_REMOVE, 0, 1);
         sheet_add("Cancel", ACT_UP, 0, 0);
+        S.sheet.index = 1; /* Cancel first, so a stray OK keeps Home+ */
         if (S.at_page) S.sheet.page = PAGE_CONFIRM, S.sheet.parent = PAGE_MAIN, S.sheet.parent_index = S.at_index;
         break;
     case ACT_REMOVE:
@@ -2918,17 +2919,24 @@ static void cc_long_press(void)
         return;
     }
     if (S.cc.index >= S.cc.n) return;
-    const CCItem *c = &S.cc.it[S.cc.index];
+    CCItem *c = &S.cc.it[S.cc.index];
     int e = cc_cat(c->id);
+    int sizes = e >= 0 && S.cc.cat[e].sizes[1]; /* a choice of size only when there are two or more */
+    int removable = e < 0 || !S.cc.cat[e].pinned; /* not Settings: the only way in */
+    if (!sizes && !removable) { /* nothing to change about it */
+        c->shake = SDL_GetTicks();
+        return;
+    }
     sheet_open(c->name_s[0] ? c->name_s : c->title_s);
     static const char *const NAME[5] = { "", "Small", "Wide", "", "Large" };
-    for (int k = 0; e >= 0 && S.cc.cat[e].sizes[k]; k++) {
+    for (int k = 0; sizes && S.cc.cat[e].sizes[k]; k++) {
         int u = S.cc.cat[e].sizes[k];
         sheet_add(NAME[u], ACT_CC_SIZE, u, 0);
         S.sheet.it[S.sheet.n - 1].check = u == c->units; /* in the middle like the rest, ticked on the right */
     }
-    if (e < 0 || !S.cc.cat[e].pinned) sheet_add("Remove", ACT_CC_REMOVE, 0, 1); /* not Settings: the only way in */
+    if (removable) sheet_add("Remove", ACT_CC_REMOVE, 0, 1);
     sheet_add("Cancel", ACT_CANCEL, 0, 0);
+    if (!sizes) S.sheet.index = S.sheet.n - 1; /* Remove first: Cancel has the focus, so a stray OK keeps it */
 }
 
 /* a control from the catalogue, at the end in the first of its sizes that fits, with the focus; with
@@ -3842,6 +3850,7 @@ static void draw_app_text(App *a, Uint8 alpha, float dy)
         sw = S.top_hw[S.top_index];
         sh = S.top_hh[S.top_index];
     }
+    if (S.moving) return; /* moving it: the capsule at the top says what the keys do */
     draw_text(sub, sw, sh, LEFT, 340 + a->bh + 10 + dy,
               (Uint8)(TEXT_SECONDARY * alpha / 255 * (1 - fminf(fmaxf(S.cc.t, 0), 1)))); /* the Control Center says what OK does */
 }

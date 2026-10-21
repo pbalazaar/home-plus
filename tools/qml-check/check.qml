@@ -117,7 +117,17 @@ Item {
             v.back(); v.focusIndex = v.focusCount() - 1; v.ok(); expect(!!v.sheet && v.sheet.items[0].act === "reset", "Reset asks first");
             v.back(); v.back(); expect(!v.editing, "Back: done editing");
             break;
-        case 13: // no room: 28 units fill the seven rows, so nothing grows and nothing's added, and it says so
+        case 13: // one size: no choice of it. Wi-Fi's options are Remove and Cancel, on Cancel; Settings (one size,
+            // and the only way in) has nothing to choose, and shakes
+            v.longPress(); v.sheetOk();
+            v.focusIndex = v.find("network"); v.longPress();
+            expect(!!v.sheet && v.sheet.items.map(function (i) { return i.act; }).join() === "remove,cancel" && v.sheetIndex === 1,
+                   "a control with one size: Remove and Cancel, with Cancel focused");
+            v.back();
+            v.focusIndex = v.find("settings"); v.longPress();
+            expect(!v.sheet, "Settings: nothing to choose, no sheet");
+            v.back();
+            // no room: 28 units fill the seven rows, so nothing grows and nothing's added, and it says so
             var full = JSON.parse(JSON.stringify(sample));
             ["soundMode", "brightness", "energySaving", "gameOptimizer"].forEach(function (id) {
                 full.controls.push({ id: id, size: "wide", title: id, kind: "stepper", icon: "controls", value: "", on: null, available: true });

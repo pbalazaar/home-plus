@@ -356,11 +356,17 @@ FocusScope {
         if (focusIndex >= tiles.count) return;
         var t = tiles.get(focusIndex), e = catalogEntry(t.cid), items = [];
         var names = { small: "Small", wide: "Wide", large: "Large" }, sizes = e ? e.sizes : [t.size];
-        for (var k = 0; k < sizes.length; k++)
-            items.push({ label: names[sizes[k]] || sizes[k], act: "size", arg: sizes[k], check: sizes[k] === t.size });
+        if (sizes.length > 1) // a choice of size only when there are two or more
+            for (var k = 0; k < sizes.length; k++)
+                items.push({ label: names[sizes[k]] || sizes[k], act: "size", arg: sizes[k], check: sizes[k] === t.size });
         if (!e || !e.pinned) items.push({ label: "Remove", act: "remove", destructive: true }); // not Settings: the only way in
+        if (!items.length) { // nothing to change about it (main.c: cc_long_press)
+            var item = grid.itemAt(focusIndex);
+            if (item) item.shake();
+            return;
+        }
         items.push({ label: "Cancel", act: "cancel" });
-        openSheet(t.name, "", items, 0, t.cid);
+        openSheet(t.name, "", items, sizes.length > 1 ? 0 : items.length - 1, t.cid); // only Remove: Cancel has the focus
     }
 
     // the picked control moves through the order; up and down, to the control in that row nearest
