@@ -112,6 +112,22 @@ test('setup: a Home bind made later in LG Input Hook\'s app gets the same check 
   assert.deepEqual({ 1: binds()[1], 2: binds()[2] }, theirs);
 });
 
+test('setup: LG Input Hook installed after the service started still gets its Home bind upgraded', async () => {
+  /* a second service, on a TV with no LG Input Hook yet */
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-setup-later-'));
+  fs.writeFileSync(path.join(d, 'apps.txt'), 'netflix|Netflix');
+  const later = path.join(d, 'lginputhook', 'keybinds.json');
+  const s = await startService(d, { HOMEPLUS_APP_DIR: app, HOMEPLUS_INITD_DIR: initd, HOMEPLUS_INPUTHOOK_BINDS: later, HOMEPLUS_BINDS_RETRY_MS: '200' });
+  try {
+    fs.mkdirSync(path.dirname(later)); /* LG Input Hook comes, and a Home bind is made in its app */
+    fs.writeFileSync(later, JSON.stringify({ 773: { action: 'launch', id: 'com.github.pmiraka.homeplus' } }));
+    await until(() => JSON.parse(fs.readFileSync(later, 'utf8'))[773].action === 'exec', 8000, 'the Home bind to be upgraded');
+  } finally {
+    await s.stop();
+    fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
 /* last: it removes Home+ */
 test('setup: Remove Home+ takes away its boot script and log, its binds and its settings, and nothing else', async () => {
   const copy = () => { try { return fs.lstatSync(path.join(initd, '50-homeplus')).isFile(); } catch (e) { return false; } };

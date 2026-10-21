@@ -425,15 +425,23 @@ function upgradeBinds() {
 }
 
 // at start, and whenever the binds change, so a Home bind just made in LG Input Hook's app is
-// upgraded at once (the hook rereads the file by itself)
+// upgraded at once (the hook rereads the file by itself). LG Input Hook installed after the service
+// started is looked for every minute (tests: HOMEPLUS_BINDS_RETRY_MS).
+const BINDS_RETRY_MS = Number(process.env.HOMEPLUS_BINDS_RETRY_MS) || 60000;
 if (isRoot()) {
   const upgrade = () => { try { upgradeBinds(); } catch (e) { log('LG Input Hook binds:', e.message); } };
   let timer = null;
-  upgrade();
-  try {
-    fs.watch(path.dirname(INPUTHOOK_BINDS), { persistent: false }, () => { clearTimeout(timer); timer = setTimeout(upgrade, 500); })
-      .on('error', () => {});
-  } catch (e) { /* no LG Input Hook */ }
+  const watch = () => {
+    try {
+      fs.watch(path.dirname(INPUTHOOK_BINDS), { persistent: false }, () => { clearTimeout(timer); timer = setTimeout(upgrade, 500); })
+        .on('error', () => {});
+    } catch (e) { /* no LG Input Hook (yet) */
+      setTimeout(watch, BINDS_RETRY_MS).unref();
+      return;
+    }
+    upgrade(); /* (binds it may have come with) */
+  };
+  watch();
 }
 
 function settingsKeyState() {
