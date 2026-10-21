@@ -165,7 +165,7 @@ typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELE
                ACT_LAUNCH_ID, ACT_TRAKT_LINK, ACT_TRAKT_UNLINK, ACT_MEDIA_LINK, ACT_MEDIA_UNLINK, ACT_ACCOUNT_ASK, ACT_UP, ACT_TMDB, ACT_SHELF,
                ACT_HOME_MODE, ACT_SOUNDS,
                ACT_SETUP_RETRY, ACT_HOME_YES, ACT_HOME_NO, ACT_HOME_TOGGLE, ACT_REMOVE_ASK, ACT_REMOVE,
-               ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY, ACT_CC_APPEARANCE, ACT_CC_BLUR_VIDEO,
+               ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY, ACT_CC_BLUR_VIDEO,
                ACT_PAGE, ACT_CLOCK, ACT_DIM, ACT_OFF, ACT_ORBIT, ACT_CALM, ACT_HIDDEN, ACT_SETTINGS_KEY,
                ACT_CC_EDIT, ACT_CC_ADD, ACT_CC_SIZE, ACT_CC_REMOVE, ACT_CC_RESET } Action;
 
@@ -246,7 +246,7 @@ static struct {
     Uint32 idle_dim_ms, idle_off_ms; /* OLED idle stages (0 = default) */
     int noflash_active, noflash_available; /* available: LG's home is a web app we can replace */
     int settings_key, settings_key_available; /* the remote's Settings key opens the Control Center (LG Input Hook) */
-    int cc_dark, cc_blur_video, piccap; /* Settings -> Control Center (over other apps): Dark, Blur Over Video (PicCap installed) */
+    int cc_blur_video, piccap; /* Settings -> Control Center: Blur Over Video (over other apps, with PicCap installed) */
     Uint32 trakt_poll; /* while showing a Trakt code: next status check */
     int moving;
     float scroll, scroll_v, scroll_target; /* grid y offset */
@@ -1428,7 +1428,6 @@ static void handle_result(Result *r)
             snd_enable(!S.sounds_off);
             S.reduce_motion = o && cJSON_IsTrue(cJSON_GetObjectItem(o, "reduceMotion"));
             S.reduce_transparency = o && cJSON_IsTrue(cJSON_GetObjectItem(o, "reduceTransparency"));
-            S.cc_dark = o && !strcmp(jstr(o, "ccAppearance"), "dark");
             S.cc_blur_video = o && cJSON_IsTrue(cJSON_GetObjectItem(o, "ccBlurVideo"));
             double dm = jnum(o, "dimMinutes"), om = jnum(o, "offMinutes"); /* -1: never */
             S.idle_dim_ms = dm > 0 ? (Uint32)(dm * 60000) : dm < 0 ? IDLE_NEVER : 0;
@@ -2003,14 +2002,15 @@ static const char *minutes(Uint32 ms, Uint32 dflt, char *buf, size_t cap)
 /* the row a page has on the main Settings page */
 static int main_index(int page)
 {
+    int cc = S.settings_key_available && S.piccap; /* Control Center: Blur Over Video */
     switch (page) {
     case PAGE_HOME: return 0;
     case PAGE_DISPLAY: return 1;
     case PAGE_CC: return 2;
-    case PAGE_ACCESS: return 5;
-    case PAGE_ACCOUNTS: return 6;
-    case PAGE_TV: return 7 + (S.nhidden > 0);
-    case PAGE_ABOUT: return 7 + (S.nhidden > 0) + (S.nsettings > 0);
+    case PAGE_ACCESS: return 4 + cc;
+    case PAGE_ACCOUNTS: return 5 + cc;
+    case PAGE_TV: return 6 + cc + (S.nhidden > 0);
+    case PAGE_ABOUT: return 6 + cc + (S.nhidden > 0) + (S.nsettings > 0);
     default: return 0;
     }
 }
@@ -2045,15 +2045,11 @@ static void settings_page(int page, int index)
         break;
     case PAGE_CC:
         sheet_open("Control Center");
-        settings_row("Appearance", S.cc_dark ? "Dark" : "Light", ACT_CC_APPEARANCE, 0, 0, 0);
-        int blur = !S.cc_dark && S.piccap && S.settings_key_available; /* over other apps, with LG Input Hook */
-        if (blur) settings_row("Blur Over Video", S.cc_blur_video ? "On" : "Off", ACT_CC_BLUR_VIDEO, 0, 0, 0);
-        sheet_body(!S.settings_key_available ? "Light is frosted glass, and Dark a clear tint."
-                   : !blur ? "Light is frosted glass, and Dark a clear tint,\nin Home+ and over other apps."
-                   : "Light is frosted glass, and Dark a clear tint, in Home+ and over other apps.\n"
-                     "The TV captures video for one app at a time, and PicCap has it:\n"
-                     "Blur Over Video pauses PicCap while the Control Center is open,\n"
-                     "so its glass can blur the video.");
+        settings_row("Blur Over Video", S.cc_blur_video ? "On" : "Off", ACT_CC_BLUR_VIDEO, 0, 0, 0);
+        sheet_body("Over other apps, the Control Center\xE2\x80\x99s glass blurs what\xE2\x80\x99s behind it.\n"
+                   "The TV captures video for one app at a time, and PicCap has it:\n"
+                   "Blur Over Video pauses PicCap while the Control Center is open,\n"
+                   "so its glass can blur the video too.");
         break;
     case PAGE_ACCESS:
         sheet_open("Accessibility");
@@ -2100,7 +2096,8 @@ static void settings_page(int page, int index)
         settings_row("Remote", home_on ? "Home Opens Home+" : "", ACT_PAGE, PAGE_HOME, 1, 0);
         snprintf(v, sizeof v, "Dims After %s", minutes(S.idle_dim_ms, IDLE_DIM_MS, v2, sizeof v2));
         settings_row("Display & OLED", S.idle_dim_ms == IDLE_NEVER ? "Never Dims" : v, ACT_PAGE, PAGE_DISPLAY, 1, 0);
-        settings_row("Control Center", S.cc_dark ? "Dark" : "Light", ACT_PAGE, PAGE_CC, 1, 0);
+        if (S.settings_key_available && S.piccap) /* over other apps, with PicCap: Blur Over Video */
+            settings_row("Control Center", S.cc_blur_video ? "Blurs Video" : "", ACT_PAGE, PAGE_CC, 1, 0);
         settings_row("Sounds", S.sounds_off ? "Off" : "On", ACT_SOUNDS, 0, 0, 0);
         settings_row("Clock", S.clock24 ? "24-Hour" : "12-Hour", ACT_CLOCK, 0, 0, 0);
         settings_row("Accessibility", S.reduce_motion || S.reduce_transparency ? "On" : "Off", ACT_PAGE, PAGE_ACCESS, 1, 0);
@@ -2455,11 +2452,6 @@ static void run_action(Action act, int arg)
         settings_again();
         break;
     }
-    case ACT_CC_APPEARANCE:
-        S.cc_dark = !S.cc_dark;
-        net_post("/api/prefs", S.cc_dark ? "{\"ccAppearance\":\"dark\"}" : "{\"ccAppearance\":\"light\"}", 0);
-        settings_again();
-        break;
     case ACT_CC_BLUR_VIDEO:
         S.cc_blur_video = !S.cc_blur_video;
         net_post("/api/prefs", S.cc_blur_video ? "{\"ccBlurVideo\":true}" : "{\"ccBlurVideo\":false}", 0);
@@ -3654,20 +3646,6 @@ static void panel(int backdrop, float x, float y, float w, float h, float radius
     glass(&g);
 }
 
-/* The Control Center's glass: with Settings -> Control Center -> Dark, a clear dark tint and its rim,
- * as over other apps (native/qml/Glass.qml); Light, Liquid Glass (and Reduce Transparency wins) */
-static void cc_panel(float x, float y, float w, float h, float radius, float focus, float alpha)
-{
-    if (!S.cc_dark || S.reduce_transparency) {
-        panel(0, x, y, w, h, radius, 1, focus, alpha);
-        return;
-    }
-    if (alpha <= 0.004f) return;
-    int lit = focus > 0.01f;
-    r_shape(x, y, w, h, radius, 28, 28, 33, (Uint8)(77 * alpha), 0, 1, 1);
-    r_rim(x, y, w, h, radius, 2.0f, (Uint8)(90 * alpha), lit ? S.light_x : -0.6f, lit ? S.light_y : -0.8f);
-}
-
 /* text is made when first shown: a big title is ~0.4 MB of GPU memory */
 static void ensure_label(App *a)
 {
@@ -4277,7 +4255,7 @@ static void draw_cc_list(float a)
     float h = head + (rows ? rows * (rh + gap) - gap : 40) + 14;
     if (!S.reduce_motion) y -= 12 * (1 - a); /* it settles in */
     r_shadow(x, y, w, h, 34, 30, 12, 0.35f * a);
-    cc_panel(x, y, w, h, 34, 0, a);
+    panel(0, x, y, w, h, 34, 1, 0, a);
     Uint8 al = (Uint8)(255 * a);
     draw_text(S.cc.list_title, S.cc.ltw, S.cc.lth, x + (w - S.cc.ltw) / 2, y + (head - S.cc.lth) / 2 + 3, al);
     for (int r = 0; r < rows; r++) {
@@ -4300,7 +4278,7 @@ static void draw_cc_gallery(float a)
     float x = cc_grid_x(), y = cc_grid_y(), w = 4 * CC_U + 3 * CC_G, h = S.cc.gal_h;
     if (!S.reduce_motion) y -= 12 * (1 - a); /* it settles in */
     r_shadow(x, y, w, h, 34, 30, 12, 0.35f * a);
-    cc_panel(x, y, w, h, 34, 0, a);
+    panel(0, x, y, w, h, 34, 1, 0, a);
     Uint8 al = (Uint8)(255 * a);
     draw_text(S.cc.list_title, S.cc.ltw, S.cc.lth, x + (w - S.cc.ltw) / 2, y + (GAL_HEAD - S.cc.lth) / 2 + 3, al);
     for (int g = 0; g < S.cc.gal_nhead; g++) /* the group's name, small, on the left like iOS's */
@@ -4317,7 +4295,7 @@ static void draw_cc_gallery(float a)
         int f = k == S.cc.list_index;
         float bx = x + S.cc.gal_x[k], by = y + S.cc.gal_y[k], d = GAL_BTN * (f ? 1.08f : 1), ox = bx - (d - GAL_BTN) / 2, oy = by - (d - GAL_BTN) / 2;
         if (f) r_shadow(ox, oy, d, d, d / 2, 14, 6, 0.4f * a);
-        cc_panel(ox, oy, d, d, d / 2, f, a);
+        panel(0, ox, oy, d, d, d / 2, 1, f, a);
         if (f) r_shape(ox, oy, d, d, d / 2, 245, 245, 247, al, 0, 1, 1);
         Uint8 c = f ? 28 : 255;
         float is = 32 * d / GAL_BTN;
@@ -4372,7 +4350,7 @@ static void draw_control_center(void)
         float rw = w * sc, rh = h * sc, rx = cx - rw / 2, ry = cy - rh / 2, rad = c->h == 2 ? 40 * sc : rh / 2;
         float lift = i == S.cc.picked ? 1 : k;
         if (lift > 0.01f) r_shadow(rx, ry, rw, rh, rad, 18, 8, 0.4f * lift * ti);
-        cc_panel(rx, ry, rw, rh, rad, k, ti);
+        panel(0, rx, ry, rw, rh, rad, 1, k, ti);
         if (g > 0.01f) r_shape(rx, ry, rw, rh, rad, 245, 245, 247, (Uint8)(255 * ti * g), 0, 1, 1);
         if (S.cc.editing && (S.reduce_motion || i == S.cc.picked)) /* still: an outline says it's editing */
             r_shape(rx, ry, rw, rh, rad, 255, 255, 255, (Uint8)(150 * ti), 2.0f, 1, 1);
@@ -4426,7 +4404,7 @@ static void draw_control_center(void)
         draw_text(ht, hw, hh, RIGHT - hw, cc_grid_y() + cc_rows() * (CC_U + CC_G) + 4, (Uint8)(TEXT_STATIC * a));
         if (cc_rect(S.cc.n + 1, &x, &y, &w, &h)) { /* Reset: red, like sheets' destructive buttons */
             float g = fminf(fmaxf(S.cc.reset_s, 0), 1);
-            cc_panel(x, y, w, h, h / 2, g, a);
+            panel(0, x, y, w, h, h / 2, 1, g, a);
             if (g > 0.01f) r_shape(x, y, w, h, h / 2, 245, 245, 247, (Uint8)(255 * a * g), 0, 1, 1);
             r_image(S.cc.reset, x + (w - S.cc.rsw) / 2, y + (h - S.cc.rsh) / 2, S.cc.rsw, S.cc.rsh, 255, (Uint8)(90 - 40 * g), (Uint8)(80 - 40 * g),
                     (Uint8)(255 * a), 0);

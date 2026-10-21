@@ -30,7 +30,6 @@ FocusScope {
 
     readonly property bool still: !!cc.reduceMotion      // Settings -> Accessibility: Reduce Motion
     readonly property bool solid: !!cc.reduceTransparency // ... and Reduce Transparency
-    readonly property bool dark: cc.appearance === "dark" // Settings: the Control Center's appearance (Light: frosted)
 
     property int focusIndex: 0     // a control (0..n-1); while editing, the + slot (n) and Reset (n + 1)
     property int listKind: 0       // in the Control Center's place: 1 picture modes, 2 inputs, 3 the gallery
@@ -235,7 +234,6 @@ FocusScope {
                 r.debugFps = cc.debugFps;
                 r.reduceMotion = cc.reduceMotion;
                 r.reduceTransparency = cc.reduceTransparency;
-                r.appearance = cc.appearance;
                 cc = r;
                 load(r);
             }
@@ -598,13 +596,51 @@ FocusScope {
 
     // ---- the clock, as Home+'s header while its Control Center is open (main.c: draw_clock): the
     // time on its own, and the Control Center's circle, grown and white. Over another app it's over
-    // the picture itself, white over white or a channel's logo as often as not: the corner it's in
-    // dims, and both cast a soft shadow (unseen over dark pictures), so they stand out.
+    // the picture itself, white over white or a channel's logo as often as not: both cast a soft
+    // shadow (unseen over dark pictures), and the corner they're in dims where the picture is bright,
+    // as tvOS dims behind its clear glass (a dark layer of up to 35%, none over a dark picture). With
+    // no picture to go by, the corner dims a little, always.
 
+    property real live: hasFrame && !solid ? 1 : 0 // the picture, for the corner as for the glass
+    Behavior on live { NumberAnimation { duration: 240; easing.type: Easing.InOutQuad } }
+    ShaderEffect {
+        x: view.rightEdge - 80 - 760; y: 0; width: view.width - x; height: 80 + 560
+        visible: view.live > 0
+        opacity: clock.opacity * view.live
+        property variant srcA: frameA // the frames themselves (not blurred: a logo would melt away)
+        property variant srcB: frameB
+        property real fade: view.fade
+        property rect area: Qt.rect(x / 1920, y / 1080, width / 1920, height / 1080)
+        property point centre: Qt.point(760 / width, 80 / height) // the clock's corner, in it
+        property size reach: Qt.size(760 / width, 560 / height)
+        fragmentShader: "
+            varying highp vec2 qt_TexCoord0;
+            uniform sampler2D srcA;
+            uniform sampler2D srcB;
+            uniform lowp float fade;
+            uniform highp vec4 area;
+            uniform highp vec2 centre;
+            uniform highp vec2 reach;
+            uniform lowp float qt_Opacity;
+            lowp float lum(highp vec2 uv) {
+                lowp vec3 c = mix(texture2D(srcA, uv).rgb, texture2D(srcB, uv).rgb, fade);
+                return dot(c, vec3(0.299, 0.587, 0.114));
+            }
+            void main() {
+                highp vec2 uv = area.xy + qt_TexCoord0 * area.zw;
+                highp vec2 px = vec2(1.0 / 160.0, 1.0 / 90.0); // a pixel of a frame: four around, softened
+                lowp float l = 0.25 * (lum(uv + px * vec2(-0.75, -0.75)) + lum(uv + px * vec2(0.75, -0.75))
+                                     + lum(uv + px * vec2(-0.75, 0.75)) + lum(uv + px * vec2(0.75, 0.75)));
+                highp float r = length((qt_TexCoord0 - centre) / reach); // 0 at the clock, 1 at the edge
+                lowp float near = 1.0 - smoothstep(0.0, 1.0, r);
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 0.35 * smoothstep(0.3, 0.7, l) * near) * qt_Opacity;
+            }"
+    }
     RadialGradient {
         x: view.rightEdge - 80 - 760; y: 80 - 560; width: 2 * 760; height: 2 * 560
         horizontalRadius: width / 2; verticalRadius: height / 2
-        opacity: clock.opacity
+        visible: view.live < 1
+        opacity: clock.opacity * (1 - view.live)
         gradient: Gradient {
             GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.38) }
             GradientStop { position: 0.45; color: Qt.rgba(0, 0, 0, 0.16) }
@@ -739,7 +775,7 @@ FocusScope {
                 radius: tile.rad
                 sourceA: glassA; sourceB: glassB; fade: view.fade
                 live: view.hasFrame
-                dark: view.dark; solid: view.solid
+                solid: view.solid
                 screenX: tile.x
                 screenY: tile.y
                 visible: tile.lit < 0.99 // under white, nothing to see
@@ -917,7 +953,7 @@ FocusScope {
             anchors.fill: parent
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            dark: view.dark; solid: view.solid
+            solid: view.solid
             screenX: reset.x; screenY: reset.y
             visible: !reset.focused
         }
@@ -973,7 +1009,7 @@ FocusScope {
             radius: 34
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            dark: view.dark; solid: view.solid
+            solid: view.solid
             screenX: list.x
             screenY: view.gridY
         }
@@ -1048,7 +1084,7 @@ FocusScope {
             radius: 34
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            dark: view.dark; solid: view.solid
+            solid: view.solid
             screenX: gal.x
             screenY: view.gridY
         }
@@ -1154,7 +1190,7 @@ FocusScope {
             radius: 40
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            dark: view.dark; solid: view.solid
+            solid: view.solid
             screenX: sheetBox.x
             screenY: sheetBox.y
         }

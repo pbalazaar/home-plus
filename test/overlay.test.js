@@ -187,7 +187,7 @@ async function close() {
   fs.rmSync(path.join(dir, 'capture.json'), { force: true });
 }
 
-test('overlay: video the TV can\'t capture gives the glass no picture (it\'s frosted), not a black one', async () => {
+test('overlay: video the TV can\'t capture gives the glass no picture (it\'s clear), not a black one', async () => {
   /* PicCap has the TV's one video capture: none of the video, and the screen's is black where it plays */
   try {
     const frames = await openWith({ DISPLAY: 'black', VIDEO: 'busy' });
@@ -217,23 +217,7 @@ test('overlay: once the video goes black (or can\'t be captured), its last frame
   }
 });
 
-test('overlay: Dark is a clear tint, so it takes no frames', async () => {
-  await call('POST', '/api/prefs', { body: { ccAppearance: 'dark' } });
-  try {
-    const grabs = () => calls('luna://com.webos.service.capture/executeOneShot').length, before = grabs();
-    await call('POST', '/api/key', { body: { key: 'settings' } });
-    const p = calls('luna://com.webos.service.systemUIManager/launch').at(-1).params.params;
-    assert.equal(p.state.appearance, 'dark');
-    assert.equal(p.frame, '', 'no frames to show');
-    await new Promise((done) => setTimeout(done, 700));
-    assert.equal(grabs(), before, 'none taken');
-    await close();
-  } finally {
-    await call('POST', '/api/prefs', { body: { ccAppearance: 'light' } });
-  }
-});
-
-test('overlay: over video PicCap is capturing, its glass is frosted, and PicCap is left alone', async () => {
+test('overlay: over video PicCap is capturing, its glass is clear, and PicCap is left alone', async () => {
   assert.equal((await call('GET', '/api/home')).json.piccap, true, 'Settings offers Blur Over Video');
   try {
     const frames = await openWith({ DISPLAY: 'piccap', VIDEO: 'piccap' });

@@ -5,21 +5,20 @@ import QtQuick 2.4
 // fading in over the older). No tint: the blurred picture, its bright parts dimmed (up to 35%) so the
 // words on it stay readable; the rounded bevel bends it (the edge magnifies); a thin rim that flares
 // where it faces the light (the top left), with a faint glint opposite and the far side of the bevel
-// in shade. With no picture (none yet, or video the TV can't capture) it's frosted, a dense tint
-// with the rim, the picture fading in over it when it comes. Dark (Settings) is a clear dark tint,
-// with no picture; Reduce Transparency, a solid panel, as Home+'s.
+// in shade: like tvOS's, it has no tint of its own, and takes its look from what's behind it. With
+// no picture (none yet, or video the TV can't capture) it's clear, a light tint with the rim, the
+// picture fading in over it when it comes; with Reduce Transparency, a solid panel, as Home+'s.
 Item {
     id: glass
     property variant sourceA      // the blurred pictures: textures standing for the whole 1920 x 1080 screen
     property variant sourceB
     property real fade: 0          // 0: A, 1: B
     property bool live: false      // there's a picture
-    property bool dark: false      // Settings: the Control Center's appearance, Dark
     property bool solid: false     // Reduce Transparency
     property real radius: height / 2
     property real screenX: 0       // where it is on the screen, before any movement
     property real screenY: 0
-    property real pic: live && !solid && !dark ? 1 : 0 // the picture, over the tint
+    property real pic: live && !solid ? 1 : 0 // the picture, over the tint
     Behavior on pic { NumberAnimation { duration: 240; easing.type: Easing.InOutQuad } }
 
     ShaderEffect {
@@ -73,13 +72,12 @@ Item {
             }"
     }
 
-    // no picture to bend: frosted (or, Dark, a clear tint; with Reduce Transparency, a solid panel), and the same rim
+    // no picture to bend: a clear tint (or, with Reduce Transparency, a solid panel), and the same rim
     Rectangle {
         anchors.fill: parent
         visible: glass.pic < 1
         radius: glass.radius
-        color: glass.solid ? Qt.rgba(38 / 255, 38 / 255, 44 / 255, 0.96)
-             : glass.dark ? Qt.rgba(0.11, 0.11, 0.13, 0.3) : Qt.rgba(0.44, 0.44, 0.48, 0.58)
+        color: glass.solid ? Qt.rgba(38 / 255, 38 / 255, 44 / 255, 0.96) : Qt.rgba(0.11, 0.11, 0.13, 0.3)
     }
     ShaderEffect {
         anchors.fill: parent
