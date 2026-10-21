@@ -101,6 +101,7 @@ if (!problems.length) {
   const wanted = [
     ...['appinfo.json', 'homeplus', 'icon.png', 'largeIcon.png', 'LICENSE', 'LICENSE-cJSON', 'LICENSE-SDL2.txt', 'THIRD_PARTY_NOTICES.md'],
     ...walk('native/assets').map((f) => `assets/${f}`),
+    ...walk('native/qml').map((f) => `qml/${f}`),
     ...walk('init.d').map((f) => `init.d/${f}`)
   ].map((f) => `${APP}/${f}`);
   wanted.push(...walk('service').filter((f) => !f.startsWith('data/') && !f.endsWith('.test.js')).map((f) => `${SVC}/${f}`));

@@ -461,14 +461,120 @@ function setSettingsKey(on) {
   log('settings key:', on ? 'Control Center' : 'LG Quick Settings');
 }
 
+// The Settings key: Home+'s Control Center. In front of Home+ the launcher opens its own; over
+// anything else it's a system UI that LG's compositor runs (native/qml/), as it runs LG's Quick
+// Settings, so the video underneath keeps playing. LG's Quick Settings if that can't open.
 async function remoteKey(key) {
   if (key !== 'settings') throw new Error(`not a key Home+ handles: ${key}`);
   if (lastForeground === NATIVE_ID) {
     emit('controlCenter');
     return { opened: 'controlCenter' };
   }
-  await luna('luna://com.webos.service.systemUIManager/launch', { appId: 'com.webos.app.quicksettings' });
+  try {
+    await openOverlay();
+    return { opened: 'overlay' };
+  } catch (e) {
+    log('control center overlay:', e.message);
+  }
+  await quickSettings();
   return { opened: 'quickSettings' };
+}
+
+const quickSettings = () => luna(SYSUI + '/launch', { appId: 'com.webos.app.quicksettings' });
+
+// ---- The Control Center over other apps. A second launch (the Settings key again) closes it;
+// so does another app coming to the front.
+
+const SYSUI = 'luna://com.webos.service.systemUIManager';
+const OVERLAY_ID = 'com.github.pmiraka.homeplus.cc';
+const OVERLAY_QML = path.join(APP_DIR, 'qml', 'ControlCenter.qml');
+let overlayOpen = false;
+let overlayInputs = []; /* the inputs it offered: the only apps it may open */
+
+async function openOverlay() {
+  if (!fs.existsSync(OVERLAY_QML)) throw new Error('not installed');
+  const state = await control.state();
+  overlayInputs = (state.inputs || []).map((i) => i.appId);
+  state.clock24 = !!(readConfig().prefs || {}).clock24; /* the launcher's clock */
+  if (fs.existsSync('/tmp/homeplus-cc-fps')) state.debugFps = true; /* its frame rate, on screen */
+  const r = await luna(SYSUI + '/launch', {
+    appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
+    params: { state, port: IMAGE_PORT, token: TOKEN, frame: 'file://' + FRAME } /* the API: the compositor may only call LG's services over luna */
+  });
+  if (!r || r.returnValue === false) throw new Error((r && r.errorText) || "the TV didn't open it");
+  overlayOpen = true;
+  captureFrames();
+}
+
+// Its glass shows the picture behind it, blurred: while it's open, a small frame of the video (VIDEO:
+// without any graphics, so not the Control Center itself) about three times a second. Protected
+// video gives no frame, and the glass is a tint. The frames are what's on screen, so they stay in a
+// folder only root can read (the compositor, root, shows them), in memory, and go when it closes.
+const FRAMES = process.env.HOMEPLUS_FRAMES_DIR || '/tmp/homeplus-cc'; /* tests: elsewhere */
+const FRAME = path.join(FRAMES, 'frame.jpg');
+let capturing = false;
+
+async function captureFrames() {
+  if (capturing) return;
+  capturing = true;
+  try {
+    fs.mkdirSync(FRAMES, { recursive: true, mode: 0o700 });
+    fs.chmodSync(FRAMES, 0o700);
+    const until = Date.now() + 5 * 60000; /* in case it's never said to have closed */
+    while (overlayOpen && Date.now() < until) {
+      const r = await luna('luna://com.webos.service.capture/executeOneShot',
+        { path: FRAME + '.tmp', method: 'VIDEO', format: 'JPEG', width: 160, height: 90 });
+      let got = !!(r && r.returnValue);
+      if (got) try { fs.renameSync(FRAME + '.tmp', FRAME); } catch (e) { got = false; } /* whole frames only */
+      await new Promise((done) => setTimeout(done, got ? 40 : 600));
+    }
+  } catch (e) {
+    log('control center frames:', e.message);
+  }
+  capturing = false;
+  fs.rm(FRAMES, { recursive: true, force: true }, () => {});
+}
+
+// The compositor keeps every QML file it has loaded, by its address, until the TV restarts; so each
+// version of the files gets addresses of its own: a link to the folder named for their time.
+function overlayMain() {
+  const dir = path.dirname(OVERLAY_QML);
+  const t = Math.max(...fs.readdirSync(dir).filter((f) => f.endsWith('.qml')).map((f) => fs.statSync(path.join(dir, f)).mtimeMs));
+  const name = `qml-${Math.floor(t).toString(36)}`;
+  for (const f of fs.readdirSync(APP_DIR)) { /* older versions' links */
+    if (/^qml-/.test(f) && f !== name && fs.lstatSync(path.join(APP_DIR, f)).isSymbolicLink()) fs.unlinkSync(path.join(APP_DIR, f));
+  }
+  try { fs.symlinkSync('qml', path.join(APP_DIR, name)); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  return `file://${path.join(APP_DIR, name, 'ControlCenter.qml')}`;
+}
+
+function closeOverlay() {
+  if (!overlayOpen) return;
+  overlayOpen = false;
+  luna(SYSUI + '/closeByAppId', { appId: OVERLAY_ID });
+}
+
+// What it asks for (POST /api/overlay): {"event": "open", "target": "network" | "recents" |
+// "accessibility" | "settings"}, or {"event": "open", "app"} for an input it offered; {"event":
+// "closed"}; and {"event": "failed", "error"}, when its panel didn't load: LG's Quick Settings instead.
+async function overlayEvent(p) {
+  if (p.event === 'closed') {
+    overlayOpen = false;
+  } else if (p.event === 'failed') {
+    overlayOpen = false;
+    log('control center overlay failed:', String(p.error || '').slice(0, 300));
+    await quickSettings();
+  } else if (p.event === 'open' && p.app) {
+    if (!overlayInputs.includes(p.app)) throw new Error(`not an input: ${p.app}`);
+    await luna(APPMGR + '/launch', { id: p.app });
+  } else if (p.event === 'open' && p.target === 'network') { /* as LG's Quick Settings open it */
+    await luna(APPMGR + '/launch', { id: 'com.webos.app.firstuse-overlay', params: { target: 'network' } });
+  } else if (p.event === 'open' && ['recents', 'accessibility', 'settings'].includes(p.target)) {
+    emit(p.target); /* the launcher opens it once it's in front */
+    await luna(APPMGR + '/launch', { id: NATIVE_ID });
+  } else {
+    throw new Error('not something the Control Center does');
+  }
 }
 
 // ---- Events for the launcher: webOS gives a native app no way to hear from a service, so the
@@ -542,6 +648,7 @@ async function onForeground(appId) {
   if (!appId || appId === lastForeground) return;
   log('foreground', lastForeground || '-', '->', appId);
   lastForeground = appId;
+  closeOverlay();
   lastUsed.set(appId, Date.now());
   saveRecents();
   const cfg = readConfig();
@@ -898,6 +1005,10 @@ async function handleApi(req, res) {
       return sendJSON(res, 200, media[source] ? await apiMediaContinue(source) : await apiContinue());
     }
     if (url.pathname === '/api/featured') return sendJSON(res, 200, await apiFeatured(String(url.searchParams.get('app') || '')));
+    if (url.pathname === '/api/overlay' && req.method === 'POST') { /* the Control Center over other apps */
+      await overlayEvent(await readBody(req));
+      return sendJSON(res, 200, { returnValue: true });
+    }
     if (url.pathname === '/api/control') { /* the Control Center: GET its state, POST {action, value} */
       if (req.method === 'POST') {
         const b = await readBody(req);

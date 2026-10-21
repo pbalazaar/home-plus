@@ -10,6 +10,9 @@ module.exports = class Service {
     return sub;
   }
   call(uri, params, cb) {
+    if (process.env.HOMEPLUS_PREVIEW_LUNA_LOG) { // tests: every call, one JSON line each
+      require('fs').appendFileSync(process.env.HOMEPLUS_PREVIEW_LUNA_LOG, JSON.stringify({ uri, params }) + '\n');
+    }
     if (uri.endsWith('/launch')) return cb({ payload: { returnValue: true } });
     const fake = global.__stubLuna && global.__stubLuna(uri, params); // the harness's stand-in TV
     if (fake) return cb({ payload: fake });

@@ -221,6 +221,16 @@ test('control: switches turn on and off; a setting the TV can\'t change now show
   await assert.rejects(control.act('run', 'power'), /steps or switches/);
 });
 
+test('control: what can be off says whether it is on, which tvOS shows in the glyph; the rest say nothing', async () => {
+  const ids = ['network', 'sleepTimer', 'sound', 'eyeComfort', 'energySaving', 'gameOptimizer', 'soundMode', 'brightness', 'power'];
+  const mem = memoryConfig({ controlCenter: ids.map((id) => ({ id, size: id === 'power' ? 'large' : 'wide' })) });
+  const on = async (opts) => Object.fromEntries((await fakeTv(Object.assign(opts, mem)).control.state()).controls.map((c) => [c.id, c.on]));
+  assert.deepEqual(await on({ sleep: 30 }), { network: true, sleepTimer: true, sound: true, eyeComfort: false, energySaving: false,
+    gameOptimizer: false, soundMode: null, brightness: null, power: null, settings: null }, 'connected, a timer set, a sound system playing');
+  const off = await on({ wifi: '', output: 'tv_speaker' });
+  assert.deepEqual([off.network, off.sleepTimer, off.sound], [false, false, false], 'not connected, no timer, the TV speakers');
+});
+
 test('control: extra controls (like ambient light) join the catalogue', async () => {
   let on = false;
   const extra = [{ id: 'lamp', title: 'Lamp', kind: 'switch', icon: 'ambient', group: 'Ambient Light', sizes: ['wide'],

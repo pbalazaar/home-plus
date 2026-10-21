@@ -117,8 +117,9 @@ module.exports = function createControl({ luna, log, readConfig = () => ({}), wr
   }
 
   // A control over one TV setting: OK steps through the values the TV offers (and wraps), or turns a
-  // switch on and off. names: LG's names for the values; steps: for a range, the levels it steps through.
-  function setting(category, key, { names = {}, steps = null, kind = 'stepper', skip = [] } = {}) {
+  // switch on and off. names: LG's names for the values; steps: for a range, the levels it steps
+  // through; off: the value that means it's off, for one that's on or off (tvOS shows which).
+  function setting(category, key, { names = {}, steps = null, kind = 'stepper', skip = [], off } = {}) {
     return {
       kind,
       available: async () => !!(await describe(category, key)),
@@ -126,7 +127,7 @@ module.exports = function createControl({ luna, log, readConfig = () => ({}), wr
         const [d, s] = await Promise.all([describe(category, key), settings(category, [key])]);
         const v = s[key];
         if (!d || v === undefined) return { available: false };
-        return { available: d.usable, value: names[v] || String(v), on: v === 'on' };
+        return { available: d.usable, value: names[v] || String(v), on: off === undefined ? null : v !== off };
       },
       run: async () => {
         const d = await describe(category, key);
@@ -166,11 +167,11 @@ module.exports = function createControl({ luna, log, readConfig = () => ({}), wr
     Object.assign({ id: 'brightness', title: 'OLED Brightness', icon: 'brightness', group: 'Picture & Sound', sizes: ['wide', 'small'] },
       setting('picture', 'backlight', { steps: BRIGHTNESS })),
     Object.assign({ id: 'energySaving', title: 'Energy Saving', icon: 'energy', group: 'Picture & Sound', sizes: ['wide', 'small'] },
-      setting('picture', 'energySaving', { names: ENERGY, skip: ['screen_off', 'screenOff'] })), /* Screen Off does that */
+      setting('picture', 'energySaving', { names: ENERGY, skip: ['screen_off', 'screenOff'], off: 'off' })), /* Screen Off does that */
     Object.assign({ id: 'gameOptimizer', title: 'Game Optimizer', icon: 'game', group: 'Picture & Sound', sizes: ['wide', 'small'] },
-      setting('other', 'gameOptimization', { names: ON_OFF, kind: 'switch' })),
+      setting('other', 'gameOptimization', { names: ON_OFF, kind: 'switch', off: 'off' })),
     Object.assign({ id: 'toneMapping', title: 'Dynamic Tone Mapping', icon: 'hdr', group: 'Picture & Sound', sizes: ['wide', 'small'] },
-      setting('picture', 'hdrDynamicToneMapping', { names: { on: 'On', off: 'Off', HGIG: 'HGIG' } })),
+      setting('picture', 'hdrDynamicToneMapping', { names: { on: 'On', off: 'Off', HGIG: 'HGIG' }, off: 'off' })),
     ...extra,
     { id: 'recents', title: 'Recents', kind: 'opens', icon: 'recents', group: 'Home+', sizes: ['small'], available: always },
     { id: 'accessibility', title: 'Accessibility', kind: 'opens', icon: 'access', group: 'Home+', sizes: ['small'], available: always },
@@ -219,12 +220,13 @@ module.exports = function createControl({ luna, log, readConfig = () => ({}), wr
       eyeComfort: pic.eyeComfortMode || '',
       inputs: inp.list
     };
-    // the built-in controls' lines, from the state above
+    // the built-in controls' lines, from the state above. on: whether what it shows is on
+    // (connected, a timer set, a sound system playing), for those that can be off
     const builtin = {
       network: { title: st.network.kind === 'wired' ? 'Ethernet' : st.network.kind === 'wifi' ? 'Wi-Fi' : 'Network',
-        icon: st.network.kind === 'wired' ? 'ethernet' : 'wifi', value: st.network.name },
-      sleepTimer: { value: st.sleepTimer === 'off' ? 'Off' : `${st.sleepTimer} min` },
-      sound: { value: st.sound.label },
+        icon: st.network.kind === 'wired' ? 'ethernet' : 'wifi', value: st.network.name, on: st.network.kind !== 'none' },
+      sleepTimer: { value: st.sleepTimer === 'off' ? 'Off' : `${st.sleepTimer} min`, on: st.sleepTimer !== 'off' },
+      sound: { value: st.sound.label, on: !!output && !output.startsWith('tv_speaker') },
       pictureMode: { value: st.picture.label },
       eyeComfort: { value: st.eyeComfort === 'on' ? 'On' : 'Off', on: st.eyeComfort === 'on' }
     };
@@ -234,7 +236,7 @@ module.exports = function createControl({ luna, log, readConfig = () => ({}), wr
       let s = builtin[c.id] || {};
       if (e.read) s = await e.read().catch((err) => { log('control:', c.id, err.message); return { available: false }; });
       const available = avail[CATALOG.indexOf(e)] && s.available !== false;
-      return Object.assign({ id: c.id, size: c.size, title: e.title, kind: e.kind, icon: e.icon, value: '', on: false },
+      return Object.assign({ id: c.id, size: c.size, title: e.title, kind: e.kind, icon: e.icon, value: '', on: null },
         s, { available, value: available ? s.value || '' : 'Not Available' });
     }));
     // the gallery: everything that works on this TV, and whether it's placed

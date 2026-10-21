@@ -241,6 +241,12 @@ global.__stubLuna = (uri, params) => {
     return { returnValue: true, wifi: { state: 'connected', ssid: process.env.HOMEPLUS_PREVIEW_SSID || 'Home Wi-Fi' } };
   }
   if (/\/power\/(powerOff|turnOffScreen)$/.test(uri)) return { returnValue: true };
+  // the Control Center over other apps: LG's system UI manager, and a frame of the video for its glass
+  if (/systemUIManager\/(launch|closeByAppId)$/.test(uri)) return { returnValue: true };
+  if (uri === 'luna://com.webos.service.capture/executeOneShot') {
+    fs.writeFileSync(params.path, 'a frame of the video');
+    return { returnValue: true };
+  }
   if (process.env.HOMEPLUS_PREVIEW_AMBIENT) { /* PicCap's service */
     if (uri === 'luna://org.webosbrew.piccap.service/status') return { returnValue: true, isRunning: ambient.capture };
     const m = /^luna:\/\/org\.webosbrew\.piccap\.service\/(start|stop)$/.exec(uri);

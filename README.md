@@ -64,13 +64,15 @@ Updates install the same way. An update resets the service's root access, and Ho
 
 **Magic Remote pointer:** point at anything and click. Pressing an arrow hands control back to the keys: then OK presses what the keys focused, wherever the cursor happens to be. Moving the pointer clearly takes over again.
 
-From the top row, press **Up** to reach the clock at the top right, as on tvOS; **OK** on it opens the Control Center. On Stremio, Jellyfin or Plex, Up goes into Continue Watching first, as the chevron above the dock shows. The remote's own **Settings** and **Input** keys open LG's menus; apps never receive them. With LG Input Hook installed (see [Home button](#home-button)), **Settings → Remote → Settings Button** makes the Settings key open the Control Center while Home+ is in front; in other apps it still opens LG's Quick Settings.
+From the top row, press **Up** to reach the clock at the top right, as on tvOS; **OK** on it opens the Control Center. On Stremio, Jellyfin or Plex, Up goes into Continue Watching first, as the chevron above the dock shows. The remote's own **Settings** and **Input** keys open LG's menus; apps never receive them. With LG Input Hook installed (see [Home button](#home-button)), **Settings → Remote → Settings Button** makes the Settings key open the Control Center: over Home+, and over any other app or input too, where it opens on top of what's playing and the video carries on underneath (see below).
 
 ![Settings](docs/screenshots/settings.jpg)
 
 ![Control Center](docs/screenshots/control-center.jpg)
 
 **Control Center**, like tvOS's, opens from the clock: glass tiles under it for **Power Off**, **Wi-Fi** (your network; OK opens LG's network settings), **Screen Off** (sound keeps playing; any key brings the picture back), **Sound** (OK switches between TV speakers and HDMI ARC or eARC, and any other output the TV has used, like Optical: not a full picker), **Sleep Timer** (the minutes left; OK steps through LG's 10 to 240 minutes, and the TV turns off when it runs out), **Picture** (the picture mode; OK lists the modes LG offers for what's on, which differ for HDR and Dolby Vision), **Eye Comfort** (OK turns it on or off), and round buttons for **Inputs** (Live TV and the HDMI ports by LG's names, with what's plugged in, like "Soundbar · PS5"), **Recents**, **Accessibility** and **Settings**. A name too long for its tile scrolls while the tile has focus. Picture and Inputs open their list in the Control Center's place.
+
+**Over other apps**, the Settings key opens the same Control Center on top of what's playing, as LG's Quick Settings would open, and the video keeps playing under it. Its glass is the picture behind it, blurred: the TV hands Home+ a small frame of the video about three times a second, so the glass carries the picture's colours rather than its detail. Protected video (Netflix and the like) gives no frames, and the glass is then a darker tint. Everything works there as in Home+, editing too; **Back** closes it, and so does the Settings key again. Recents, Accessibility and Settings open Home+.
 
 **Make it yours**, like iOS 18's: hold **OK** on a control and choose **Edit Controls**. The controls wobble; **OK** picks one up and the arrows move it, holding **OK** changes its size (Small, Wide, Large) or removes it, and the **+** slot adds one: **Sound Mode**, **OLED Brightness**, **Energy Saving**, **Game Optimizer** and **Dynamic Tone Mapping** (whichever your TV has), and **Ambient Light** and **Screen Capture** when HyperHDR and PicCap are installed (they turn HyperHDR's LEDs and PicCap's capture on and off). **Reset** puts it back, and **Back** is done; every change is saved as you make it. Each action is also a service method, so anything that can send a luna call (a script, a home automation, a key-mapping tool) can use it:
 
@@ -233,6 +235,7 @@ If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot s
 - **Signing out:** Settings → Accounts signs out of Stremio and ends Home+'s session on your Jellyfin server. Plex lists Home+ under your account's **Authorized Devices**; remove it there to revoke its access.
 - **What's stored:** sign-ins, your layout and preferences, in `/var/lib/homeplus/config.json`, and the Top Shelf's pictures, so they show at once the next time, in `/var/lib/homeplus/images` (up to 64 MB). Both are readable only by root, and **Remove Home+** deletes them.
 - **The local API:** the service runs as root and answers only on `127.0.0.1`. Every request needs a token the service writes into Home+'s app folder, and requests from web pages and other hosts are refused.
+- **The Control Center over other apps:** its glass is made from frames of the video, which only exist while it's open. They're kept in memory (`/tmp/homeplus-cc`), readable only by root, and deleted when it closes. Nothing is saved or sent anywhere. LG's compositor runs it from Home+'s app folder.
 
 ## Building from source
 
@@ -266,6 +269,7 @@ The launcher talks to the service over a local HTTP API on `127.0.0.1:47823`. It
 | `GET /api/continue` | Continue Watching from Stremio and Trakt, or with `?source=jellyfin` or `plex` |
 | `GET /api/featured?app=<id>` | What's popular on a streaming app (TMDB), for its Top Shelf |
 | `GET` / `POST /api/control` | The Control Center: network, sound output, sleep timer and inputs; `{action, value}` acts |
+| `POST /api/overlay` | The Control Center over other apps asks for what it can't do itself: `{"event": "open", "target": "network" \| "recents" \| "accessibility" \| "settings"}`, `{"event": "open", "app"}` (an input it offered), `{"event": "closed"}`, `{"event": "failed"}` |
 | `GET /api/<account>/status`, `POST .../link`, `POST .../disconnect` | Accounts (`stremio`, `trakt`, `jellyfin`, `plex`): state, a sign-in code, signing out |
 | `POST /api/jellyfin/server` | A Jellyfin server's address, for one Home+ can't find |
 | `GET /api/system` | LG's settings apps |

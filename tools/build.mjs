@@ -143,6 +143,8 @@ const ipk = buildPackage({
     // stb and the vendored SDL/Khronos headers are compiled in as well
     fs.copyFileSync(path.join(root, 'THIRD_PARTY_NOTICES.md'), path.join(appDir, 'THIRD_PARTY_NOTICES.md'));
     fs.copyFileSync(path.join(root, 'native/third_party/SDL2/LICENSE-SDL2.txt'), path.join(appDir, 'LICENSE-SDL2.txt'));
+    // the Control Center over other apps: QML that LG's compositor runs, and its glyphs
+    fs.cpSync(path.join(root, 'native/qml'), path.join(appDir, 'qml'), { recursive: true, filter: shipped });
     // the boot script travels with the app, so it can be installed on the TV with cp
     fs.cpSync(path.join(root, 'init.d'), path.join(appDir, 'init.d'), { recursive: true, filter: shipped });
     fs.cpSync(svcDir, path.join(data, 'usr/palm/services', svc.id), { recursive: true, filter: shipped });

@@ -111,7 +111,7 @@ static const struct { const char *name; int icon; } CC_ICONS[] = { /* the servic
 /* A control on show: what the service says it is, and where it's placed (cc_pack) */
 typedef struct {
     char id[24], kind[8], title_s[48], value_s[72];
-    int icon, units, on, available;  /* units: 1 Small, 2 Wide, 4 Large */
+    int icon, units, on, stateful, available; /* units: 1 Small, 2 Wide, 4 Large; stateful: it can be off */
     int col, row, w, h;              /* on the grid; row -1: no room for it */
     Tex *title, *value;
     int tw, th, vw, vh;
@@ -957,7 +957,9 @@ static void parse_control(const char *json)
             const char *size = jstr(v, "size");
             c->units = !strcmp(size, "large") ? 4 : !strcmp(size, "wide") ? 2 : 1;
             c->icon = cc_icon(jstr(v, "icon"));
-            c->on = cJSON_IsTrue(cJSON_GetObjectItem(v, "on"));
+            cJSON *on = cJSON_GetObjectItem(v, "on"); /* true, false, or none: tvOS shows which in the glyph */
+            c->on = cJSON_IsTrue(on);
+            c->stateful = cJSON_IsBool(on);
             c->available = cJSON_IsTrue(cJSON_GetObjectItem(v, "available"));
             for (int k = 0; k < nold; k++) { /* the same control: its texts and motion stay */
                 CCItem *p = &old[k];
@@ -1074,6 +1076,8 @@ static void sheet_open(const char *title);
 static void on_status(Result *r);
 static void sheet_body(const char *text);
 static void settings_page(int page, int index);
+static void sw_open(void);
+static void open_settings_sheet(void);
 static void on_elevate(Result *r);
 static void sw_fill(const char *json);
 static void sw_reset(void);
@@ -1381,6 +1385,9 @@ static void handle_result(Result *r)
         break;
     case TAG_EVENTS:
         if (r->body && strstr(r->body, "\"controlCenter\"")) settings_key();
+        if (r->body && strstr(r->body, "\"settings\"")) open_settings_sheet(); /* asked for from the Control Center over another app */
+        if (r->body && strstr(r->body, "\"recents\"")) sw_open();
+        if (r->body && strstr(r->body, "\"accessibility\"")) settings_page(PAGE_ACCESS, 0);
         break;
     case TAG_HOME:
     case TAG_HOME_SET:
@@ -2589,9 +2596,10 @@ static void cc_move(int dx, int dy)
     for (int i = 0; i < n; i++) {
         float ix, iy, iw, ih;
         if (i == S.cc.index || !cc_rect(i, &ix, &iy, &iw, &ih)) continue;
-        float ax = ix + iw / 2 - cx, ay = iy + ih / 2 - cy;
-        if ((dx && ax * dx <= 1) || (dy && ay * dy <= 1)) continue;
-        float d = dx ? fabsf(ax) + 2.5f * fabsf(ay) : fabsf(ay) + 2.5f * fabsf(ax);
+        float ax = ix + iw / 2 - cx, ay = iy + ih / 2 - cy, along = dx ? ax * dx : ay * dy, across = fabsf(dx ? ay : ax);
+        int beside = dx ? iy < y + h && iy + ih > y : ix < x + w && ix + iw > x;
+        if (along <= 1 || (!beside && across > along)) continue; /* as tvOS's focus: beside it, or within 45 degrees */
+        float d = along + 2.5f * across;
         if (d < best_d) best_d = d, best = i;
     }
     if (best >= 0) S.cc.index = best, S.cc.focus_at = SDL_GetTicks();
@@ -4189,6 +4197,13 @@ static void draw_marquee(Tex *t, int tw, int th, float x, float y, float room, U
     }
 }
 
+/* a switch that's off: its glyph on a pale disc (on a focused, white control, a grey one) */
+static void cc_disc(float cx, float cy, float d, float g, float a)
+{
+    r_shape(cx - d / 2, cy - d / 2, d, d, d / 2, 255, 255, 255, (Uint8)(255 * a * 0.24f * (1 - g)), 0, 1, 1);
+    if (g > 0.01f) r_shape(cx - d / 2, cy - d / 2, d, d, d / 2, 0, 0, 0, (Uint8)(255 * a * 0.08f * g), 0, 1, 1);
+}
+
 static Tex *cc_glyph(int icon, int big)
 {
     if (icon < 0 || icon >= ICON_COUNT) icon = ICON_CONTROLS;
@@ -4303,26 +4318,32 @@ static void draw_control_center(void)
         float lift = i == S.cc.picked ? 1 : k;
         if (lift > 0.01f) r_shadow(rx, ry, rw, rh, rad, 18, 8, 0.4f * lift * ti);
         panel(0, rx, ry, rw, rh, rad, 1, k, ti);
-        if (c->on && c->available && g < 0.99f) /* a switch that's on lights up, as iOS's do */
-            r_shape(rx, ry, rw, rh, rad, 255, 255, 255, (Uint8)(255 * ti * 0.3f * (1 - g)), 0, 1, 1);
         if (g > 0.01f) r_shape(rx, ry, rw, rh, rad, 245, 245, 247, (Uint8)(255 * ti * g), 0, 1, 1);
         if (S.cc.editing && (S.reduce_motion || i == S.cc.picked)) /* still: an outline says it's editing */
             r_shape(rx, ry, rw, rh, rad, 255, 255, 255, (Uint8)(150 * ti), 2.0f, 1, 1);
         Uint8 col = (Uint8)(255 - 227 * g), ca = (Uint8)(255 * ti * (c->available ? 1 : 0.45f)); /* Not Available: dimmed */
+        Uint8 gr = col, gg = col, gb = col; /* the glyph: tvOS 26's cyan when it's on (darker on white) */
+        if (c->on && c->available) {
+            gr = (Uint8)(16 + (0 - 16) * g), gg = (Uint8)(232 + (137 - 232) * g), gb = (Uint8)(244 + (173 - 244) * g);
+        }
+        int disc = c->stateful && !c->on && c->available && !strcmp(c->kind, "switch"); /* a switch that's off: on a pale disc */
         if (c->h == 2) { /* Large: its glyph large, its name under it */
             float is = 76 * sc;
-            r_image(cc_glyph(c->icon, 1), cx - is / 2, ry + rh * 0.42f - is / 2, is, is, col, col, col, ca, 0);
+            if (disc) cc_disc(cx, ry + rh * 0.42f, is * 1.35f, g, ti);
+            r_image(cc_glyph(c->icon, 1), cx - is / 2, ry + rh * 0.42f - is / 2, is, is, gr, gg, gb, ca, 0);
             r_image(c->title, cx - c->tw / 2.0f, ry + rh - 26 * sc - c->th, c->tw, c->th, col, col, col, ca, 0);
         } else if (c->w == 2) { /* Wide: the glyph, then the name over its value, clear of the round end */
             float is = 30 * sc, ix = rx + 18 * sc, tx = ix + is + 12 * sc, room = rx + rw - 22 * sc - tx;
-            r_image(cc_glyph(c->icon, 0), ix, cy - is / 2, is, is, col, col, col, ca, 0);
+            if (disc) cc_disc(ix + is / 2, cy, is * 1.4f, g, ti);
+            r_image(cc_glyph(c->icon, 0), ix, cy - is / 2, is, is, gr, gg, gb, ca, 0);
             float vh = c->value ? c->vh : 0, ty = cy - (c->th + vh) / 2;
             Uint32 since = i == S.cc.index && S.cc.open && !S.cc.editing ? S.cc.focus_at : 0; /* only the focused one scrolls */
             draw_marquee(c->title, c->tw, c->th, tx, ty, room, col, ca, since);
             draw_marquee(c->value, c->vw, c->vh, tx, ty + c->th, room, col, (Uint8)(ca * 0.72f), since);
         } else { /* Small: the glyph; a stepper's new value shows under it for a moment */
             float is = 40 * sc;
-            r_image(cc_glyph(c->icon, 0), cx - is / 2, cy - is / 2, is, is, col, col, col, ca, 0);
+            if (disc) cc_disc(cx, cy, is * 1.4f, g, ti);
+            r_image(cc_glyph(c->icon, 0), cx - is / 2, cy - is / 2, is, is, gr, gg, gb, ca, 0);
             if (c->flash && now - c->flash < 1800 && c->value) {
                 float f = 1 - smooth01(1200, 1800, (float)(now - c->flash));
                 draw_text(c->value, c->vw, c->vh, cx - c->vw / 2.0f, ry + rh + 8, (Uint8)(TEXT_STATIC * ti * f));
