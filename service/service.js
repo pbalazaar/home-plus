@@ -15,6 +15,7 @@ const http = require('http');
 const pkg = require('./package.json');
 const { requestJSON } = require('./net');
 const Service = require('webos-service');
+const callers = require('./callers');
 
 const service = new Service(pkg.name);
 
@@ -50,6 +51,17 @@ function luna(uri, params) {
 
 function fail(msg, text) {
   msg.respond({ returnValue: false, errorText: String(text) });
+}
+
+// A luna method that only the TV's own tools and Home+ may call (service/callers.js)
+function register(method, handler) {
+  service.register(method, (msg) => {
+    if (!callers.trusted(msg.sender)) {
+      log('luna: refused', method, 'from', String(msg.sender || '?').slice(0, 80));
+      return fail(msg, 'not permitted: Home+ answers only luna-send and Home+');
+    }
+    return handler(msg);
+  });
 }
 
 // Config lives outside the app folder so reinstalling Home+ keeps you signed in.
@@ -579,7 +591,7 @@ async function overlayEvent(p) {
     overlayOpen = false;
   } else if (p.event === 'failed') {
     overlayOpen = false;
-    log('control center overlay failed:', String(p.error || '').slice(0, 300));
+    log('control center overlay failed:', String(p.error || '').replace(/\s+/g, ' ').slice(0, 300));
     await quickSettings();
   } else if (p.event === 'open' && p.app) {
     if (!overlayInputs.includes(p.app)) throw new Error(`not an input: ${p.app}`);
@@ -698,7 +710,7 @@ function watchForeground() {
 }
 watchForeground();
 
-service.register('setHomeOverride', (msg) => {
+register('setHomeOverride', (msg) => {
   const cfg = readConfig();
   const p = msg.payload || {};
   if (typeof p.enabled === 'boolean') cfg.homeOverride = p.enabled;
@@ -1168,7 +1180,7 @@ imageServer.listen(IMAGE_PORT, '127.0.0.1', () => log('image server listening on
 // ---- Trakt over Luna (for setup from a terminal)
 // The Control Center's actions, for remote buttons through LG Input Hook: {"action": "powerOff" |
 // "screenOff" | "sound" | "sleepTimer" | "input", "value": ...} (see service/control.js).
-service.register('control', async (msg) => {
+register('control', async (msg) => {
   const p = msg.payload || {};
   try {
     await control.act(String(p.action || ''), p.value, p);
@@ -1180,7 +1192,7 @@ service.register('control', async (msg) => {
 
 // TMDB, for what's popular on streaming apps: {"key"} is a v3 API key or a Read Access Token
 // ("" removes it); {"region"} the country whose catalogs to show ("" is the TV's store country).
-service.register('tmdbSetup', async (msg) => {
+register('tmdbSetup', async (msg) => {
   const p = msg.payload || {};
   try {
     let st = tmdb.status();
@@ -1192,16 +1204,16 @@ service.register('tmdbSetup', async (msg) => {
   }
 });
 
-service.register('traktSetup', (msg) => {
+register('traktSetup', (msg) => {
   const p = msg.payload || {};
   if (!p.clientId || !p.clientSecret) return fail(msg, 'clientId and clientSecret are required');
   msg.respond(Object.assign({ returnValue: true }, trakt.setup(p.clientId, p.clientSecret)));
 });
-service.register('traktStatus', (msg) => msg.respond(Object.assign({ returnValue: true }, trakt.status())));
-service.register('traktLink', async (msg) => {
+register('traktStatus', (msg) => msg.respond(Object.assign({ returnValue: true }, trakt.status())));
+register('traktLink', async (msg) => {
   try { msg.respond(Object.assign({ returnValue: true }, await trakt.startDevice())); } catch (e) { fail(msg, e.message); }
 });
-service.register('traktDisconnect', (msg) => msg.respond(Object.assign({ returnValue: true }, trakt.disconnect())));
+register('traktDisconnect', (msg) => msg.respond(Object.assign({ returnValue: true }, trakt.disconnect())));
 
 service.register('ping', (msg) => {
   msg.respond({ returnValue: true, version: pkg.version, uid: process.getuid ? process.getuid() : null, imagePort: IMAGE_PORT });
@@ -1326,12 +1338,12 @@ async function stremioSignOut() {
   return stremioStatus();
 }
 
-service.register('stremioStatus', (msg) => {
+register('stremioStatus', (msg) => {
   const cfg = readConfig();
   msg.respond({ returnValue: true, connected: !!cfg.stremioAuthKey, email: cfg.stremioEmail || '' });
 });
 
-service.register('stremioLogin', async (msg) => {
+register('stremioLogin', async (msg) => {
   const { email, password } = msg.payload;
   if (!email || !password) return fail(msg, 'email and password are required');
   try {
@@ -1348,13 +1360,13 @@ service.register('stremioLogin', async (msg) => {
   }
 });
 
-service.register('stremioLogout', async (msg) => {
+register('stremioLogout', async (msg) => {
   await stremioSignOut();
   msg.respond({ returnValue: true, connected: false });
 });
 
 // A Jellyfin server Home+ can't find by itself (another network, a reverse proxy); "" forgets it.
-service.register('jellyfinServer', (msg) => {
+register('jellyfinServer', (msg) => {
   try {
     msg.respond(Object.assign({ returnValue: true }, media.jellyfin.setServer(msg.payload.url)));
   } catch (e) {
