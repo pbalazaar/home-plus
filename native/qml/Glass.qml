@@ -2,8 +2,8 @@ import QtQuick 2.4
 
 // Home+'s glass over other apps: Home+'s own Liquid Glass (render.c: FS_GLASS, as its Control Center
 // draws it) over the picture behind, blurred (ControlCenterView.qml's frames of the video, the newer
-// fading in over the older). No tint: the blurred picture, its bright parts dimmed (up to 35%) so the
-// words on it stay readable; the rounded bevel bends it (the edge magnifies); a thin rim that flares
+// fading in over the older). No tint: the blurred picture, its bright parts dimmed (up to 60%: white
+// at 85% keeps about 4.5:1 over a white picture) so the words on it stay readable; the rounded bevel bends it (the edge magnifies); a thin rim that flares
 // where it faces the light (the top left), with a faint glint opposite and the far side of the bevel
 // in shade: like tvOS's, it has no tint of its own, and takes its look from what's behind it. With
 // no picture (none yet, or video the TV can't capture) it's clear, a light tint with the rim, the
@@ -64,7 +64,7 @@ Item {
                 lowp vec3 col = mix(texture2D(srcA, uv).rgb, texture2D(srcB, uv).rgb, fade) * (1.0 - dim);
                 col *= 1.0 - 0.10 * bevel;
                 lowp float lum = dot(col, vec3(0.299, 0.587, 0.114));
-                col *= 1.0 - 0.35 * smoothstep(0.35, 0.75, lum);
+                col *= 1.0 - 0.60 * smoothstep(0.35, 0.75, lum);
                 lowp float facing = dot(n, vec2(-0.6, -0.8));
                 lowp float rim = 1.0 - smoothstep(0.0, 2.5, depth);
                 lowp float lit = max(facing, 0.0), back = max(-facing, 0.0);
