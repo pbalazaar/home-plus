@@ -378,17 +378,18 @@ setTimeout(installBootScript, 2000);
 const INPUTHOOK_BINDS = process.env.HOMEPLUS_INPUTHOOK_BINDS || '/home/root/.config/lginputhook/keybinds.json'; /* tests: elsewhere */
 const OUR_IDS = [NATIVE_ID, 'com.atvlauncher.native', 'com.atvlauncher.app'];
 
-// a bind that's Home+'s: it launches Home+ (the Home key), or runs our script (the Settings and Input keys)
-const ourBind = (b) => !!b && (OUR_IDS.includes(b.id) ||
-  [NATIVE_ID, SETTINGS_KEY_SCRIPT, INPUT_KEY_SCRIPT, HOME_SCRIPT, SETTINGS_SCRIPT, INPUT_SCRIPT].some((s) => String(b.command || '').includes(s)));
+// a key's bind that's Home+'s: the one Home+ makes there (OUR_BINDS), or one it turns into that
+// (OLD_BINDS). Matched whole: a bind of yours that only mentions Home+ stays yours.
+const ourBind = (b, key) => !!b && !!OUR_BINDS[key] &&
+  ((b.action === OUR_BINDS[key].action && b.command === OUR_BINDS[key].command) || OLD_BINDS[key](b));
 
 function dropInputhookBinds() {
   // lginputhook keybinds that are Home+'s are removed; other binds stay
-  let binds;
-  try { binds = JSON.parse(fs.readFileSync(INPUTHOOK_BINDS, 'utf8')); } catch (e) { return 0; }
+  const binds = readBinds();
+  if (!binds) throw new Error('keybinds.json isn\'t valid JSON: its binds were left alone');
   let n = 0;
-  for (const [key, b] of Object.entries(binds || {})) {
-    if (ourBind(b)) { delete binds[key]; n++; }
+  for (const [key, b] of Object.entries(binds)) {
+    if (ourBind(b, key)) { delete binds[key]; n++; }
   }
   if (n) writeBinds(binds);
   return n;
@@ -407,8 +408,22 @@ const INPUT_KEY = '241';
 const INPUT_KEY_SCRIPT = path.join(__dirname, 'input-key.sh');
 const INPUT_PICKER = 'com.webos.app.quickinputpicker';
 
+// LG Input Hook's binds ({} while it has none). null when the file can't be read or isn't JSON
+// (its app may be writing it, or a comma's astray): then it's left as it is, never written over
+// with only Home+'s binds in it
+let bindsBad = ''; /* why, said once in the log */
 function readBinds() {
-  try { return JSON.parse(fs.readFileSync(INPUTHOOK_BINDS, 'utf8')) || {}; } catch (e) { return null; }
+  try {
+    const binds = JSON.parse(fs.readFileSync(INPUTHOOK_BINDS, 'utf8'));
+    if (!binds || typeof binds !== 'object' || Array.isArray(binds)) throw new Error('not an object of binds');
+    bindsBad = '';
+    return binds;
+  } catch (e) {
+    if (e.code === 'ENOENT') return {};
+    if (bindsBad !== e.message) log('keybinds.json isn\'t valid JSON; leaving it alone:', e.message);
+    bindsBad = e.message;
+    return null;
+  }
 }
 
 // LG Input Hook rereads the file whenever it changes, so it's written whole, as readable as it was
@@ -460,18 +475,19 @@ function writeKeyScripts() {
   }
 }
 
-// the binds Home+ 0.11 and older made, LG Input Hook's app makes ("Launch App": Home+), and any
-// other of ours that isn't the current one
+// the binds Home+ turns into its own: the Home key's "Launch App: Home+", which LG Input Hook's app
+// makes (Home+'s older ids too), and the Settings key's from Home+ 0.11, which ran its script itself
 const OLD_BINDS = {
-  [HOME_KEY]: (b) => (b.action === 'launch' && OUR_IDS.includes(b.id)) || (ourBind(b) && b.command !== OUR_BINDS[HOME_KEY].command),
-  [SETTINGS_KEY]: (b) => b.action === 'exec' && ourBind(b) && b.command !== OUR_BINDS[SETTINGS_KEY].command,
-  [INPUT_KEY]: (b) => b.action === 'exec' && ourBind(b) && b.command !== OUR_BINDS[INPUT_KEY].command
+  [HOME_KEY]: (b) => b.action === 'launch' && OUR_IDS.includes(b.id),
+  [SETTINGS_KEY]: (b) => b.action === 'exec' && b.command === `sh ${SETTINGS_KEY_SCRIPT}`,
+  [INPUT_KEY]: () => false
 };
 
 function upgradeBinds() {
   const binds = readBinds();
-  if (binds && Object.values(binds).some(ourBind)) writeKeyScripts(); /* (an update may change them) */
-  const keys = Object.keys(OLD_BINDS).filter((k) => binds && binds[k] && OLD_BINDS[k](binds[k]));
+  if (!binds) return; /* not JSON (being written, say): left alone */
+  if (Object.entries(binds).some(([k, b]) => ourBind(b, k))) writeKeyScripts(); /* (an update may change them) */
+  const keys = Object.keys(OLD_BINDS).filter((k) => binds[k] && OLD_BINDS[k](binds[k]));
   if (!keys.length) return;
   for (const k of keys) binds[k] = OUR_BINDS[k];
   writeBinds(binds);
@@ -501,18 +517,19 @@ if (isRoot()) {
 // a key's bind (the Settings or Input key's): LG Input Hook is there to make one, and it's Home+'s
 function keyState(key) {
   const binds = readBinds();
-  return { available: binds !== null || fs.existsSync(path.dirname(INPUTHOOK_BINDS)), on: !!binds && ourBind(binds[key]) };
+  return { available: fs.existsSync(path.dirname(INPUTHOOK_BINDS)), on: !!binds && ourBind(binds[key], key) };
 }
 const settingsKeyState = () => keyState(SETTINGS_KEY);
 
 function setKeyBind(key, on) {
   if (!keyState(key).available) throw new Error('LG Input Hook isn\'t installed');
-  const binds = readBinds() || {};
+  const binds = readBinds();
+  if (!binds) throw new Error('LG Input Hook\'s keybinds.json isn\'t valid JSON'); /* (Settings says so; the file stays as it is) */
   if (on) {
     writeKeyScripts();
     binds[key] = OUR_BINDS[key];
   }
-  else if (ourBind(binds[key])) delete binds[key]; /* someone else's bind stays */
+  else if (ourBind(binds[key], key)) delete binds[key]; /* someone else's bind stays */
   writeBinds(binds);
   log(key === INPUT_KEY ? 'input key:' : 'settings key:', on ? 'Home+' : 'LG');
 }
@@ -800,7 +817,10 @@ async function uninstall() {
   const steps = {};
   await unmountRedirect().catch(() => {});
   try { [INITD, BOOT_LOG].forEach((f) => fs.rmSync(f, { force: true })); steps.bootScript = true; } catch (e) { steps.bootScript = e.message; }
-  try { steps.inputhookBinds = dropInputhookBinds(); Object.keys(KEY_SCRIPTS).forEach((f) => fs.rmSync(f, { force: true })); } catch (e) { steps.inputhookBinds = e.message; }
+  try { /* (binds left alone keep their scripts: they may run one) */
+    steps.inputhookBinds = dropInputhookBinds();
+    Object.keys(KEY_SCRIPTS).forEach((f) => fs.rmSync(f, { force: true }));
+  } catch (e) { steps.inputhookBinds = e.message; }
   try { fs.rmSync(path.dirname(findConfigPath()), { recursive: true, force: true }); steps.settings = true; } catch (e) { steps.settings = e.message; }
   steps.elevationFiles = dropElevation();
   log('uninstall:', steps);

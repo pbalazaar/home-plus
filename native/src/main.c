@@ -93,7 +93,7 @@
 #define ID_LEN 160
 
 enum { TAG_APPS = 1, TAG_LAYOUT, TAG_STREMIO, TAG_MEDIA_LINK, TAG_MEDIA_STATUS, TAG_QR, TAG_ICON, TAG_ART, TAG_RAIL_LOGO, TAG_RAIL_BG, TAG_FEATURED, TAG_CONTROL, TAG_LAUNCH, TAG_WAKE,
-       TAG_SYSTEM, TAG_TRAKT_LINK, TAG_TRAKT_STATUS, TAG_RUNNING, TAG_CLOSED, TAG_HOME, TAG_HOME_SET,
+       TAG_SYSTEM, TAG_TRAKT_LINK, TAG_TRAKT_STATUS, TAG_RUNNING, TAG_CLOSED, TAG_HOME, TAG_HOME_SET, TAG_KEY_SET,
        TAG_STATUS, TAG_ELEVATE, TAG_RESTART, TAG_UNINSTALL,
        TAG_PREFS, TAG_EVENTS, TAG_DELETED };
 
@@ -1531,6 +1531,7 @@ static void handle_result(Result *r)
         break;
     case TAG_HOME:
     case TAG_HOME_SET:
+    case TAG_KEY_SET:
         if (r->status == 200) {
             cJSON *o = cJSON_Parse(r->body);
             if (o) {
@@ -1545,7 +1546,20 @@ static void handle_result(Result *r)
                 if (!strcmp(S.home_mode, "redirect") && !S.noflash_active && r->tag == TAG_HOME_SET)
                     toast("No-flash mode isn\xE2\x80\x99t available on this TV; using standard mode", 5000);
                 cJSON_Delete(o);
+                if (r->tag == TAG_KEY_SET && r->kind == JOB_JSON && S.sheet.open && S.sheet.page == PAGE_HOME) {
+                    int index = S.sheet.index, parent_index = S.sheet.parent_index; /* the buttons as they are */
+                    settings_page(PAGE_HOME, index);
+                    S.sheet.parent_index = parent_index;
+                }
             }
+        } else if (r->tag == TAG_KEY_SET && r->kind == JOB_POST) {
+            /* the Settings or Input button wasn't changed (LG Input Hook's file isn't JSON, say): why, then how they are */
+            cJSON *o = r->body ? cJSON_Parse(r->body) : NULL;
+            char msg[300];
+            snprintf(msg, sizeof msg, "Couldn\xE2\x80\x99t change the button: %s", o && jstr(o, "errorText")[0] ? jstr(o, "errorText") : "the service didn\xE2\x80\x99t answer");
+            cJSON_Delete(o);
+            toast(msg, 5000);
+            net_get_json("/api/home", TAG_KEY_SET, 0, 0);
         }
         break;
     case TAG_PREFS:
@@ -2485,14 +2499,14 @@ static void run_action(Action act, int arg)
         break;
     case ACT_SETTINGS_KEY:
         S.settings_key = !S.settings_key;
-        net_post("/api/home", S.settings_key ? "{\"settingsKey\":true}" : "{\"settingsKey\":false}", TAG_HOME);
+        net_post("/api/home", S.settings_key ? "{\"settingsKey\":true}" : "{\"settingsKey\":false}", TAG_KEY_SET);
         toast(S.settings_key ? "The Settings button opens the Control Center, over other apps too"
                              : "The Settings button opens LG\xE2\x80\x99s Quick Settings", 3000);
         settings_again();
         break;
     case ACT_INPUT_KEY:
         S.input_key = !S.input_key;
-        net_post("/api/home", S.input_key ? "{\"inputKey\":true}" : "{\"inputKey\":false}", TAG_HOME);
+        net_post("/api/home", S.input_key ? "{\"inputKey\":true}" : "{\"inputKey\":false}", TAG_KEY_SET);
         toast(S.input_key ? "The Input button opens Home+\xE2\x80\x99s inputs, over other apps too"
                           : "The Input button opens LG\xE2\x80\x99s Input picker", 3000);
         settings_again();

@@ -11,7 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { startService, until } = require('./helpers');
+const { startService, until, sleep } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
 const SCRIPT = path.join(ROOT, 'service', 'settings-key.sh'); /* where the service is, its script is */
@@ -21,7 +21,10 @@ let svc, dir, app, initd, bindsFile;
 const binds = () => JSON.parse(fs.readFileSync(bindsFile, 'utf8'));
 /* a Home bind's action, or null while the file is being written (the service writes it in place, as LG Input Hook reads it) */
 const homeAction = (file = bindsFile) => { try { return JSON.parse(fs.readFileSync(file, 'utf8'))[773].action; } catch (e) { return null; } };
-const theirs = { 1: { action: 'launch', id: 'netflix' }, 2: { action: 'exec', command: 'echo hi' } };
+/* everyone else's binds, one of them made by hand to open Home+: only mentioning Home+ doesn't make a bind Home+'s */
+const theirs = { 1: { action: 'launch', id: 'netflix' }, 2: { action: 'exec', command: 'echo hi' },
+  500: { action: 'exec', command: 'luna-send -n 1 luna://com.webos.applicationManager/launch \'{"id":"com.github.pmiraka.homeplus"}\'' } };
+const others = (b) => ({ 1: b[1], 2: b[2], 500: b[500] });
 
 test.before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-setup-'));
@@ -65,7 +68,7 @@ test('setup: Home+\'s binds from before turn into ones that check for Home+, and
   assert.deepEqual(b[139], { action: 'exec', command: `sh ${path.join(dirOf, 'homeplus-settings.sh')}` });
   assert.match(fs.readFileSync(path.join(dirOf, 'homeplus-home.sh'), 'utf8'), /com\.github\.pmiraka\.homeplus.+\n.*com\.webos\.app\.home"/s);
   assert.match(fs.readFileSync(path.join(dirOf, 'homeplus-settings.sh'), 'utf8'), /settings-key\.sh.+\n.*com\.webos\.app\.quicksettings"/s);
-  assert.deepEqual({ 1: b[1], 2: b[2] }, theirs);
+  assert.deepEqual(others(b), theirs);
   assert.deepEqual((await svc.call('GET', '/api/home')).json.settingsKey, { available: true, on: true });
 });
 
@@ -126,7 +129,38 @@ test('setup: a Home bind made later in LG Input Hook\'s app gets the same check 
   fs.writeFileSync(bindsFile, JSON.stringify(Object.assign(binds(), { 773: { action: 'launch', id: 'com.github.pmiraka.homeplus' } }), null, 2));
   await until(() => homeAction() === 'exec', 8000, 'the Home bind to be upgraded');
   assert.deepEqual(binds()[773], upgraded);
-  assert.deepEqual({ 1: binds()[1], 2: binds()[2] }, theirs);
+  assert.deepEqual(others(binds()), theirs);
+});
+
+test('setup: a bind of yours on the Settings key that only mentions Home+ stays yours', async () => {
+  const before = binds();
+  const yours = { action: 'exec', command: 'sh /home/root/com.github.pmiraka.homeplus-notes.sh' };
+  try { /* with the Home bind from LG Input Hook's app again: once it's upgraded, the service has looked at the file */
+    fs.writeFileSync(bindsFile, JSON.stringify(Object.assign(binds(), { 139: yours, 773: { action: 'launch', id: 'com.github.pmiraka.homeplus' } }), null, 2));
+    await until(() => homeAction() === 'exec', 8000, 'the Home bind to be upgraded');
+    assert.deepEqual(binds()[139], yours, 'not turned into Home+\'s');
+    assert.equal((await svc.call('GET', '/api/home')).json.settingsKey.on, false, 'not Home+\'s');
+    assert.equal((await svc.call('POST', '/api/home', { body: { settingsKey: false } })).status, 200);
+    assert.deepEqual(binds()[139], yours, 'turning the Settings button off leaves it');
+    assert.deepEqual(others(binds()), theirs);
+  } finally {
+    fs.writeFileSync(bindsFile, JSON.stringify(before, null, 2));
+  }
+});
+
+test('setup: a keybinds.json that isn\'t JSON (LG Input Hook\'s app halfway through writing it, say) is left as it is', async () => {
+  const good = fs.readFileSync(bindsFile, 'utf8'), bad = '{ "773": ';
+  try {
+    fs.writeFileSync(bindsFile, bad);
+    const r = await svc.call('POST', '/api/home', { body: { settingsKey: true } });
+    assert.equal(r.status, 500, 'Settings hears it didn\'t change');
+    assert.match(r.json.errorText, /keybinds\.json isn't valid JSON/);
+    await sleep(800); /* the service looks at a changed file 500 ms after: that writes nothing either */
+    assert.equal(fs.readFileSync(bindsFile, 'utf8'), bad, 'byte for byte');
+    assert.deepEqual((await svc.call('GET', '/api/home')).json.settingsKey, { available: true, on: false });
+  } finally {
+    fs.writeFileSync(bindsFile, good);
+  }
 });
 
 test('setup: LG Input Hook installed after the service started still gets its Home bind upgraded', async () => {
