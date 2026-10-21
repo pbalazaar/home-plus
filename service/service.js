@@ -509,7 +509,9 @@ async function openOverlay() {
   overlayAsked = Date.now();
   const state = await control.state();
   overlayInputs = (state.inputs || []).map((i) => i.appId);
-  state.clock24 = !!(readConfig().prefs || {}).clock24; /* the launcher's clock */
+  const prefs = readConfig().prefs || {}; /* the launcher's: its clock, and Settings -> Accessibility */
+  Object.assign(state, { clock24: !!prefs.clock24, reduceMotion: !!prefs.reduceMotion, reduceTransparency: !!prefs.reduceTransparency,
+    sounds: prefs.sounds !== false });
   if (fs.existsSync('/tmp/homeplus-cc-fps')) state.debugFps = true; /* its frame rate, on screen */
   const r = await luna(SYSUI + '/launch', {
     appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',

@@ -28,6 +28,9 @@ FocusScope {
     readonly property color white: "#f5f5f7"  // a focused control
     readonly property color red: "#ff5a50"    // what can't be undone (Home+'s sheets)
 
+    readonly property bool still: !!cc.reduceMotion      // Settings -> Accessibility: Reduce Motion
+    readonly property bool solid: !!cc.reduceTransparency // ... and Reduce Transparency
+
     property int focusIndex: 0     // a control (0..n-1); while editing, the + slot (n) and Reset (n + 1)
     property int listKind: 0       // in the Control Center's place: 1 picture modes, 2 inputs, 3 the gallery
     property int listIndex: 0
@@ -65,7 +68,7 @@ FocusScope {
         if (back.status === Image.Loading) return;
         if (cc.frame) back.source = cc.frame + "?n=" + (++frameN);
     }
-    Timer { interval: 120; running: !view.closing; repeat: true; triggeredOnStart: true; onTriggered: view.nextFrame() }
+    Timer { interval: 120; running: !view.closing && !view.solid; repeat: true; triggeredOnStart: true; onTriggered: view.nextFrame() }
     Image {
         id: frameA
         visible: false; width: 160; height: 90; sourceSize: Qt.size(160, 90); cache: false; asynchronous: true
@@ -95,7 +98,7 @@ FocusScope {
     NumberAnimation on phase { running: !!view.cc.debugFps; from: 0; to: 1; duration: 1000; loops: Animation.Infinite }
     Timer { interval: 1000; running: !!view.cc.debugFps; repeat: true; onTriggered: { view.fps = view.frames; view.frames = 0; } }
     property int lastKey: 0
-    Text { visible: !!view.cc.debugFps; x: 60; y: 60; color: "#7CFC00"; font.pixelSize: 40; text: view.fps + " fps  ·  key " + view.lastKey.toString(16); z: 100 }
+    Text { visible: !!view.cc.debugFps; x: 60; y: 60; color: "#7CFC00"; font.pixelSize: 40; text: view.fps + " fps  ·  key " + view.lastKey.toString(16) + "  ·  sounds " + (view.sounds ? (view.sounds.ready ? "ready" : "loading") : "none"); z: 100 }
 
     ListModel { id: tiles }
 
@@ -186,7 +189,17 @@ FocusScope {
         return null;
     }
 
+    // Home+'s focus sounds, unless they're off in its Settings (Sounds.qml)
+    property var sounds: null
+    onFocusIndexChanged: if (sounds) sounds.tick()
+    onListIndexChanged: if (sounds) sounds.tick()
+    onSheetIndexChanged: if (sounds) sounds.tick()
+
     Component.onCompleted: {
+        if (cc.sounds !== false) {
+            var sc = Qt.createComponent("Sounds.qml");
+            if (sc.status === Component.Ready) sounds = sc.createObject(view);
+        }
         load(cc);
         var net = find("network"); // nearest the clock, and harmless (unlike Power Off)
         if (net >= 0) focusIndex = net;
@@ -215,6 +228,8 @@ FocusScope {
                 r.frame = cc.frame;
                 r.clock24 = cc.clock24;
                 r.debugFps = cc.debugFps;
+                r.reduceMotion = cc.reduceMotion;
+                r.reduceTransparency = cc.reduceTransparency;
                 cc = r;
                 load(r);
             }
@@ -227,6 +242,7 @@ FocusScope {
     }
 
     function ok() {
+        if (sounds) sounds.select();
         if (sheet) sheetOk();
         else if (listKind === 3) galleryOk();
         else if (listKind) listOk();
@@ -545,7 +561,7 @@ FocusScope {
         opacity: view.editing && !view.closing ? 0.4 : 0
         Behavior on opacity { NumberAnimation { duration: 250 } }
     }
-    NumberAnimation on wobble { running: view.editing; from: 0; to: 100000; duration: 100000000; loops: Animation.Infinite }
+    NumberAnimation on wobble { running: view.editing && !view.still; from: 0; to: 100000; duration: 100000000; loops: Animation.Infinite }
 
     // ---- the clock, as Home+'s header while its Control Center is open (main.c: draw_clock): the
     // time on its own, and the Control Center's circle, grown and white
@@ -616,12 +632,12 @@ FocusScope {
             transform: [
                 Scale {
                     origin.x: tile.width / 2; origin.y: tile.height / 2
-                    xScale: (0.94 + 0.06 * Math.min(1, tile.drop)) * (1 + 0.06 * tile.lift) * (tile.isPicked ? 1.08 : 1)
+                    xScale: (view.still ? 1 : 0.94 + 0.06 * Math.min(1, tile.drop)) * (1 + 0.06 * tile.lift) * (tile.isPicked ? 1.08 : 1)
                     yScale: xScale
                 },
-                Translate { // the drop, a shake, and while editing a wobble
-                    x: tile.shakeX + (view.editing && !tile.isPicked ? Math.sin(view.wobble * 7 + index * 1.7) * 1.4 : 0)
-                    y: (1 - tile.drop) * -80 + (view.editing && !tile.isPicked ? Math.cos(view.wobble * 9.1 + index * 1.7) * 1.1 : 0)
+                Translate { // the drop, a shake, and while editing a wobble (none with Reduce Motion)
+                    x: tile.shakeX + (view.editing && !view.still && !tile.isPicked ? Math.sin(view.wobble * 7 + index * 1.7) * 1.4 : 0)
+                    y: (view.still ? 0 : (1 - tile.drop) * -80) + (view.editing && !view.still && !tile.isPicked ? Math.cos(view.wobble * 9.1 + index * 1.7) * 1.1 : 0)
                 }
             ]
 
@@ -630,7 +646,7 @@ FocusScope {
             SequentialAnimation {
                 id: dropIn
                 PauseAnimation { duration: tile.delay }
-                NumberAnimation { target: tile; property: "drop"; from: 0; to: 1; duration: 450; easing.type: Easing.OutBack; easing.overshoot: 0.9 }
+                NumberAnimation { target: tile; property: "drop"; from: 0; to: 1; duration: 450; easing.type: view.still ? Easing.OutCubic : Easing.OutBack; easing.overshoot: 0.9 }
             }
             NumberAnimation { id: popIn; target: tile; property: "drop"; from: 0.4; to: 1; duration: 260; easing.type: Easing.OutBack }
             Component.onCompleted: if (view.opening) dropIn.start(); else popIn.start()
@@ -648,7 +664,7 @@ FocusScope {
                 NumberAnimation { target: tile; property: "shakeX"; to: 5; duration: 70 }
                 NumberAnimation { target: tile; property: "shakeX"; to: 0; duration: 60 }
             }
-            function shake() { shaking.start(); }
+            function shake() { if (!view.still) shaking.start(); }
 
             RectangularGlow { // a focused control lifts
                 x: 0; y: 10; width: parent.width; height: parent.height
@@ -662,6 +678,7 @@ FocusScope {
                 radius: tile.rad
                 sourceA: glassA; sourceB: glassB; fade: view.fade
                 live: view.hasFrame
+                solid: view.solid
                 screenX: tile.x
                 screenY: tile.y
                 visible: tile.lit < 0.99 // under white, nothing to see
@@ -672,13 +689,13 @@ FocusScope {
                 color: view.white
                 opacity: tile.lit
             }
-            Rectangle { // editing: the one picked up, outlined
+            Rectangle { // editing: the one picked up, outlined; with Reduce Motion (no wobble), all of them
                 anchors.fill: parent
                 radius: tile.rad
                 color: "transparent"
                 border.width: 2
-                border.color: Qt.rgba(1, 1, 1, 0.6)
-                visible: tile.isPicked
+                border.color: tile.lit > 0.5 ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(1, 1, 1, 0.6)
+                visible: tile.isPicked || (view.editing && view.still)
             }
 
             // the glyph: Home+'s sizes and places (a pill's on its left, a large one's above its name)
@@ -725,25 +742,36 @@ FocusScope {
                 anchors.verticalCenter: tile.large ? undefined : parent.verticalCenter
                 y: tile.large ? tile.height - 26 - height : 0
                 Text {
+                    visible: tile.large
                     width: parent.width
                     text: model.title
                     color: tile.lit > 0.5 ? view.ink : "white"
                     font.family: semi.name
                     font.weight: Font.DemiBold
-                    font.pixelSize: tile.large ? 24 : 19
-                    horizontalAlignment: tile.large ? Text.AlignHCenter : Text.AlignLeft
+                    font.pixelSize: 24
+                    horizontalAlignment: Text.AlignHCenter
                     elide: Text.ElideRight
                 }
-                Text {
+                Marquee { // a name too long for its pill scrolls while it has the focus
+                    visible: !tile.large
                     width: parent.width
+                    text: model.title
+                    color: tile.lit > 0.5 ? view.ink : "white"
+                    font.family: semi.name
+                    font.weight: Font.DemiBold
+                    font.pixelSize: 19
+                    running: tile.focused && !view.editing && !view.still
+                }
+                Marquee {
                     visible: model.value !== "" && !tile.large
+                    width: parent.width
                     text: model.value
                     color: tile.lit > 0.5 ? view.ink : "white"
                     opacity: 0.72
                     font.family: medium.name
                     font.weight: Font.Medium
                     font.pixelSize: 18
-                    elide: Text.ElideRight
+                    running: tile.focused && !view.editing && !view.still
                 }
             }
 
@@ -827,6 +855,7 @@ FocusScope {
             anchors.fill: parent
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
+            solid: view.solid
             screenX: reset.x; screenY: reset.y
             visible: !reset.focused
         }
@@ -882,6 +911,7 @@ FocusScope {
             radius: 34
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
+            solid: view.solid
             screenX: list.x
             screenY: view.gridY
         }
@@ -955,6 +985,7 @@ FocusScope {
             radius: 34
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
+            solid: view.solid
             screenX: gal.x
             screenY: view.gridY
         }
@@ -1058,6 +1089,7 @@ FocusScope {
             radius: 40
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
+            solid: view.solid
             screenX: sheetBox.x
             screenY: sheetBox.y
         }

@@ -31,7 +31,8 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   front (`systemUIManager/launch` with our own `main` and `windowType: _WEBOS_SYSTEM_UI_TYPE_OVERLAY`; the
   video keeps playing). `ControlCenter.qml` is the window (lifecycle, the API calls), `ControlCenterView.qml`
   the panel (Home+'s sizes, editing, lists, gallery, sheets), `Glass.qml` its glass, `Tint.qml` a glyph's
-  colour; `glyphs/` are Home+'s icons as PNGs (`tools/make-glyphs.sh`). Found on the C3:
+  colour, `Marquee.qml` a long name; `glyphs/` are Home+'s icons as PNGs (`tools/make-glyphs.sh`), `sounds/` its
+  focus sounds (`tools/make-sounds.py`). Found on the C3:
   - The compositor keeps every QML file it has loaded, by URL, until the TV restarts: the service opens it
     from a link named for the files' time (`qml-<time> -> qml` in the app folder), so updates load.
   - It may call only `com.lge.*`, `com.palm.*` and `com.webos.*` over luna ("Not permitted to send to"
@@ -40,6 +41,9 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
     Settings do); then Back arrives as key `0x1200003`. OK is `Qt.Key_Return`, a press and a release (no repeat).
   - Its glass: `com.webos.service.capture/executeOneShot` `method: VIDEO` (the video, without any graphics)
     takes ~350 ms a frame at any size, so ~3 a second; DRM'd video gives none.
+  - It can't post a notification that leaves the remote to the app: an overlay keeps the keys even when it
+    doesn't take them (tried), so Home+'s hints stay LG's toasts.
+  - Sounds play through QtMultimedia's `SoundEffect` (`Sounds.qml`, loaded on its own in case it can't).
   - No logs: to debug, put a `Text` on screen and take a screenshot. `touch /tmp/homeplus-cc-fps` shows its
     frame rate and the last key code. A failure to load is reported to the service (`overlay failed:` in its log).
 - `native/` — the launcher (`com.github.pmiraka.homeplus`): C, SDL2 + our own GLES2 renderer

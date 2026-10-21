@@ -10,13 +10,14 @@ Item {
     property variant sourceB
     property real fade: 0          // 0: A, 1: B
     property bool live: false      // there's a picture
+    property bool solid: false     // Reduce Transparency: a solid panel, as Home+'s
     property real radius: height / 2
     property real screenX: 0       // where it is on the screen, before any movement
     property real screenY: 0
 
     ShaderEffect {
         anchors.fill: parent
-        visible: glass.live
+        visible: glass.live && !glass.solid
         property variant srcA: glass.sourceA
         property variant srcB: glass.sourceB
         property real fade: glass.fade
@@ -44,7 +45,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: glass.radius
-        color: Qt.rgba(0.11, 0.11, 0.13, glass.live ? 0.2 : 0.45)
+        color: glass.solid ? Qt.rgba(38 / 255, 38 / 255, 44 / 255, 0.96) : Qt.rgba(0.11, 0.11, 0.13, glass.live ? 0.2 : 0.45)
         Behavior on color { ColorAnimation { duration: 300 } }
     }
     Rectangle {
