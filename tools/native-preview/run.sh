@@ -33,6 +33,14 @@ shot() { # name keys ms [pointer points]
   fi
   echo "saved $OUT/native-$1.png"
 }
+rest() { # name keys: run as on the TV for 32 s; in the last 10, the loop sleeps (a carousel turns once or twice)
+  LOG=${TMPDIR:-/tmp}/homeplus-preview-rest-$1.log
+  eval "$RUN env $DRIVER HOMEPLUS_REST_REPORT_MS=32000 HOMEPLUS_KEYS='$2' '$ROOT/native/build/host/homeplus'" >"$LOG" 2>&1 || true
+  r=$(grep '^at rest:' "$LOG" || echo 'no report')
+  wakes=$(echo "$r" | sed -n 's/^at rest: \([0-9.]*\) wakes.*/\1/p')
+  if [ -z "$wakes" ] || awk -v w="$wakes" 'BEGIN { exit !(w > 40) }'; then tail -5 "$LOG" >&2; echo "rest-$1: $r" >&2; exit 1; fi
+  echo "rest-$1: $r"
+}
 shot home "" 2500
 shot stremio "RR" 3000
 shot stremio-shelf "RRUR" 3500
@@ -72,6 +80,10 @@ shot plex "R" 4500
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_TMDB=1
 shot popular "" 5200
 shot popular-browse "URR" 5600
+# at rest, the loop sleeps (the TV's CPU and GPU are PicCap's and HyperHDR's too), also with Stremio's
+# Continue Watching turning its pages
+service HOMEPLUS_PREVIEW=1
+rest stremio "RR"
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=signin
 shot signin-plex "UODDDDRODDDDDODDDO" 6400
 service HOMEPLUS_PREVIEW=1

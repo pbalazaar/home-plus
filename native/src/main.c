@@ -347,6 +347,7 @@ static struct {
     int logged_keys;
     /* OLED protection: idle stages, fades, pixel orbit */
     Uint32 last_input;
+    Uint32 drawn_at;                  /* when the last frame was drawn */
     int idle_stage, swallow_up, offscreen, orbit_k; /* offscreen: another app is in front */
     int wl_fd;              /* Wayland socket the idle wait sleeps on, -1 = SDL's own wait */
     Uint32 keys_until;      /* a key went down lately: keep pumping so SDL makes its repeats */
@@ -4757,11 +4758,16 @@ static int next_wake_ms(void)
     int visible = !S.offscreen && S.idle_stage < 2;
     Uint32 turn = visible && S.rail_next ? (S.rail_next - 2500 > now ? S.rail_next - 2500 : S.rail_next) : 0;
     int waiting = visible && (S.want_app != S.page_app || S.want_rail != S.page_rail); /* the Top Shelf's next page */
+    Uint32 page = waiting ? S.want_at + (now - S.want_at < SKEL_MS ? SKEL_MS : PAGE_WAIT_MS) : 0;
+    /* the Top Shelf turns, and shows its next page, in a frame: one due before the last frame was that
+     * frame's to do, and isn't waited for again (a turn waiting for its next picture happens when the
+     * picture comes, which wakes the loop) */
+    if (turn && (Sint32)(turn - S.drawn_at) <= 0) turn = 0;
+    if (page && (Sint32)(page - S.drawn_at) <= 0) page = 0;
     Uint32 due[11] = { S.setup_retry, S.next_retry, S.trakt_poll, S.media_poll, S.ok_down && !S.ok_long ? S.ok_down + LONG_PRESS_MS : 0, turn,
                       S.toast_tex && S.toast_until > now ? S.toast_until : 0,
                       S.offscreen || S.idle_stage >= 2 ? 0 : idle_due(dim_ms, off_ms),
-                      snd_active() ? now + 1000 : 0, visible ? now + (60000 - now % 60000) : 0,
-                      waiting ? S.want_at + (now - S.want_at < SKEL_MS ? SKEL_MS : PAGE_WAIT_MS) : 0 };
+                      snd_active() ? now + 1000 : 0, visible ? now + (60000 - now % 60000) : 0, page };
     int wait = -1;
     for (int i = 0; i < 11; i++) {
         if (!due[i]) continue;
@@ -4924,6 +4930,9 @@ int main(int argc, char **argv)
     setup_check(); /* loads the data once the service is up and elevated */
 
     const char *shot = getenv("HOMEPLUS_SCREENSHOT"); /* host preview: render then save a PNG */
+    /* tests: run as on the TV for this long, then say how often the loop woke and drew in its last 10 s */
+    Uint32 rest_ms = getenv("HOMEPLUS_REST_REPORT_MS") ? (Uint32)atoi(getenv("HOMEPLUS_REST_REPORT_MS")) : 0;
+    unsigned rest_wakes = 0, rest_frames = 0;
     Uint32 shot_at = shot ? SDL_GetTicks() + (Uint32)atoi(getenv("HOMEPLUS_SCREENSHOT_MS") ? getenv("HOMEPLUS_SCREENSHOT_MS") : "2500") : 0;
     extern void homeplus_preview_input(Uint32 elapsed);
 
@@ -5031,6 +5040,12 @@ int main(int argc, char **argv)
         }
 
         Uint32 now = SDL_GetTicks();
+        if (rest_ms && now - start >= rest_ms - 10000) rest_wakes++;
+        if (rest_ms && now - start >= rest_ms) {
+            printf("at rest: %.1f wakes/s, %.1f frames/s\n", rest_wakes / 10.0, rest_frames / 10.0);
+            fflush(stdout);
+            running = 0;
+        }
         snd_idle();
         if (S.ok_down && !S.ok_long && now - S.ok_down >= LONG_PRESS_MS) {
             S.ok_long = 1;
@@ -5064,7 +5079,7 @@ int main(int argc, char **argv)
             rail_request(SRC_STREMIO);
             if (!S.layout_loaded) net_get_json("/api/layout", TAG_LAYOUT, 0, 0);
         }
-        if (shot) homeplus_preview_input(now - start);
+        if (shot || rest_ms) homeplus_preview_input(now - start);
         if (S.toast_tex && now < S.toast_until + 100) dirty = 1;
         {
             time_t tt = time(NULL);
@@ -5088,6 +5103,8 @@ int main(int argc, char **argv)
                 dirty = 1;
             }
         }
+        /* woken for what a frame does (the Top Shelf turning, its next page): draw one */
+        if (!dirty && !animating && next_wake_ms() == 0) dirty = 1;
         /* nothing to draw while hidden behind another app or once the screen is black */
         if ((S.offscreen || (S.idle_stage == 2 && S.black >= 0.999f)) && !shot) dirty = animating = 0;
 
@@ -5097,6 +5114,8 @@ int main(int argc, char **argv)
             int take = shot && now >= shot_at;
             animating = render(dt, take ? shot : NULL);
             drew = 1;
+            S.drawn_at = now;
+            if (rest_ms && now - start >= rest_ms - 10000) rest_frames++;
             if (take) running = 0;
         }
         last = now;
