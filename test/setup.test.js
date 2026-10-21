@@ -56,38 +56,52 @@ test('setup: the boot script is a link to the one in the package, in place of th
 });
 
 test('setup: Home+\'s binds from before turn into ones that check for Home+, and everyone else\'s stay', async () => {
-  const b = binds();
-  assert.equal(b[773].action, 'exec');
-  assert.match(b[773].command, /com\.github\.pmiraka\.homeplus.+com\.webos\.app\.home"/);
-  assert.equal(b[139].action, 'exec');
-  assert.match(b[139].command, /settings-key\.sh.+com\.webos\.app\.quicksettings"/);
+  const b = binds(), dirOf = path.dirname(bindsFile);
+  /* plain commands (LG Input Hook runs a bind without a shell), each a script beside the binds */
+  assert.deepEqual(b[773], { action: 'exec', command: `sh ${path.join(dirOf, 'homeplus-home.sh')}` });
+  assert.deepEqual(b[139], { action: 'exec', command: `sh ${path.join(dirOf, 'homeplus-settings.sh')}` });
+  assert.match(fs.readFileSync(path.join(dirOf, 'homeplus-home.sh'), 'utf8'), /com\.github\.pmiraka\.homeplus.+\n.*com\.webos\.app\.home"/s);
+  assert.match(fs.readFileSync(path.join(dirOf, 'homeplus-settings.sh'), 'utf8'), /settings-key\.sh.+\n.*com\.webos\.app\.quicksettings"/s);
   assert.deepEqual({ 1: b[1], 2: b[2] }, theirs);
   assert.deepEqual((await svc.call('GET', '/api/home')).json.settingsKey, { available: true, on: true });
 });
 
 test('setup: the keys do what they do without Home+ once it\'s gone', { skip: windows }, () => {
-  /* each bind's command run as LG Input Hook runs it (sh -c), with a luna-send that notes its call */
+  /* each bind run as LG Input Hook runs it, as a plain command (no shell), with a luna-send that notes its call */
   const bin = path.join(dir, 'bin'), calls = path.join(dir, 'calls');
   fs.mkdirSync(bin, { recursive: true });
   fs.writeFileSync(path.join(bin, 'luna-send'), '#!/bin/sh\necho "luna-send $*" >>"$CALLS"\n', { mode: 0o755 });
   const press = (command) => {
     fs.writeFileSync(calls, '');
-    const r = spawnSync('/bin/sh', ['-c', command], { env: Object.assign({}, process.env, { PATH: `${bin}${path.delimiter}${process.env.PATH}`, CALLS: calls }) });
+    const [prog, ...args] = command.split(' ');
+    const r = spawnSync(prog, args, { env: Object.assign({}, process.env, { PATH: `${bin}${path.delimiter}${process.env.PATH}`, CALLS: calls }) });
     assert.equal(r.status, 0, String(r.stderr));
     return fs.readFileSync(calls, 'utf8').trim();
   };
-  const gone = (command, file) => command.split(file).join(path.join(dir, 'removed', path.basename(file)));
   const { 773: home, 139: settings } = binds();
+  const appinfo = path.join(app, 'appinfo.json'), away = path.join(dir, 'appinfo.away');
 
   assert.equal(press(home.command), 'luna-send -n 1 luna://com.webos.applicationManager/launch {"id":"com.github.pmiraka.homeplus"}');
-  assert.equal(press(gone(home.command, path.join(app, 'appinfo.json'))),
-    'luna-send -n 1 luna://com.webos.applicationManager/launch {"id":"com.webos.app.home"}', 'LG\'s home screen');
+  fs.renameSync(appinfo, away); /* Home+, removed */
+  try {
+    assert.equal(press(home.command), 'luna-send -n 1 luna://com.webos.applicationManager/launch {"id":"com.webos.app.home"}', 'LG\'s home screen');
+  } finally {
+    fs.renameSync(away, appinfo);
+  }
 
-  const script = path.join(dir, 'settings-key.sh'); /* settings-key.sh, as a note that it ran */
-  fs.writeFileSync(script, 'echo "settings-key.sh ran" >>"$CALLS"\n');
-  assert.equal(press(settings.command.split(SCRIPT).join(script)), 'settings-key.sh ran');
-  assert.equal(press(gone(settings.command, SCRIPT)),
-    'luna-send -n 1 luna://com.webos.service.systemUIManager/launch {"appId":"com.webos.app.quicksettings"}', 'LG\'s Quick Settings');
+  /* the Settings script, pointing at a stand-in for settings-key.sh that notes it ran, then at one that's gone */
+  const script = path.join(path.dirname(bindsFile), 'homeplus-settings.sh'), text = fs.readFileSync(script, 'utf8');
+  const stand = path.join(dir, 'settings-key.sh');
+  fs.writeFileSync(stand, 'echo "settings-key.sh ran" >>"$CALLS"\n');
+  try {
+    fs.writeFileSync(script, text.split(SCRIPT).join(stand));
+    assert.equal(press(settings.command), 'settings-key.sh ran');
+    fs.writeFileSync(script, text.split(SCRIPT).join(path.join(dir, 'removed', 'settings-key.sh')));
+    assert.equal(press(settings.command),
+      'luna-send -n 1 luna://com.webos.service.systemUIManager/launch {"appId":"com.webos.app.quicksettings"}', 'LG\'s Quick Settings');
+  } finally {
+    fs.writeFileSync(script, text);
+  }
 });
 
 test('setup: a Home bind made later in LG Input Hook\'s app gets the same check at once', async () => {
@@ -110,5 +124,7 @@ test('setup: Remove Home+ takes away its boot script and log, its binds and its 
   assert.equal(fs.existsSync(path.join(dir, 'webosbrew', 'homeplus-boot.log')), false, 'its log');
   assert.ok(fs.existsSync(path.join(initd, '90-someone-else')), 'other boot scripts stay');
   assert.deepEqual(binds(), theirs);
+  for (const f of ['homeplus-home.sh', 'homeplus-settings.sh'])
+    assert.equal(fs.existsSync(path.join(path.dirname(bindsFile), f)), false, `the binds' ${f}`);
   assert.equal(fs.existsSync(path.join(dir, 'config')), false, 'settings, sign-ins and pictures');
 });

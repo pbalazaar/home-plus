@@ -347,7 +347,8 @@ const INPUTHOOK_BINDS = process.env.HOMEPLUS_INPUTHOOK_BINDS || '/home/root/.con
 const OUR_IDS = [NATIVE_ID, 'com.atvlauncher.native', 'com.atvlauncher.app'];
 
 // a bind that's Home+'s: it launches Home+ (the Home key), or runs our script (the Settings key)
-const ourBind = (b) => !!b && (OUR_IDS.includes(b.id) || [NATIVE_ID, SETTINGS_KEY_SCRIPT].some((s) => String(b.command || '').includes(s)));
+const ourBind = (b) => !!b && (OUR_IDS.includes(b.id) ||
+  [NATIVE_ID, SETTINGS_KEY_SCRIPT, HOME_SCRIPT, SETTINGS_SCRIPT].some((s) => String(b.command || '').includes(s)));
 
 function dropInputhookBinds() {
   // lginputhook keybinds that are Home+'s are removed; other binds stay
@@ -372,25 +373,50 @@ function readBinds() {
 }
 
 // ---- Home+'s binds outlive it when it's removed without Remove Home+ (from the Homebrew Channel,
-// say). So each checks that Home+ is still installed, by a file of its package (its folders can
-// outlive it), and otherwise does what the key does without Home+.
+// say). So each runs a small script beside LG Input Hook's binds, which outlives Home+ as they do:
+// it checks that Home+ is still installed, by a file of its package (its folders can outlive it),
+// and otherwise does what the key does without Home+. The binds themselves are plain commands: LG
+// Input Hook runs one without a shell (on the C3, a bind starting with `[` or `{` did nothing).
 
 const HOME_KEY = '773';
+const HOME_SCRIPT = path.join(path.dirname(INPUTHOOK_BINDS), 'homeplus-home.sh');
+const SETTINGS_SCRIPT = path.join(path.dirname(INPUTHOOK_BINDS), 'homeplus-settings.sh');
 const lunaSend = (uri, params) => `luna-send -n 1 ${uri} '${JSON.stringify(params)}'`;
-const unlessGone = (file, cmd, otherwise) => ({ action: 'exec', command: `[ -f ${file} ] && exec ${cmd}; exec ${otherwise}` });
-const OUR_BINDS = { /* Home: Home+, else LG's home screen. Settings: our script, else LG's Quick Settings */
-  [HOME_KEY]: unlessGone(path.join(APP_DIR, 'appinfo.json'), lunaSend(APPMGR + '/launch', { id: NATIVE_ID }), lunaSend(APPMGR + '/launch', { id: LG_HOME })),
-  [SETTINGS_KEY]: unlessGone(SETTINGS_KEY_SCRIPT, `sh ${SETTINGS_KEY_SCRIPT}`,
-    lunaSend('luna://com.webos.service.systemUIManager/launch', { appId: 'com.webos.app.quicksettings' }))
+const KEY_SCRIPTS = {
+  [HOME_SCRIPT]: `#!/bin/sh
+# Home+'s Home button, run by LG Input Hook: Home+, or LG's home screen once Home+ is gone.
+[ -f ${path.join(APP_DIR, 'appinfo.json')} ] && exec ${lunaSend(APPMGR + '/launch', { id: NATIVE_ID })}
+exec ${lunaSend(APPMGR + '/launch', { id: LG_HOME })}
+`,
+  [SETTINGS_SCRIPT]: `#!/bin/sh
+# Home+'s Settings button, run by LG Input Hook: Home+'s Control Center, or LG's Quick Settings once Home+ is gone.
+[ -f ${SETTINGS_KEY_SCRIPT} ] && exec sh ${SETTINGS_KEY_SCRIPT}
+exec ${lunaSend('luna://com.webos.service.systemUIManager/launch', { appId: 'com.webos.app.quicksettings' })}
+`
 };
-// the binds Home+ 0.11 and older made, and LG Input Hook's app makes ("Launch App": Home+)
+const OUR_BINDS = { /* Home: Home+, else LG's home screen. Settings: our script, else LG's Quick Settings */
+  [HOME_KEY]: { action: 'exec', command: `sh ${HOME_SCRIPT}` },
+  [SETTINGS_KEY]: { action: 'exec', command: `sh ${SETTINGS_SCRIPT}` }
+};
+
+function writeKeyScripts() {
+  for (const [file, text] of Object.entries(KEY_SCRIPTS)) {
+    let had = null;
+    try { had = fs.readFileSync(file, 'utf8'); } catch (e) { /* not there yet */ }
+    if (had !== text) fs.writeFileSync(file, text, { mode: 0o755 });
+  }
+}
+
+// the binds Home+ 0.11 and older made, LG Input Hook's app makes ("Launch App": Home+), and any
+// other of ours that isn't the current one
 const OLD_BINDS = {
-  [HOME_KEY]: (b) => b.action === 'launch' && OUR_IDS.includes(b.id),
-  [SETTINGS_KEY]: (b) => b.action === 'exec' && b.command === `sh ${SETTINGS_KEY_SCRIPT}`
+  [HOME_KEY]: (b) => (b.action === 'launch' && OUR_IDS.includes(b.id)) || (ourBind(b) && b.command !== OUR_BINDS[HOME_KEY].command),
+  [SETTINGS_KEY]: (b) => b.action === 'exec' && ourBind(b) && b.command !== OUR_BINDS[SETTINGS_KEY].command
 };
 
 function upgradeBinds() {
   const binds = readBinds();
+  if (binds && Object.values(binds).some(ourBind)) writeKeyScripts(); /* (an update may change them) */
   const keys = Object.keys(OLD_BINDS).filter((k) => binds && binds[k] && OLD_BINDS[k](binds[k]));
   if (!keys.length) return;
   for (const k of keys) binds[k] = OUR_BINDS[k];
@@ -418,7 +444,10 @@ function settingsKeyState() {
 function setSettingsKey(on) {
   if (!settingsKeyState().available) throw new Error('LG Input Hook isn\'t installed');
   const binds = readBinds() || {};
-  if (on) binds[SETTINGS_KEY] = OUR_BINDS[SETTINGS_KEY];
+  if (on) {
+    writeKeyScripts();
+    binds[SETTINGS_KEY] = OUR_BINDS[SETTINGS_KEY];
+  }
   else if (ourBind(binds[SETTINGS_KEY])) delete binds[SETTINGS_KEY]; /* someone else's bind stays */
   fs.writeFileSync(INPUTHOOK_BINDS, JSON.stringify(binds, null, 2));
   log('settings key:', on ? 'Control Center' : 'LG Quick Settings');
@@ -475,7 +504,7 @@ async function uninstall() {
   const steps = {};
   await unmountRedirect().catch(() => {});
   try { [INITD, BOOT_LOG].forEach((f) => fs.rmSync(f, { force: true })); steps.bootScript = true; } catch (e) { steps.bootScript = e.message; }
-  try { steps.inputhookBinds = dropInputhookBinds(); } catch (e) { steps.inputhookBinds = e.message; }
+  try { steps.inputhookBinds = dropInputhookBinds(); [HOME_SCRIPT, SETTINGS_SCRIPT].forEach((f) => fs.rmSync(f, { force: true })); } catch (e) { steps.inputhookBinds = e.message; }
   try { fs.rmSync(path.dirname(findConfigPath()), { recursive: true, force: true }); steps.settings = true; } catch (e) { steps.settings = e.message; }
   steps.elevationFiles = dropElevation();
   log('uninstall:', steps);

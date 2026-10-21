@@ -138,7 +138,9 @@ test('api: the Settings key binds through LG Input Hook, and only Home+\'s bind 
   const on = await call('POST', '/api/home', { body: { settingsKey: true } });
   assert.deepEqual(on.json.settingsKey, { available: true, on: true });
   assert.equal(binds()[139].action, 'exec');
-  assert.match(binds()[139].command, /sh \S+settings-key\.sh; exec luna-send .+com\.webos\.app\.quicksettings/, 'LG\'s Quick Settings once Home+ is gone');
+  const script = path.join(dir, 'lginputhook', 'homeplus-settings.sh'); /* a plain command: LG Input Hook runs it without a shell */
+  assert.equal(binds()[139].command, `sh ${script}`);
+  assert.match(fs.readFileSync(script, 'utf8'), /settings-key\.sh\n.*com\.webos\.app\.quicksettings/, 'LG\'s Quick Settings once Home+ is gone');
   assert.deepEqual(binds()[773], home, 'the Home key\'s bind stays');
   await call('POST', '/api/home', { body: { settingsKey: false } });
   assert.equal(binds()[139], undefined);
