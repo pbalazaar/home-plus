@@ -38,6 +38,17 @@ void r_tex_free(Tex **t);
 void r_image(const Tex *t, float x, float y, float w, float h, Uint8 r, Uint8 g, Uint8 b, Uint8 a, float radius);
 /* Only the part of it from u0 to u1 (0..1, across), drawn into the rect: text that scrolls. */
 void r_image_part(const Tex *t, float x, float y, float w, float h, float u0, float u1, Uint8 r, Uint8 g, Uint8 b, Uint8 a);
+/* An app icon's logo in a look other than its own colours. mono: in one colour (r, g, b): the
+ * ink that stood out most from the icon's background solid, the rest down to `faint` (0..1)
+ * opaque; ref is that background's luminance (< 0: none, the ink's own luminance counts) and
+ * span the most any ink stood out. Else, for a dark tile: its own colours, with a light icon's
+ * (ref > 0.5) grey and black ink turned light, and grey ink into (r, g, b) as much as ink (0..1) says. */
+typedef struct {
+    int mono;
+    float ref, span, faint, ink;
+    Uint8 r, g, b;
+} LogoLook;
+void r_logo(const Tex *t, float x, float y, float w, float h, float radius, const LogoLook *l, Uint8 a);
 /* Same, scaled to cover the rect and cropped (biased upward, like the shelf art). */
 void r_cover(const Tex *t, float x, float y, float w, float h, Uint8 a, float radius);
 /* Rounded rect (radius = h/2 for a capsule). stroke > 0 draws only a ring that

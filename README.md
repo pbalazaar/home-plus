@@ -6,7 +6,7 @@ A tvOS-style home screen for rooted LG webOS TVs, in a Liquid Glass look, with C
 
 ![Continue Watching in the Top Shelf](docs/screenshots/continue-watching.jpg)
 
-*Screenshots show a real TV's apps and Continue Watching, rendered with the desktop preview. The Jellyfin and Plex ones use placeholder shows, and the Control Center ones placeholder apps.*
+*Screenshots show a real TV's apps and Continue Watching. The Jellyfin and Plex ones use placeholder shows, and the Control Center ones placeholder apps.*
 
 > **Not affiliated with LG, Apple, Stremio, Trakt, Jellyfin, Plex or TMDB.** Home+ uses the TMDB API but is not endorsed or certified by TMDB. Home+ is an independent project. tvOS and Liquid Glass are Apple's names for Apple's designs; Home+ only borrows the look. It runs on **rooted** TVs and uses Stremio's, Trakt's and Plex's web APIs unofficially. Use it at your own risk.
 
@@ -14,6 +14,7 @@ A tvOS-style home screen for rooted LG webOS TVs, in a Liquid Glass look, with C
 
 - **Top Shelf:** focus an app in the top row and the screen fills with its pictures, one title at a time, like tvOS. Stremio, Jellyfin and Plex show what you're partway through; streaming apps show what's popular on them (with a free TMDB key); other apps get a glow taken from their icon.
 - **Liquid Glass:** the dock, clock, buttons and menus bend the light at their edges and blur only what sits behind text. Focused tiles lift, sway and catch a moving light. The Magic Remote pointer steers that light.
+- **App icons:** like iOS 26's, every app can show its own colours, sit on a dark tile, or turn to glass: clear, or tinted in one of ten colours.
 - **Motion and sound:** everything moves on springs, and menus grow out of the button that opened them. A soft tick plays when focus moves; **Settings → Sounds** turns it off.
 - **Continue Watching:** what you're partway through in Stremio (with your Trakt progress), Jellyfin or Plex, newest first. It turns to the next title every 10 seconds (or stays still: **Settings → Display & OLED → Top Shelf**); press **Up**, then **Left** and **Right**, to step through them. You sign in with a code or a QR code, so no password is typed on the TV.
 - **Recents:** an App Switcher for the apps you opened that are still running, most recent first. Apps webOS runs by itself (preloaded, or started again in the background) stay out. Open them, close them one by one, or close them all. Press **Back** on the first app to open it.
@@ -90,7 +91,7 @@ luna-send -n 1 luna://com.github.pmiraka.homeplus.service/control '{"action":"sc
 | Row | What's there |
 |---|---|
 | **Remote** | Whether the Home button opens Home+ or LG's home screen, No Flash on TVs that support it, and with LG Input Hook, whether the Settings button opens the Control Center |
-| **Display & OLED** | Dim After, Turn Off After, Pixel Shift, Calm Colours (dark app backgrounds, so ambient lights don't flood the room), and whether the Top Shelf turns pages by itself |
+| **Display & OLED** | Dim After, Turn Off After, Pixel Shift, Calm Colours (dark app backgrounds, so ambient lights don't flood the room), whether the Top Shelf turns pages by itself, and App Icons |
 | **Control Center** | With LG Input Hook and PicCap: Blur Over Video, which pauses PicCap's capture while the Control Center is open over other apps, so its glass can blur the video |
 | **Sounds** | Focus sounds on or off |
 | **Clock** | 12-hour or 24-hour |
@@ -100,6 +101,14 @@ luna-send -n 1 luna://com.github.pmiraka.homeplus.service/control '{"action":"sc
 | **TV Settings** | LG's own settings apps |
 | **About** | Version, whether Home+ is set up, the last remote key it ignored, licence |
 | **Remove Home+** | Undoes everything and uninstalls (see below) |
+
+![App icons: Default, Dark, Clear and Tinted](docs/screenshots/app-icons.jpg)
+
+**App Icons** (Settings → Display & OLED) changes every app's tile, like iOS 26's icon styles. **Default** keeps each icon's own colours. **Dark** puts the logo on a dark tile in its own colours: a light icon's black lettering turns light, and a white logo on a coloured icon takes that colour, as Prime Video's does. **Clear** turns the tiles to frosted glass with white logos, coloured by the picture behind them. **Tinted** is glass in a colour, with the logo in a pale tint of it.
+
+![App Icons in Settings, with Tinted's colours](docs/screenshots/app-icons-settings.jpg)
+
+With Tinted on, ten colours appear under the four looks: **Left** and **Right** pick one, and the tiles behind the menu change as you go (with the pointer, click one).
 
 ## Continue Watching
 

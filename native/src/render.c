@@ -73,6 +73,36 @@ static const char *FS_TEX =
     "    gl_FragColor = c;\n"
     "}\n";
 
+/* An app icon's logo in a look (r_logo): in one colour, its strength from how far the ink stood
+ * out from the icon's background; or for a dark tile, grey and black ink turned light. */
+static const char *FS_LOGO =
+    "uniform sampler2D u_tex;\n"
+    "uniform vec4 u_color;\n" /* one colour: it; dark tile: the colour grey ink takes, a = how much */
+    "uniform vec4 u_rect;\n"
+    "uniform float u_radius;\n"
+    "uniform vec4 u_mono;\n" /* 1 = one colour, the background's luminance, 1 / span, faint */
+    "uniform float u_alpha;\n"
+    "void main() {\n"
+    "    vec4 t = texture2D(u_tex, v_uv);\n"
+    "    float l = dot(t.rgb, vec3(0.299, 0.587, 0.114));\n"
+    "    vec4 c;\n"
+    "    if (u_mono.x > 0.5) {\n"
+    "        float k = clamp((u_mono.y < 0.0 ? l : abs(l - u_mono.y)) * u_mono.z, 0.0, 1.0);\n"
+    "        c = vec4(u_color.rgb, t.a * mix(u_mono.w, 1.0, k));\n"
+    "    } else {\n"
+    "        float s = max(t.r, max(t.g, t.b)) - min(t.r, min(t.g, t.b));\n"
+    "        float v = u_mono.y > 0.5 ? 1.0 - l : l;\n" /* a light icon's dark ink turns light */
+    "        vec3 ink = mix(vec3(v), u_color.rgb * (0.6 + 0.4 * v), u_color.a);\n"
+    "        c = vec4(mix(t.rgb, ink, 1.0 - smoothstep(0.08, 0.25, s)), t.a);\n"
+    "    }\n"
+    "    c.a *= u_alpha;\n"
+    "    if (u_radius > 0.0) {\n"
+    "        vec2 h = u_rect.zw * 0.5;\n"
+    "        c.a *= clamp(0.5 - sd_round(v_px - u_rect.xy - h, h, u_radius), 0.0, 1.0);\n"
+    "    }\n"
+    "    gl_FragColor = c;\n"
+    "}\n";
+
 static const char *FS_SHAPE =
     "uniform vec4 u_color;\n"
     "uniform vec4 u_rect;\n"
@@ -205,7 +235,8 @@ static const char *FS_GLASS =
     "    lit *= lit * lit; lit *= lit; back *= back * back; back *= back;\n"
     "    float spec = rim * (0.10 + 0.40 * lit + 0.15 * back);\n"
     "    col += spec * (0.85 + 0.45 * u_focus);\n"
-    "    col += u_focus * 0.10 * (1.0 - t);\n" /* lit from within when focused */
+    "    vec2 g = p / h - u_light * 0.45;\n" /* lit from within when focused: a soft glow toward the light, with no edge */
+    "    col += u_focus * 0.12 * exp(-1.5 * dot(g, g));\n"
     "    col *= 1.0 - 0.16 * bevel * max(-facing, 0.0);\n" /* the bevel away from the light falls into shade */
     "    gl_FragColor = vec4(min(col, vec3(1.0)), mask * u_alpha);\n"
     "}\n";
@@ -215,7 +246,7 @@ static const char *FS_GLASS =
 typedef struct {
     GLuint id;
     GLint rect, view, uv, offset, color, radius, tex, stroke, grad, shape, blur, halfpix;
-    GLint sharp, soft, lens, legible, light, focus, tint, alpha;
+    GLint sharp, soft, lens, legible, light, focus, tint, alpha, mono;
 } Prog;
 
 typedef struct {
@@ -233,7 +264,7 @@ static struct {
     float orbit_x, orbit_y; /* OLED pixel orbit, screen only */
     float tx, ty;           /* r_translate(), on every target */
     float ox, oy;       /* offset for the current target */
-    Prog tex, shape, shadow, rim, down, up, glass;
+    Prog tex, logo, shape, shadow, rim, down, up, glass;
     const Prog *cur;
     GLuint quad;
     Tex white;          /* 1x1, for untextured image draws */
@@ -283,7 +314,7 @@ static int program(Prog *p, const char *fs)
     U(tex, "u_tex") U(stroke, "u_stroke") U(grad, "u_grad") U(shape, "u_shape") U(blur, "u_blur")
     U(halfpix, "u_halfpix") U(sharp, "u_sharp") U(soft, "u_soft") U(lens, "u_lens")
     U(legible, "u_legible")
-    U(light, "u_light") U(focus, "u_focus") U(tint, "u_tint") U(alpha, "u_alpha")
+    U(light, "u_light") U(focus, "u_focus") U(tint, "u_tint") U(alpha, "u_alpha") U(mono, "u_mono")
 #undef U
     gl.UseProgram(p->id);
     gl.Uniform2f(p->view, (float)R.lw, (float)R.lh);
@@ -391,7 +422,7 @@ int r_init(SDL_Window *win, int logical_w, int logical_h)
 #undef X
     SDL_GL_GetDrawableSize(win, &R.dw, &R.dh);
 
-    if (!program(&R.tex, FS_TEX) || !program(&R.shape, FS_SHAPE) || !program(&R.shadow, FS_SHADOW) || !program(&R.rim, FS_RIM) ||
+    if (!program(&R.tex, FS_TEX) || !program(&R.logo, FS_LOGO) || !program(&R.shape, FS_SHAPE) || !program(&R.shadow, FS_SHADOW) || !program(&R.rim, FS_RIM) ||
         !program(&R.down, FS_DOWN) || !program(&R.up, FS_UP) || !program(&R.glass, FS_GLASS))
         return 0;
 
@@ -493,6 +524,18 @@ void r_image(const Tex *t, float x, float y, float w, float h, Uint8 r, Uint8 g,
 void r_image_part(const Tex *t, float x, float y, float w, float h, float u0, float u1, Uint8 r, Uint8 g, Uint8 b, Uint8 a)
 {
     image_uv(t, x, y, w, h, u0, 0, u1, 1, r, g, b, a, 0);
+}
+
+void r_logo(const Tex *t, float x, float y, float w, float h, float radius, const LogoLook *l, Uint8 a)
+{
+    if (!t || !a || w <= 0 || h <= 0) return;
+    use(&R.logo);
+    bind_tex(0, t->id);
+    gl.Uniform4f(R.logo.color, l->r / 255.0f, l->g / 255.0f, l->b / 255.0f, l->mono ? 1 : l->ink);
+    gl.Uniform4f(R.logo.mono, l->mono ? 1 : 0, l->ref, l->span > 0.02f ? 1 / l->span : 1, l->faint);
+    gl.Uniform1f(R.logo.alpha, a / 255.0f);
+    gl.Uniform1f(R.logo.radius, radius);
+    quad(&R.logo, x, y, w, h);
 }
 
 void r_cover(const Tex *t, float x, float y, float w, float h, Uint8 a, float radius)

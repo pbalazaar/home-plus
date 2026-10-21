@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <time.h>
@@ -135,10 +136,24 @@ typedef struct {
 } CCItem;
 
 /* Settings pages (a sheet's page; 0 = not a Settings page) */
-enum { PAGE_MAIN = 1, PAGE_HOME, PAGE_DISPLAY, PAGE_CC, PAGE_ACCESS, PAGE_ACCOUNTS, PAGE_TV, PAGE_ABOUT, PAGE_CONFIRM, PAGE_SIGNIN };
+enum { PAGE_MAIN = 1, PAGE_HOME, PAGE_DISPLAY, PAGE_CC, PAGE_ACCESS, PAGE_ACCOUNTS, PAGE_TV, PAGE_ABOUT, PAGE_CONFIRM, PAGE_SIGNIN, PAGE_ICONS };
 
 /* zones: what the remote is moving through */
 enum { ZONE_GRID, ZONE_RAIL, ZONE_TOP };
+/* how app icons look (Settings -> Display & OLED -> App Icons): their own colours; dark tiles;
+ * glass with white logos; glass in a colour */
+enum { LOOK_DEFAULT, LOOK_DARK, LOOK_CLEAR, LOOK_TINTED };
+static const char *const LOOK_NAME[] = { "Default", "Dark", "Clear", "Tinted" };
+/* Tinted's colours: Apple's system colours, as on a dark screen */
+static const struct {
+    const char *name;
+    Uint8 rgb[3];
+} TINTS[] = { { "Red", { 255, 69, 58 } },    { "Orange", { 255, 159, 10 } }, { "Yellow", { 255, 214, 10 } },
+              { "Green", { 48, 209, 88 } },  { "Teal", { 64, 200, 224 } },   { "Blue", { 10, 132, 255 } },
+              { "Indigo", { 94, 92, 230 } }, { "Purple", { 191, 90, 242 } }, { "Pink", { 255, 55, 95 } },
+              { "Graphite", { 142, 142, 147 } } };
+#define NTINTS (int)(sizeof TINTS / sizeof TINTS[0])
+#define TINT_INDIGO 6
 /* the top bar: the clock capsule, with Settings in the circle at its end (Recents is
  * Back on the first app, or Red; Inputs are the remote's Input key) */
 enum { TOP_SETTINGS, TOP_COUNT };
@@ -153,6 +168,8 @@ typedef struct {
     Tex *logo_tex;          /* the icon's logo, background keyed out and trimmed (tiles) */
     Tex *cover_tex;         /* made from the icon, for the Top Shelf when the app has no artwork */
     float logo_w, logo_h, logo_r; /* its size on a tile, and corner radius for picture icons */
+    float ink_ref, ink_span;      /* the luminance its logo stood out from (-1: none), and the most it did */
+    float ink_tint;               /* its logo is grey or white on a coloured icon: on a dark tile it takes that colour */
     int icon_state, art_state; /* 0 idle, 1 loading, 2 ready, 3 failed */
     int feat; /* a streaming service with popular titles (TMDB): 0 not asked, 1 asking, 2 yes, 3 no */
     int removable, deleted; /* it can be deleted from the TV; it was, and the app list hasn't caught up */
@@ -182,6 +199,7 @@ typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELE
                ACT_SETUP_RETRY, ACT_HOME_YES, ACT_HOME_NO, ACT_HOME_TOGGLE, ACT_REMOVE_ASK, ACT_REMOVE,
                ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY, ACT_CC_BLUR_VIDEO,
                ACT_PAGE, ACT_CLOCK, ACT_DIM, ACT_OFF, ACT_ORBIT, ACT_CALM, ACT_HIDDEN, ACT_SETTINGS_KEY, ACT_INPUT_KEY,
+               ACT_ICON_LOOK, ACT_ICON_TINT,
                ACT_CC_EDIT, ACT_CC_ADD, ACT_CC_SIZE, ACT_CC_REMOVE, ACT_CC_RESET } Action;
 
 /* First run: the service has to be running and elevated (root, via Homebrew
@@ -205,6 +223,7 @@ typedef struct {
     int vw, vh;
     int chevron; /* opens a page */
     int check;   /* the choice that's on: a tick on the right (its label still in the middle) */
+    int swatches; /* Tinted's colours, the one that's on ringed: Left and Right pick another */
 } SheetItem;
 
 static struct {
@@ -331,6 +350,9 @@ static struct {
     int reduce_motion, reduce_transparency; /* Settings -> Accessibility (tvOS's names) */
     int clock24, orbit_off, vivid_covers;    /* Settings: 24-hour clock, no pixel shift, brand-colour covers */
     int shelf_still;                         /* Settings: the Top Shelf doesn't turn pages by itself */
+    int icon_look;                           /* Settings: how app icons look (LOOK_*) */
+    int icon_tint;                           /* ...and the colour Tinted gives them (TINTS) */
+    int click_x;                             /* where the pointer last clicked (-1: the keys' OK) */
     int at_page, at_index, at_parent_index;  /* the Settings row an action came from */
     int last_unknown_key;                    /* Settings -> About: what a remote sent that Home+ ignores */
     char svc_version[24];                    /* from /api/status */
@@ -1215,6 +1237,25 @@ static void make_cover(App *a, const unsigned char *px, int w, int h)
     free(out);
 }
 
+/* the most (or least) of v within 2 px, across then down: out (tmp is scratch) */
+static void spread(const unsigned short *v, unsigned short *tmp, unsigned short *out, int w, int h, int most)
+{
+    for (int pass = 0; pass < 2; pass++) {
+        const unsigned short *from = pass ? tmp : v;
+        unsigned short *to = pass ? out : tmp;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                int at = pass ? y : x, len = pass ? h : w, step = pass ? w : 1;
+                unsigned short r = from[y * w + x];
+                for (int d = at > 2 ? -2 : -at; d <= 2 && at + d < len; d++) {
+                    unsigned short u = from[y * w + x + d * step];
+                    r = most ? (u > r ? u : r) : (u < r ? u : r);
+                }
+                to[y * w + x] = r;
+            }
+    }
+}
+
 static void make_logo(App *a, const unsigned char *px, int w, int h)
 {
     /* background: the first opaque pixel (2 px in, past the anti-aliased edge)
@@ -1256,33 +1297,86 @@ static void make_logo(App *a, const unsigned char *px, int w, int h)
     if (!k) return;
     int x0 = w, y0 = h, x1 = -1, y1 = -1;
     double lum = 0, lum_n = 0;
+    /* for the looks: how far the logo's ink stands out from the icon's background (a logo with
+     * none: its own luminance), and how much of it is grey or white */
+    float ref = mode == CLEAR ? -1 : (float)((0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255);
+    int stand[32] = { 0 }, grey = 0, far = 0;
+    /* A logo's edge pixels are part background. How far one is from the background, against how far
+     * the logo's ink is nearby (the most within 2 px), says how much of it is logo; taking the
+     * background's part out of its colour leaves the ink's. On the icon's own colour the tile looks
+     * the same; on a look's tile no rim of the old background shows round the logo. */
+    unsigned short *dist = mode == SOLID ? malloc(sizeof *dist * (size_t)w * h * 4) : NULL, *ink_near = NULL, *bg_near = NULL;
+    unsigned char *key = dist ? malloc((size_t)w * h) : NULL; /* the plain key: the logo's box and size, as before */
+    if (dist) {
+        unsigned short *tmp = dist + (size_t)w * h;
+        ink_near = tmp + (size_t)w * h;
+        bg_near = ink_near + (size_t)w * h;
+        for (int i = 0; i < w * h; i++) {
+            const unsigned char *p = px + (size_t)i * 4;
+            dist[i] = (unsigned short)(fabs(p[0] - m[0]) + fabs(p[1] - m[1]) + fabs(p[2] - m[2]));
+        }
+        spread(dist, tmp, ink_near, w, h, 1);
+        spread(dist, tmp, bg_near, w, h, 0); /* only where the background is near: inside, two inks meet */
+    }
     for (int i = 0; i < w * h; i++) {
         const unsigned char *p = px + (size_t)i * 4;
         unsigned char *q = k + (size_t)i * 4;
-        float alpha = p[3];
-        if (mode == SOLID) {
-            float dist = fabsf(p[0] - (float)m[0]) + fabsf(p[1] - (float)m[1]) + fabsf(p[2] - (float)m[2]);
-            alpha *= smooth01(24, 72, dist);
-        }
+        float alpha = p[3], d = 0, plain;
         memcpy(q, p, 3);
+        if (dist && key) {
+            float n = ink_near[i], logo = bg_near[i] >= 24 ? 1 : n > 24 ? fminf(1, fmaxf(0, (dist[i] - 12) / (n - 12))) : 0;
+            d = dist[i];
+            key[i] = (unsigned char)(alpha * smooth01(24, 72, d));
+            alpha *= logo * smooth01(24, 72, n);
+            if (logo > 0.02f)
+                for (int c = 0; c < 3; c++) q[c] = (unsigned char)fmin(255, fmax(0, m[c] + (p[c] - m[c]) / logo + 0.5));
+        } else if (mode == SOLID) { /* (no memory for that: a plain key) */
+            d = fabsf(p[0] - (float)m[0]) + fabsf(p[1] - (float)m[1]) + fabsf(p[2] - (float)m[2]);
+            alpha *= smooth01(24, 72, d);
+        }
         q[3] = (unsigned char)alpha;
-        if (mode == PICTURE ? p[3] > 40 : alpha > 40) {
+        plain = key ? key[i] : alpha;
+        if (mode == PICTURE ? p[3] > 40 : plain > 40) {
             int x = i % w, y = i / w;
             if (x < x0) x0 = x;
             if (x > x1) x1 = x;
             if (y < y0) y0 = y;
             if (y > y1) y1 = y;
-            lum += (0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]) / 255;
+            float l = (0.299f * p[0] + 0.587f * p[1] + 0.114f * p[2]) / 255, lq = (0.299f * q[0] + 0.587f * q[1] + 0.114f * q[2]) / 255;
+            lum += l;
             lum_n++;
+            stand[(int)((ref < 0 ? lq : fabsf(lq - ref)) * 31.99f)]++;
+            if (d > 200) { /* the ink itself, not its edge blending into the background */
+                int hi = p[0] > p[1] ? (p[0] > p[2] ? p[0] : p[2]) : (p[1] > p[2] ? p[1] : p[2]);
+                int lo = p[0] < p[1] ? (p[0] < p[2] ? p[0] : p[2]) : (p[1] < p[2] ? p[1] : p[2]);
+                far++;
+                if (hi - lo < 40) grey++;
+            }
         }
     }
+    free(dist);
+    /* the most it stands out: past all but its 5% that stand out most (a few stray pixels don't count) */
+    a->ink_ref = ref;
+    a->ink_span = 1;
+    for (int b = 31, acc = 0; b >= 0; b--)
+        if ((acc += stand[b]) > lum_n / 20) {
+            a->ink_span = (b + 1) / 32.0f;
+            break;
+        }
+    int hi = (int)fmax(m[0], fmax(m[1], m[2])), lo = (int)fmin(m[0], fmin(m[1], m[2]));
+    a->ink_tint = mode == SOLID && hi - lo > 60 && far && grey > far * 0.85;
     if (x1 < x0) { /* nothing but background: keep the whole icon */
         x0 = y0 = 0;
         x1 = w - 1;
         y1 = h - 1;
         mode = PICTURE;
+        a->ink_ref = -1;
+        a->ink_span = 1;
     }
-    if (mode == PICTURE) memcpy(k, px, (size_t)w * h * 4);
+    if (mode == PICTURE) {
+        memcpy(k, px, (size_t)w * h * 4);
+        free(key), key = NULL;
+    }
     double ink = 0; /* how much logo there is: sizes logos by what you see, not their box */
     x0 = x0 > 2 ? x0 - 2 : 0;
     y0 = y0 > 2 ? y0 - 2 : 0;
@@ -1292,10 +1386,13 @@ static void make_logo(App *a, const unsigned char *px, int w, int h)
     unsigned char *crop = malloc((size_t)cw * ch * 4);
     if (!crop) {
         free(k);
+        free(key);
         return;
     }
     for (int y = 0; y < ch; y++) memcpy(crop + (size_t)y * cw * 4, k + ((size_t)(y0 + y) * w + x0) * 4, (size_t)cw * 4);
-    for (int i = 0; i < cw * ch; i++) ink += crop[(size_t)i * 4 + 3] / 255.0;
+    for (int y = 0; y < ch; y++)
+        for (int x = 0; x < cw; x++) ink += (key ? key[(size_t)(y0 + y) * w + x0 + x] : crop[((size_t)y * cw + x) * 4 + 3]) / 255.0;
+    free(key);
     free(k);
     tex_free(&a->logo_tex);
     a->logo_tex = r_tex(crop, cw, ch);
@@ -1467,6 +1564,12 @@ static void handle_result(Result *r)
             S.orbit_off = o && cJSON_IsFalse(cJSON_GetObjectItem(o, "pixelShift"));
             S.vivid_covers = o && cJSON_IsFalse(cJSON_GetObjectItem(o, "calmColours"));
             S.shelf_still = o && cJSON_IsFalse(cJSON_GetObjectItem(o, "shelfTurns"));
+            const char *look = o ? jstr(o, "iconLook") : "";
+            S.icon_look = !strcmp(look, "dark") ? LOOK_DARK : !strcmp(look, "clear") ? LOOK_CLEAR : !strcmp(look, "tinted") ? LOOK_TINTED : LOOK_DEFAULT;
+            const char *tint = o ? jstr(o, "iconTint") : "";
+            S.icon_tint = TINT_INDIGO;
+            for (int i = 0; i < NTINTS; i++)
+                if (!strcasecmp(tint, TINTS[i].name)) S.icon_tint = i;
             cJSON_Delete(o);
         }
         break;
@@ -1645,7 +1748,7 @@ static void sheet_close(void)
     for (int i = 0; i < S.sheet.n; i++) {
         tex_free(&S.sheet.it[i].tex);
         tex_free(&S.sheet.it[i].val);
-        S.sheet.it[i].chevron = S.sheet.it[i].check = 0;
+        S.sheet.it[i].chevron = S.sheet.it[i].check = S.sheet.it[i].swatches = 0;
     }
     S.sheet.open = 0;
     S.sheet.n = 0;
@@ -2074,6 +2177,20 @@ static void settings_page(int page, int index)
         settings_row("Pixel Shift", S.orbit_off ? "Off" : "On", ACT_ORBIT, 0, 0, 0);
         settings_row("Calm Colours", S.vivid_covers ? "Off" : "On", ACT_CALM, 0, 0, 0);
         settings_row("Top Shelf", S.shelf_still ? "Stays Still" : "Turns Pages", ACT_SHELF, 0, 0, 0);
+        settings_row("App Icons", LOOK_NAME[S.icon_look], ACT_PAGE, PAGE_ICONS, 1, 0);
+        break;
+    case PAGE_ICONS:
+        sheet_open("App Icons");
+        sheet_body(S.icon_look == LOOK_TINTED ? "Left and Right on the colours pick another."
+                                               : "Dark, Clear and Tinted show every app\xE2\x80\x99s logo the same way.");
+        for (int l = LOOK_DEFAULT; l <= LOOK_TINTED; l++) {
+            sheet_add(LOOK_NAME[l], ACT_ICON_LOOK, l, 0);
+            S.sheet.it[S.sheet.n - 1].check = S.icon_look == l;
+        }
+        if (S.icon_look == LOOK_TINTED) {
+            settings_row(TINTS[S.icon_tint].name, "", ACT_ICON_TINT, 0, 0, 0);
+            S.sheet.it[S.sheet.n - 1].swatches = 1;
+        }
         break;
     case PAGE_CC:
         sheet_open("Control Center");
@@ -2153,7 +2270,7 @@ static void settings_page(int page, int index)
     }
     sheet_add("Done", ACT_CANCEL, 0, 0);
     S.sheet.page = page;
-    S.sheet.parent = page == PAGE_MAIN ? 0 : PAGE_MAIN;
+    S.sheet.parent = page == PAGE_MAIN ? 0 : page == PAGE_ICONS ? PAGE_DISPLAY : PAGE_MAIN;
     S.sheet.parent_index = main_index(page);
     S.sheet.wide = 1;
     /* back on the row it was on, already scrolled to it */
@@ -2169,6 +2286,35 @@ static void settings_again(void)
     if (!S.at_page) return;
     settings_page(S.at_page, S.at_index);
     if (S.at_page != PAGE_MAIN) S.sheet.parent_index = S.at_parent_index;
+}
+
+/* Tinted's colours on their row in App Icons: swatch i's centre, the row's right end like a value's */
+#define SWATCH_D 34
+#define SWATCH_PITCH 50
+static float swatch_x(float bx, float bw, int i)
+{
+    return bx + bw - 36 - SWATCH_D / 2.0f - (NTINTS - 1 - i) * SWATCH_PITCH;
+}
+
+/* the colour under the pointer on that row, or -1 */
+static int swatch_at(float mx)
+{
+    float bx = S.sheet.px + PAD, bw = S.sheet.pw - 2 * PAD;
+    for (int i = 0; i < NTINTS; i++)
+        if (fabsf(mx - swatch_x(bx, bw, i)) < SWATCH_PITCH / 2.0f) return i;
+    return -1;
+}
+
+/* Tinted takes colour i: the tiles behind the sheet change, its row says the colour's name */
+static void icon_tint_set(int i)
+{
+    char body[48];
+    int index = S.sheet.index, parent_index = S.sheet.parent_index;
+    S.icon_tint = i;
+    snprintf(body, sizeof body, "{\"iconTint\":\"%s\"}", TINTS[i].name);
+    net_post("/api/prefs", body, 0);
+    settings_page(PAGE_ICONS, index);
+    S.sheet.parent_index = parent_index;
 }
 
 static void open_settings_sheet(void)
@@ -2430,8 +2576,8 @@ static void run_action(Action act, int arg)
     case ACT_ACCESSIBILITY:
         settings_page(PAGE_ACCESS, 0);
         break;
-    case ACT_PAGE: /* a Settings page; Back returns to the row that opened it */
-        settings_page(arg, 0);
+    case ACT_PAGE: /* a Settings page (App Icons on the look that's on); Back returns to the row that opened it */
+        settings_page(arg, arg == PAGE_ICONS ? S.icon_look : 0);
         S.sheet.parent_index = S.at_index;
         break;
     case ACT_HIDDEN:
@@ -2461,6 +2607,20 @@ static void run_action(Action act, int arg)
         snprintf(body, sizeof body, "{\"%s\":%d}", is_dim ? "dimMinutes" : "offMinutes", next);
         net_post("/api/prefs", body, 0);
         settings_again();
+        break;
+    }
+    case ACT_ICON_LOOK: { /* the tiles behind the sheet change as it's picked */
+        static const char *const pref[] = { "default", "dark", "clear", "tinted" };
+        char body[40];
+        S.icon_look = arg;
+        snprintf(body, sizeof body, "{\"iconLook\":\"%s\"}", pref[arg]);
+        net_post("/api/prefs", body, 0);
+        settings_again();
+        break;
+    }
+    case ACT_ICON_TINT: { /* OK steps to the next colour; a click picks the one under the pointer */
+        int i = S.ptr_press && S.click_x >= 0 ? swatch_at((float)S.click_x) : -1;
+        icon_tint_set(i >= 0 ? i : (S.icon_tint + 1) % NTINTS);
         break;
     }
     case ACT_SHELF: /* the carousel turns to its next title every 10 s, or waits for Up and Left/Right */
@@ -3267,7 +3427,10 @@ static void on_key_down(SDL_KeyboardEvent *e)
     if (S.sheet.open) {
         if (k == SDLK_UP && S.sheet.index > 0) S.sheet.index--;
         else if (k == SDLK_DOWN && S.sheet.index < S.sheet.n - 1) S.sheet.index++;
-        else if (is_back(k) && !S.sheet.locked) {
+        else if ((k == SDLK_LEFT || k == SDLK_RIGHT) && S.sheet.it[S.sheet.index].swatches) {
+            int i = S.icon_tint + (k == SDLK_RIGHT ? 1 : -1);
+            if (i >= 0 && i < NTINTS) icon_tint_set(i), snd_play(SND_TICK);
+        } else if (is_back(k) && !S.sheet.locked) {
             if (S.sheet.parent) settings_page(S.sheet.parent, S.sheet.parent_index);
             else sheet_dismiss();
         }
@@ -3777,6 +3940,65 @@ static void ensure_big(App *a)
     a->big = text_render(S.f_bold, 84, name, 1000, &a->bw, &a->bh);
 }
 
+/* a colour light enough to read on a dark tile: luminance 0.55 at least */
+static void lift(const Uint8 *c, Uint8 *out)
+{
+    float l = (0.299f * c[0] + 0.587f * c[1] + 0.114f * c[2]) / 255, k = l < 0.55f ? 0.55f / fmaxf(l, 0.05f) : 1, v[3];
+    for (int i = 0; i < 3; i++) v[i] = fminf(255, c[i] * k);
+    float l2 = (0.299f * v[0] + 0.587f * v[1] + 0.114f * v[2]) / 255, w = l2 < 0.55f ? (0.55f - l2) / (1 - l2) : 0;
+    for (int i = 0; i < 3; i++) out[i] = (Uint8)(v[i] + (255 - v[i]) * w + 0.5f); /* blue can't get there alone */
+}
+
+/* An app's tile and logo in the look Settings picks (Display & OLED -> App Icons): the icon's own
+ * colours; a dark tile with the logo in colour (a light icon's dark ink turned light, a white logo
+ * on a coloured icon in that colour); or frosted glass with the logo in white (Clear) or, on glass
+ * in a colour, in a pale tint of it (Tinted). lk: the logo's scale. 0 when there's no logo (its name or a placeholder
+ * goes there). In the backdrop pass glass can't sample itself: a faint flat tile stands in. */
+static int draw_face(App *a, float x, float y, float w, float h, float rad, float lk, Uint8 alpha, float focus, int backdrop)
+{
+    int look = S.icon_look, glassy = look == LOOK_CLEAR || look == LOOK_TINTED;
+    const Uint8 *t = TINTS[S.icon_tint].rgb;
+    float f = fminf(fmaxf(focus, 0), 1);
+    Uint8 r, g, b;
+    app_color(a, &r, &g, &b);
+    if (look == LOOK_DARK) r = g = 14, b = 16; /* near black: the hairline keeps its shape */
+    if (glassy && backdrop) {
+        r_shape(x, y, w, h, rad, 255, 255, 255, (Uint8)(24 * alpha / 255), 0, 1, 1);
+    } else if (glassy) {
+        /* a dark tint keeps a white logo readable over a bright picture; focused, the glass lights up */
+        int lit = focus > 0.01f, tinted = look == LOOK_TINTED;
+        float k = 0.55f + 0.15f * f;
+        Glass gl = { x, y, w, h, rad, 0.7f, 1.0f, lit ? S.light_x : -0.6f, lit ? S.light_y : -0.8f, focus, alpha / 255.0f,
+                     (Uint8)(tinted ? t[0] * k : 0), (Uint8)(tinted ? t[1] * k : 0), (Uint8)(tinted ? t[2] * k : 0),
+                     (Uint8)(tinted ? 150 : 46 - 26 * f) };
+        glass(&gl);
+    } else {
+        r_shape(x, y, w, h, rad, r, g, b, alpha, 0, 1, 1);
+        if (0.299f * r + 0.587f * g + 0.114f * b < 32) /* dark tiles keep their shape */
+            r_shape(x, y, w, h, rad, 255, 255, 255, (Uint8)(26 * alpha / 255), 1.5f, 1, 1);
+    }
+    if (!a->logo_tex) return 0;
+    if (glassy && backdrop) return 1; /* glass would refract its own logo, as a halo */
+    float lw = a->logo_w * lk, lh = a->logo_h * lk, lx = x + (w - lw) / 2, ly = y + (h - lh) / 2, lr = a->logo_r * lk;
+    if (look == LOOK_DEFAULT || (look == LOOK_DARK && lr > 0)) { /* a picture keeps its colours */
+        r_image(a->logo_tex, lx, ly, lw, lh, 255, 255, 255, alpha, lr);
+    } else if (look == LOOK_DARK) {
+        Uint8 c[3];
+        lift(a->col, c);
+        LogoLook l = { 0, a->ink_ref, 0, 0, a->ink_tint, c[0], c[1], c[2] };
+        r_logo(a->logo_tex, lx, ly, lw, lh, lr, &l, alpha);
+    } else {
+        Uint8 c[3] = { 255, 255, 255 };
+        if (look == LOOK_TINTED)
+            for (int i = 0; i < 3; i++) c[i] = (Uint8)(t[i] + (255 - t[i]) * (0.6f + 0.4f * f)); /* a pale tint, white focused */
+        LogoLook shade = { 1, a->ink_ref, a->ink_span, lr > 0 ? 0 : 0.45f, 0, 0, 0, 0 };
+        LogoLook l = { 1, a->ink_ref, a->ink_span, lr > 0 ? 0 : 0.45f, 0, c[0], c[1], c[2] };
+        r_logo(a->logo_tex, lx, ly + 2 * lk, lw, lh, lr, &shade, (Uint8)(alpha * 0.3f)); /* lifts it off the glass */
+        r_logo(a->logo_tex, lx, ly, lw, lh, lr, &l, (Uint8)(alpha * (0.92f + 0.08f * f)));
+    }
+    return 1;
+}
+
 /* A placeholder while something loads (a skeleton): a soft bar that a slow shimmer passes over. */
 static void draw_skeleton(float x, float y, float w, float h, float radius, float alpha)
 {
@@ -3794,24 +4016,15 @@ static void draw_scrims(Uint8 alpha)
 
 /* An app's tile drawn large: the Top Shelf's big tile and the App Switcher's
  * cards. Its logo grows with it (up to 3.5x); a tile without one shows its name. */
-static void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow)
+static void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop)
 {
-    Uint8 r, g, b;
-    app_color(a, &r, &g, &b);
     float k = fminf(fminf(w / TILE_W, h / TILE_H), 3.5f);
     if (shadow) r_shadow(x, y, w, h, radius, 40, 20, 0.45f * alpha / 255);
-    r_shape(x, y, w, h, radius, r, g, b, alpha, 0, 1, 1);
-    if (0.299f * r + 0.587f * g + 0.114f * b < 32) /* dark tiles keep their shape */
-        r_shape(x, y, w, h, radius, 255, 255, 255, (Uint8)(26 * alpha / 255), 1.5f, 1, 1);
-    if (a->logo_tex) {
-        float lw = a->logo_w * k, lh = a->logo_h * k;
-        r_image(a->logo_tex, x + (w - lw) / 2, y + (h - lh) / 2, lw, lh, 255, 255, 255, alpha, a->logo_r * k);
-    } else {
-        ensure_big(a);
-        if (!a->big) return;
-        float f = fminf(fminf(1, w * 0.8f / a->bw), k / 2.5f), bw = a->bw * f, bh = a->bh * f;
-        r_image(a->big, x + (w - bw) / 2, y + (h - bh) / 2, bw, bh, 255, 255, 255, alpha, 0);
-    }
+    if (draw_face(a, x, y, w, h, radius, k, alpha, 0, backdrop)) return;
+    ensure_big(a);
+    if (!a->big) return;
+    float f = fminf(fminf(1, w * 0.8f / a->bw), k / 2.5f), bw = a->bw * f, bh = a->bh * f;
+    r_image(a->big, x + (w - bw) / 2, y + (h - bh) / 2, bw, bh, 255, 255, 255, alpha, 0);
 }
 
 /* The Top Shelf is a picture (artwork, or the app's tile large on a glow, under
@@ -3819,7 +4032,7 @@ static void draw_big_tile(App *a, float x, float y, float w, float h, float radi
  * behind the grid when you scroll down, blurred; the content scrolls away. */
 
 /* Apps without artwork also get their tile, large, on the right. */
-static void draw_app_bigtile(App *a, Uint8 alpha)
+static void draw_app_bigtile(App *a, Uint8 alpha, int backdrop)
 {
     if (!a || !alpha || !a->logo_tex) return;
     /* it leaves with the shelf's content, so it never ghosts behind the grid */
@@ -3827,7 +4040,7 @@ static void draw_app_bigtile(App *a, Uint8 alpha)
     if (leave <= 0) return;
     float tw = 520, th = tw * TILE_H / TILE_W, cc = 1 - fminf(fmaxf(S.cc.t, 0), 1); /* it steps aside for the Control Center */
     if (cc <= 0.004f) return;
-    draw_big_tile(a, RIGHT - tw, SAFE_Y + 120, tw, th, TILE_R * tw / TILE_W, (Uint8)(alpha * leave * cc), 1);
+    draw_big_tile(a, RIGHT - tw, SAFE_Y + 120, tw, th, TILE_R * tw / TILE_W, (Uint8)(alpha * leave * cc), 1, backdrop);
 }
 
 static void draw_app_text(App *a, Uint8 alpha, float dy)
@@ -3931,15 +4144,15 @@ static void draw_rail_content(RailItem *cur, Uint8 alpha, float title, float ske
 /* The new picture fades in over the one on show, which stays at full strength underneath
  * (two half-faded pictures let the dark background show through), and the scrims are
  * drawn once over both. */
-static void draw_shelf_art(Uint8 alpha)
+static void draw_shelf_art(Uint8 alpha, int backdrop)
 {
     if (!alpha) return;
     float t = S.pic_a;
     if (t < 1) draw_pic(S.pic_under, pic_opaque(S.pic_top) ? alpha : (Uint8)(alpha * (1 - t)));
     draw_pic(S.pic_top, (Uint8)(alpha * t));
     draw_scrims(alpha);
-    if (t < 1 && S.pic_under.kind == PIC_GLOW) draw_app_bigtile(&S.apps[S.pic_under.i], (Uint8)(alpha * (1 - smooth01(0, 0.5f, t))));
-    if (S.pic_top.kind == PIC_GLOW) draw_app_bigtile(&S.apps[S.pic_top.i], (Uint8)(alpha * smooth01(0.3f, 1, t)));
+    if (t < 1 && S.pic_under.kind == PIC_GLOW) draw_app_bigtile(&S.apps[S.pic_under.i], (Uint8)(alpha * (1 - smooth01(0, 0.5f, t))), backdrop);
+    if (S.pic_top.kind == PIC_GLOW) draw_app_bigtile(&S.apps[S.pic_top.i], (Uint8)(alpha * smooth01(0.3f, 1, t)), backdrop);
 }
 
 /* a page's text: its app's name, or its carousel's title (-2: none) */
@@ -4043,28 +4256,23 @@ static void draw_tile(int i, int backdrop)
         x += dx * k;
         y += dy * k;
     }
-    Uint8 r, g, b;
-    app_color(a, &r, &g, &b);
     if (k > 0.01f && !backdrop) r_shadow(x, y, w, h, rad, 28, 16, 0.5f * k);
-    r_shape(x, y, w, h, rad, r, g, b, a ? 255 : 34, 0, 1, 1); /* uniform: opaque, the icon's own colour */
-    if (a && 0.299f * r + 0.587f * g + 0.114f * b < 32) r_shape(x, y, w, h, rad, 255, 255, 255, 26, 1.5f, 1, 1); /* dark tiles keep their shape */
-    if (a && a->logo_tex) {
-        float lw = a->logo_w * sc, lh = a->logo_h * sc;
-        r_image(a->logo_tex, x + (w - lw) / 2, y + (h - lh) / 2, lw, lh, 255, 255, 255, 255, a->logo_r * sc);
-    } else if (a && a->icon_state == 1) { /* its icon is on its way: a placeholder */
+    if (!a) {
+        static Tex *ht;
+        static int hw, hh;
+        r_shape(x, y, w, h, rad, 70, 70, 82, 34, 0, 1, 1);
+        if (!ht) ht = text_render(S.f_semi, 28, "\xE2\x80\xA2 \xE2\x80\xA2 \xE2\x80\xA2   Hidden", 0, &hw, &hh);
+        draw_text(ht, hw, hh, x + (w - hw) / 2, y + (h - hh) / 2, 205);
+    } else if (draw_face(a, x, y, w, h, rad, sc, 255, k, backdrop)) { /* opaque, the icon's own colour (or a look's) */
+    } else if (a->icon_state == 1) { /* its icon is on its way: a placeholder */
         float bw = w * 0.46f, bh = h * 0.15f;
         draw_skeleton(x + (w - bw) / 2, y + (h - bh) / 2, bw, bh, bh / 2, 1);
-    } else if (a) { /* no icon: its name, kept inside the tile */
+    } else { /* no icon: its name, kept inside the tile */
         ensure_label(a);
         if (a->label) {
             float k = fminf(1, (w - 32) / a->lw), lw = a->lw * k, lh = a->lh * k;
             r_image(a->label, x + (w - lw) / 2, y + (h - lh) / 2, lw, lh, 255, 255, 255, 230, 0);
         }
-    } else {
-        static Tex *ht;
-        static int hw, hh;
-        if (!ht) ht = text_render(S.f_semi, 28, "\xE2\x80\xA2 \xE2\x80\xA2 \xE2\x80\xA2   Hidden", 0, &hw, &hh);
-        draw_text(ht, hw, hh, x + (w - hw) / 2, y + (h - hh) / 2, 205);
     }
     if (S.moving && focused) r_shape(x, y, w, h, rad, 255, 255, 255, 200, 2.0f, 1, 1); /* the tile you're moving */
     if (S.zone == ZONE_TOP && i == top_down_tile() && !backdrop) /* where Down from the top bar lands */
@@ -4093,7 +4301,7 @@ static void draw_scene(int backdrop)
     /* The backdrop (what glass refracts, and what's blurred below the dock) keeps the
      * picture at full strength and never holds its own blur: blurring last frame's blur
      * smeared it wider every frame. */
-    draw_shelf_art(backdrop ? 255 : shelf_a);
+    draw_shelf_art(backdrop ? 255 : shelf_a, backdrop);
     if (S.scrolled > 0.004f && !backdrop) { /* below the dock the picture stays, blurred and dimmed, so the apps stand out */
         r_backdrop_image(1, (Uint8)(255 * S.scrolled));
         r_fill(0, 0, 0, (Uint8)(110 * S.scrolled));
@@ -4183,7 +4391,7 @@ static void draw_sheet_button(const SheetItem *it, int focused, float bx, float 
     const float BH = SHEET_BH;
     Uint8 a = (Uint8)(ca * k);
     /* Settings rows (a value or a page): label on the left, value and › on the right */
-    int row = it->val || it->chevron;
+    int row = it->val || it->chevron || it->swatches;
     float tx = row ? bx + 36 : bx + (bw - it->w) / 2, ty = y + (BH - it->h) / 2;
     Uint8 lr, lg, lb, la;
     if (focused) { /* tvOS: the focused button turns opaque white with a dark label */
@@ -4206,6 +4414,15 @@ static void draw_sheet_button(const SheetItem *it, int focused, float bx, float 
         r_image(tick, bx + bw - 36 - kw, y + (BH - kh) / 2, (float)kw, (float)kh, lr, lg, lb, la, 0);
     }
     if (!row) return;
+    if (it->swatches) { /* the colour that's on ringed, in the label's colour */
+        for (int i = 0; i < NTINTS; i++) {
+            float cx = swatch_x(bx, bw, i), cy = y + BH / 2, d = SWATCH_D;
+            const Uint8 *c = TINTS[i].rgb;
+            r_shape(cx - d / 2, cy - d / 2, d, d, d / 2, c[0], c[1], c[2], a, 0, 1, 1);
+            if (i == S.icon_tint) r_shape(cx - d / 2 - 6, cy - d / 2 - 6, d + 12, d + 12, d / 2 + 6, lr, lg, lb, a, 2.5f, 1, 1);
+        }
+        return;
+    }
     float right = bx + bw - 36;
     if (it->chevron) {
         static Tex *chev;
@@ -4307,7 +4524,7 @@ static void draw_switcher_card(int i, float t)
     if (alpha < 0.004f || x > W || x + w < 0) return;
     Uint8 al = (Uint8)(255 * alpha);
     if (a) {
-        draw_big_tile(a, x, y, w, h, rad, al, c->s > 0.01f && !zoom);
+        draw_big_tile(a, x, y, w, h, rad, al, c->s > 0.01f && !zoom, 0);
     } else {
         r_shape(x, y, w, h, rad, 58, 58, 64, al, 0, 1, 1);
         draw_text(c->name, c->nw, c->nh, x + (w - c->nw) / 2, y + (h - c->nh) / 2, al);
@@ -4618,7 +4835,7 @@ static int render(float dt, const char *shot)
     /* the Top Shelf picture alone: what the dock and top bar refract (the icons
      * sit on the glass), and the blurred background below the dock */
     r_backdrop_begin();
-    draw_shelf_art(255);
+    draw_shelf_art(255, 1);
     r_backdrop_end();
 
     r_frame_begin(8, 8, 11);
@@ -4981,7 +5198,9 @@ int main(int argc, char **argv)
                 if (e.button.button == SDL_BUTTON_LEFT && !S.ok_down) {
                     int mx = e.button.x, my = e.button.y, outside = 0;
                     to_logical(&mx, &my);
+                    S.click_x = mx;
                     if (!pointer_moved(mx, my)) { /* the keys are in charge: it's their OK */
+                        S.click_x = -1;
                         S.ptr_press = 1;
                         S.ptr_dismiss = 0;
                         S.ok_down = SDL_GetTicks();

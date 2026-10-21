@@ -63,6 +63,14 @@ shot crossfade "R" 1590
 shot pointer-then-keys "MUC" 4200 "1660,850"
 service HOMEPLUS_PREVIEW_PREFS='{"reduceTransparency":true}'
 shot reduce-transparency "UODDDDRO" 4400
+# app icons: dark tiles; glass over the grid's background; Settings -> Display & OLED -> App Icons, Tinted's
+# colours focused and one step on
+service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_PREFS='{"iconLook":"dark"}'
+shot icons-dark "" 2500
+service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_PREFS='{"iconLook":"clear"}'
+shot icons-clear "DR" 3000
+service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_PREFS='{"iconLook":"tinted","iconTint":"Teal"}'
+shot icons-tinted "UODDDDRODODDDDDODR" 7200
 # media servers: Jellyfin's and Plex's Continue Watching, and a sign-in with a QR code
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_AMBIENT=1 HOMEPLUS_PREVIEW_CC='[{"id":"power","size":"small"},{"id":"ambientLight","size":"wide"},{"id":"screenCapture","size":"wide"},{"id":"soundMode","size":"wide"},{"id":"brightness","size":"wide"},{"id":"pictureMode","size":"wide"},{"id":"toneMapping","size":"wide"},{"id":"sleepTimer","size":"small"},{"id":"recents","size":"small"},{"id":"settings","size":"small"}]'
 shot cc-custom "UO" 3600
