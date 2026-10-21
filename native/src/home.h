@@ -469,13 +469,19 @@ static inline float smooth01(float a, float b, float x)
 }
 
 /* main.c */
+void save_layout(void);
+void launch_app(const char *id, const char *params, const char *hint);
 void launch(const char *id, const char *hint);
+void enter_top(int col);
 void focus_rect(float *x, float *y, float *w, float *h);
 void close_apps(const char *id);
 App *app_by_id(const char *id);
+void settings_page(int page, int index);
 float swatch_x(float bx, float bw, int i);
+void open_settings_sheet(void);
 int is_back(SDL_Keycode k);
 void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop);
+int wake(int key);
 
 /* util.c */
 void log_remote(const char *fmt, ...);
@@ -531,5 +537,39 @@ void sw_ok(void);
 void sw_update(float dt, int *anim);
 void sw_key(SDL_Keycode k);
 void draw_switcher(void);
+
+/* cc.c */
+void cc_texts(CCItem *c, const char *title, const char *value);
+void parse_control(const char *json);
+void parse_system(const char *json);
+float cc_grid_x(void);
+float cc_grid_y(void);
+void cc_pack(void);
+int cc_placed(void);
+int cc_fit(int i, const char *sizes, int need);
+int cc_rect(int i, float *x, float *y, float *w, float *h);
+int cc_find(const char *id);
+void cc_problem(const char *text);
+void cc_post(const char *body);
+void cc_open(void);
+void cc_close(void);
+void cc_save(void);
+void cc_move(int dx, int dy);
+float cc_dim(void);
+void cc_long_press(void);
+void cc_add(int cat);
+void cc_activate(void);
+Tex *cc_glyph(int icon, int big);
+void draw_control_center(void);
+void settings_key(void);
+void input_key(void);
+
+/* cc_list.c */
+void cc_list_texts(void);
+void cc_list_open(int which);
+void cc_list_key(SDL_Keycode k);
+void cc_list_ok(void);
+void draw_cc_list(float a);
+void draw_cc_gallery(float a);
 
 #endif
