@@ -107,8 +107,12 @@ test('overlay: the Settings key opens it over the app in front, with the control
   const fm = new RegExp(`^file://${path.join(dir, 'frames')}/(homeplus-cc-[^/]+)/frame\\.jpg$`).exec(p.frame);
   assert.ok(fm, `a folder of its own for the frames, with a name nobody can guess: ${p.frame}`);
   const frames = path.join(dir, 'frames', fm[1]);
-  await until(() => calls('luna://com.webos.service.capture/executeOneShot').length > 0, 3000, 'a frame');
-  assert.equal(calls('luna://com.webos.service.capture/executeOneShot')[0].params.method, 'VIDEO', 'the video only, not what is drawn over it');
+  await until(() => calls('luna://com.webos.service.capture/executeOneShot').length > 1, 3000, 'frames');
+  const log = lunaLog(), grabs = log.filter((c) => c.uri === 'luna://com.webos.service.capture/executeOneShot');
+  assert.equal(grabs[0].params.method, 'DISPLAY', 'first, the screen as it was: the glass\'s picture over an app with no video');
+  assert.ok(log.indexOf(grabs[0]) < log.map((c) => c.uri).lastIndexOf('luna://com.webos.service.systemUIManager/launch'),
+    'taken before the panel is opened over it');
+  assert.equal(grabs[1].params.method, 'VIDEO', 'then the video only, not what is drawn over it');
   await until(() => fs.existsSync(path.join(frames, 'frame.jpg')), 3000, 'the frame file');
   assert.equal(fs.statSync(frames).mode & 0o777, 0o700, 'frames are what is on screen: root only');
   await call('POST', '/api/overlay', { body: { event: 'closed' } });

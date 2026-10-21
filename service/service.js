@@ -513,14 +513,18 @@ async function openOverlay() {
   overlayBusy = true;
   overlayAsked = Date.now();
   try {
+    const prefs = readConfig().prefs || {}; /* the launcher's: its clock, and Settings -> Accessibility */
+    const frames = prefs.reduceTransparency ? '' : framesDir(); /* solid panels: no frames */
+    // what's on screen now (DISPLAY: the app's own screen too), before the panel is drawn over it:
+    // the glass's first picture, and the one it keeps over an app with no video. The TV takes it as
+    // the call starts (seen on the C3), so it isn't waited for: the panel isn't on screen yet.
+    const snapshot = frames && grab(frames, 'DISPLAY');
     const state = await control.state();
     if (gen !== overlayGen) return false;
     overlayInputs = (state.inputs || []).map((i) => i.appId);
-    const prefs = readConfig().prefs || {}; /* the launcher's: its clock, and Settings -> Accessibility */
     Object.assign(state, { clock24: !!prefs.clock24, reduceMotion: !!prefs.reduceMotion, reduceTransparency: !!prefs.reduceTransparency,
       sounds: prefs.sounds !== false });
     if (fs.existsSync('/tmp/homeplus-cc-fps')) state.debugFps = true; /* its frame rate, on screen */
-    const frames = prefs.reduceTransparency ? '' : framesDir(); /* solid panels: no frames */
     const r = await luna(SYSUI + '/launch', {
       appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
       params: { state, port: IMAGE_PORT, token: TOKEN, frame: frames && 'file://' + path.join(frames, 'frame.jpg') } /* the API: the compositor may only call LG's services over luna */
@@ -535,16 +539,16 @@ async function openOverlay() {
       return false;
     }
     overlayOpen = true;
-    if (frames) captureFrames(gen, frames);
+    if (frames) captureFrames(gen, frames, snapshot);
     return true;
   } finally {
     overlayBusy = false;
   }
 }
 
-// Its glass shows the picture behind it, blurred: while it's open, a small frame of the video (VIDEO:
-// without any graphics, so not the Control Center itself) about three times a second. Protected
-// video gives no frame, and the glass is a tint. The frames are what's on screen, so they go in a
+// Its glass shows the picture behind it, blurred: first a snapshot of the screen as it opens, then,
+// while it's open, a small frame of the video (VIDEO: without any graphics, so not the Control Center
+// itself) about three times a second. Protected video gives none, and the glass is a tint. The frames are what's on screen, so they go in a
 // folder the service makes for each opening, with a name nobody can guess, that only root can read
 // (the compositor, root, shows them); in memory, and deleted when it closes.
 const FRAMES_IN = process.env.HOMEPLUS_FRAMES_DIR || os.tmpdir(); /* tests: elsewhere */
@@ -557,15 +561,22 @@ try { /* left by a service that stopped (only its own) */
 } catch (e) { /* nothing there */ }
 const settle = (promise, ms) => Promise.race([promise, new Promise((done) => setTimeout(done, ms, null))]);
 
-async function captureFrames(gen, dir) {
-  const frame = path.join(dir, 'frame.jpg');
+// a small picture of the screen (DISPLAY) or the video (VIDEO) into dir/frame.jpg, whole or not at
+// all; true if there's one
+async function grab(dir, method) {
+  const frame = path.join(dir, 'frame.jpg'), tmp = `${frame}.${method}.tmp`;
+  const r = await settle(luna('luna://com.webos.service.capture/executeOneShot',
+    { path: tmp, method, format: 'JPEG', width: 160, height: 90 }), 3000); /* (it may never answer) */
+  if (!r || !r.returnValue) return false;
+  try { fs.renameSync(tmp, frame); return true; } catch (e) { return false; }
+}
+
+async function captureFrames(gen, dir, snapshot) {
   const until = Date.now() + 5 * 60000; /* in case it's never said to have closed */
   try {
+    await snapshot; /* (one capture at a time) */
     while (overlayOpen && gen === overlayGen && Date.now() < until) {
-      const r = await settle(luna('luna://com.webos.service.capture/executeOneShot',
-        { path: frame + '.tmp', method: 'VIDEO', format: 'JPEG', width: 160, height: 90 }), 3000); /* (it may never answer) */
-      let got = !!(r && r.returnValue);
-      if (got) try { fs.renameSync(frame + '.tmp', frame); } catch (e) { got = false; } /* whole frames only */
+      const got = await grab(dir, 'VIDEO'); /* none (no video playing): the snapshot stays */
       await new Promise((done) => setTimeout(done, got ? 40 : 600));
     }
   } catch (e) {
