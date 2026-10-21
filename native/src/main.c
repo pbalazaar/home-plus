@@ -71,6 +71,15 @@
 #define SHEET_BH 80                    /* sheet buttons, and the gap between them */
 #define SHEET_GAP 16
 #define SHEET_TINT 16, 16, 20, 135 /* sheets' glass: dark tint, 53% */
+#define SHEET_W 720                    /* a sheet (Settings' are wider: a label and its value) */
+#define SHEET_TITLE_PX 30              /* its title, its words, its buttons */
+#define SHEET_BODY_PX 26
+#define SHEET_BUTTON_PX 31
+#define SHEET_TITLE_A 200              /* of 255: its title, its words, a button's label (focused: all of it) */
+#define SHEET_BODY_A 185
+#define SHEET_LABEL_A 235
+#define RED_ON_GLASS 255, 90, 80       /* what can't be undone: its label on glass, */
+#define RED_ON_WHITE 215, 40, 40       /* and on a focused (white) button */
 #define ICON_FIT 256                   /* icons feed logos, covers and the big Top Shelf tile */
 #define THUMB_FIT_W 480                /* rail thumbnails: cards, and briefly the background */
 #define THUMB_FIT_H 270
@@ -96,10 +105,18 @@ enum { SRC_NONE, SRC_STREMIO, SRC_JELLYFIN, SRC_PLEX, SRC_COUNT };
  * iOS 18's): each takes the first space it fits, in order. */
 #define CC_U 91
 #define CC_G 20
-#define CC_ROWS 6       /* the rows that fit under the clock, above the edit hint */
+#define CC_ROWS 7       /* the rows under the clock (the service's 28 units); editing's hint and Reset still fit under them */
 #define MAX_CC 28       /* the service caps the list at 28 units */
 #define MAX_CAT 32      /* the catalogue */
 #define CC_TITLE_PX 19  /* a pill's name: "Sleep Timer" and "Eye Comfort" fit, with room either side */
+#define CC_LIST_ROW_H 56 /* a list in the Control Center's place (Picture Mode, Inputs): its rows, */
+#define CC_LIST_GAP 6    /* the gap between them, */
+#define CC_LIST_HEAD 66  /* and its title's band */
+#define CC_LIST_PX 24    /* a row's name, and its tick */
+#define CC_DETAIL_PX 18  /* a row's detail: "Nothing Connected" */
+#define CC_ROW_A 235     /* of 255: a row's name (and tick) when it isn't focused, */
+#define CC_DETAIL_A 179  /* and its detail (70%) */
+#define CC_PROBLEM_PX 22 /* what went wrong, in the hint's place under the grid: "No room for it at that size" */
 static const struct { const char *name; int icon; } CC_ICONS[] = { /* the service names a control's glyph */
     { "power", ICON_POWER }, { "wifi", ICON_WIFI }, { "ethernet", ICON_ETHERNET }, { "screenOff", ICON_SCREEN_OFF },
     { "sound", ICON_SOUND }, { "timer", ICON_TIMER }, { "input", ICON_INPUT }, { "recents", ICON_RECENTS },
@@ -189,6 +206,7 @@ typedef struct {
     Tex *val; /* Settings rows: the current value, drawn on the right */
     int vw, vh;
     int chevron; /* opens a page */
+    int check;   /* the choice that's on: a tick on the right (its label still in the middle) */
 } SheetItem;
 
 static struct {
@@ -368,6 +386,8 @@ static struct {
         int editing, picked;
         Tex *edit_hint, *move_hint, *no_room, *reset;
         int ehw, ehh, mhw, mhh, nrw, nrh, rsw, rsh;
+        Tex *problem;                /* what went wrong (no room for one), under the grid until the focus moves or something changes */
+        int prw, prh;
         /* a list control (Picture, Inputs) opens its list in the Control Center's place */
         int list, list_kind, list_index, list_n, list_first; /* kind: the one on show (or fading out) */
         float list_t, list_v;
@@ -1096,6 +1116,10 @@ static void sw_reset(void);
 static void settings_key(void);
 static void cc_save(void);
 static void cc_add(int cat);
+static void cc_post(const char *body);
+static void cc_problem(const char *text);
+static int cc_placed(void);
+static int cc_fit(int i, const char *sizes, int need);
 static void sheet_close(void);
 static void sheet_dismiss(void);
 static void sheet_add(const char *label, Action act, int arg, int destructive);
@@ -1616,7 +1640,7 @@ static void sheet_close(void)
     for (int i = 0; i < S.sheet.n; i++) {
         tex_free(&S.sheet.it[i].tex);
         tex_free(&S.sheet.it[i].val);
-        S.sheet.it[i].chevron = 0;
+        S.sheet.it[i].chevron = S.sheet.it[i].check = 0;
     }
     S.sheet.open = 0;
     S.sheet.n = 0;
@@ -1695,7 +1719,7 @@ static void sheet_open(const char *title)
     S.sheet.open = 1;
     S.sheet.index = S.sheet.first = 0;
     S.sheet.scroll = S.sheet.scroll_v = 0;
-    S.sheet.title = text_render(S.f_semi, 30, title, 900, &S.sheet.tw, &S.sheet.th);
+    S.sheet.title = text_render(S.f_semi, SHEET_TITLE_PX, title, 900, &S.sheet.tw, &S.sheet.th);
 }
 
 static void sheet_add(const char *label, Action act, int arg, int destructive)
@@ -1705,7 +1729,7 @@ static void sheet_add(const char *label, Action act, int arg, int destructive)
     it->act = act;
     it->arg = arg;
     it->destructive = destructive;
-    it->tex = text_render(S.f_medium, 31, label, 600, &it->w, &it->h);
+    it->tex = text_render(S.f_medium, SHEET_BUTTON_PX, label, 600, &it->w, &it->h);
 }
 
 /* A few lines of explanation under the sheet's title; lines are split on '\n'. */
@@ -1720,7 +1744,7 @@ static void sheet_body(const char *text)
         memcpy(line, p, n);
         line[n] = 0;
         int i = S.sheet.nbody++;
-        S.sheet.body[i] = text_render(S.f_medium, 26, line, 900, &S.sheet.bw[i], &S.sheet.bh[i]);
+        S.sheet.body[i] = text_render(S.f_medium, SHEET_BODY_PX, line, 900, &S.sheet.bw[i], &S.sheet.bh[i]);
         p = e ? e + 1 : p + n;
     }
 }
@@ -1990,7 +2014,7 @@ static void settings_row(const char *label, const char *value, Action act, int a
     sheet_add(label, act, arg, destructive);
     SheetItem *it = &S.sheet.it[S.sheet.n - 1];
     it->chevron = chevron;
-    if (value && *value) it->val = text_render(S.f_medium, 31, value, 380, &it->vw, &it->vh);
+    if (value && *value) it->val = text_render(S.f_medium, SHEET_BUTTON_PX, value, 380, &it->vw, &it->vh);
 }
 
 static const char *minutes(Uint32 ms, Uint32 dflt, char *buf, size_t cap)
@@ -2159,7 +2183,7 @@ static void open_app_sheet(void)
         snprintf(t, sizeof t, "Sign In to %s", SRC_NAME[src]);
         sheet_add(t, ACT_MEDIA_LINK, src, 0);
     }
-    sheet_add("Hide App", ACT_HIDE, 0, 1);
+    sheet_add("Hide App", ACT_HIDE, 0, 0); /* not red: Hidden gives it back */
     if (a->removable) sheet_add("Delete App", ACT_DELETE_ASK, (int)(a - S.apps), 1); /* from the TV, like tvOS's */
     sheet_add("Cancel", ACT_CANCEL, 0, 0);
 }
@@ -2207,12 +2231,15 @@ static void run_action(Action act, int arg)
     case ACT_CC_SIZE:
         if (S.cc.index < S.cc.n && (arg == 1 || arg == 2 || arg == 4)) {
             CCItem *c = &S.cc.it[S.cc.index];
+            const char size[2] = { (char)arg, 0 };
+            if (!cc_fit(S.cc.index, size, cc_placed())) { /* it, or one after it, would leave the grid */
+                cc_problem("No room for it at that size");
+                break;
+            }
             char title[48];
             snprintf(title, sizeof title, "%s", c->title_s);
-            c->units = arg;
             c->title_s[0] = 0; /* Large has a bigger name */
             cc_texts(c, title, "");
-            cc_pack();
             cc_save();
         }
         break;
@@ -2229,7 +2256,7 @@ static void run_action(Action act, int arg)
         }
         break;
     case ACT_CC_RESET:
-        net_post("/api/control", "{\"action\":\"reset\"}", TAG_CONTROL);
+        cc_post("{\"action\":\"reset\"}");
         break;
     case ACT_MOVE: S.moving = 1; break;
     case ACT_FRONT: move_item_to(0); save_layout(); break;
@@ -2506,6 +2533,30 @@ static void cc_pack(void)
         }
 }
 
+/* the controls with a place on the grid */
+static int cc_placed(void)
+{
+    int k = 0;
+    for (int i = 0; i < S.cc.n; i++) k += S.cc.it[i].row >= 0;
+    return k;
+}
+
+/* Gives control i the first of `sizes` (units, 0-ended) that leaves `need` controls on the grid, it
+ * among them; 0, and as it was, if none does (as the overlay's fit()) */
+static int cc_fit(int i, const char *sizes, int need)
+{
+    CCItem *c = &S.cc.it[i];
+    int was = c->units;
+    for (const char *u = sizes; *u; u++) {
+        c->units = *u;
+        cc_pack();
+        if (c->row >= 0 && cc_placed() >= need) return 1;
+    }
+    c->units = was;
+    cc_pack();
+    return 0;
+}
+
 /* the rows in use (with the + slot while editing) */
 static int cc_rows(void)
 {
@@ -2548,10 +2599,25 @@ static int cc_find(const char *id)
     return -1;
 }
 
+/* what went wrong, said in the hint's place under the grid as over other apps (NULL: nothing) */
+static void cc_problem(const char *text)
+{
+    tex_free(&S.cc.problem);
+    if (text) S.cc.problem = text_render(S.f_medium, CC_PROBLEM_PX, text, 4 * CC_U + 3 * CC_G, &S.cc.prw, &S.cc.prh);
+}
+
+/* asks the service to do something (the overlay's run()): what went wrong before is let go */
+static void cc_post(const char *body)
+{
+    cc_problem(NULL);
+    net_post("/api/control", body, TAG_CONTROL);
+}
+
 static void cc_open(void)
 {
     S.cc.open = 1;
     S.cc.editing = S.cc.list = 0;
+    cc_problem(NULL);
     S.cc.picked = S.cc.ran = -1;
     int net = cc_find("network"); /* nearest the clock, and harmless (unlike Power Off) */
     S.cc.index = net >= 0 ? net : 0;
@@ -2583,7 +2649,7 @@ static void cc_save(void)
         cJSON_AddItemToArray(arr, c);
     }
     char *body = cJSON_PrintUnformatted(o);
-    net_post("/api/control", body, TAG_CONTROL);
+    cc_post(body);
     free(body);
     cJSON_Delete(o);
 }
@@ -2636,7 +2702,7 @@ static void cc_move(int dx, int dy)
         float d = along + 2.5f * across;
         if (d < best_d) best_d = d, best = i;
     }
-    if (best >= 0) S.cc.index = best, S.cc.focus_at = SDL_GetTicks();
+    if (best >= 0) S.cc.index = best, S.cc.focus_at = SDL_GetTicks(), cc_problem(NULL); /* what went wrong goes with the focus */
     else if (dy < 0 && !S.cc.editing) cc_close();
 }
 
@@ -2656,17 +2722,18 @@ static void cc_list_texts(void)
         if (i >= S.cc.list_n) continue;
         const char *name = S.cc.list == 1 ? S.cc.modes[i].name : S.cc.inputs[i].name;
         const char *val = S.cc.list == 1 ? (i == S.cc.mode ? "\xE2\x9C\x93" : "") : S.cc.inputs[i].plugged ? "" : "Nothing Connected";
-        S.cc.list_row[i] = text_render(S.f_medium, 24, name, 300, &S.cc.lrw[i], &S.cc.lrh[i]);
-        if (val[0]) S.cc.list_val[i] = text_render(S.f_medium, val[0] == '\xE2' ? 24 : 18, val, 0, &S.cc.lvw[i], &S.cc.lvh[i]);
+        S.cc.list_row[i] = text_render(S.f_medium, CC_LIST_PX, name, 300, &S.cc.lrw[i], &S.cc.lrh[i]);
+        if (val[0]) S.cc.list_val[i] = text_render(S.f_medium, val[0] == '\xE2' ? CC_LIST_PX : CC_DETAIL_PX, val, 0, &S.cc.lvw[i], &S.cc.lvh[i]);
     }
 }
 
-/* While the Control Center is being edited, the home screen steps back (as iOS's does): this much
- * black over it, 0..1, in the picture its glass refracts too, so the glass over the dock (Reset,
- * the hints) dims with what's under it */
-static float cc_edit_dim(void)
+/* While the Control Center is being edited, or its last row is over the dock, the home screen steps
+ * back (as iOS's does): this much black over it, 0..1, in the picture its glass refracts too, so the
+ * glass over the dock (that row, Reset, the hints) dims with what's under it */
+static float cc_dim(void)
 {
-    return S.cc.editing ? 150 / 255.0f * fminf(fmaxf(S.cc.t, 0), 1) : 0;
+    int over_dock = cc_grid_y() + cc_rows() * (CC_U + CC_G) - CC_G > DOCK_Y;
+    return S.cc.editing || over_dock ? 150 / 255.0f * fminf(fmaxf(S.cc.t, 0), 1) : 0;
 }
 
 /* The gallery's layout: each group's name, then its controls four to a row, buttons with their names
@@ -2792,7 +2859,7 @@ static void cc_list_ok(void)
     if (S.cc.list == 1) {
         char body[96];
         snprintf(body, sizeof body, "{\"action\":\"pictureMode\",\"value\":\"%s\"}", S.cc.modes[i].id);
-        net_post("/api/control", body, TAG_CONTROL);
+        cc_post(body);
     } else {
         cc_close();
         launch(S.cc.inputs[i].app, NULL);
@@ -2843,24 +2910,34 @@ static void cc_long_press(void)
     static const char *const NAME[5] = { "", "Small", "Wide", "", "Large" };
     for (int k = 0; e >= 0 && S.cc.cat[e].sizes[k]; k++) {
         int u = S.cc.cat[e].sizes[k];
-        settings_row(NAME[u], u == c->units ? "\xE2\x9C\x93" : "", ACT_CC_SIZE, u, 0, 0);
+        sheet_add(NAME[u], ACT_CC_SIZE, u, 0);
+        S.sheet.it[S.sheet.n - 1].check = u == c->units; /* in the middle like the rest, ticked on the right */
     }
     if (e < 0 || !S.cc.cat[e].pinned) sheet_add("Remove", ACT_CC_REMOVE, 0, 1); /* not Settings: the only way in */
     sheet_add("Cancel", ACT_CANCEL, 0, 0);
 }
 
-/* a control from the catalogue, at the end in its first size, with the focus */
+/* a control from the catalogue, at the end in the first of its sizes that fits, with the focus; with
+ * no room for it at any of them it isn't added, and that's said under the grid */
 static void cc_add(int cat)
 {
     if (cat < 0 || cat >= S.cc.ncat || S.cc.n >= MAX_CC) return;
+    int had = cc_placed();
     CCItem *c = &S.cc.it[S.cc.n++];
     memset(c, 0, sizeof *c);
     memcpy(c->id, S.cc.cat[cat].id, sizeof c->id); /* the same size, and ended */
     c->units = S.cc.cat[cat].sizes[0] ? S.cc.cat[cat].sizes[0] : 1;
     c->icon = S.cc.cat[cat].icon;
     c->available = 1;
+    if (!cc_fit(S.cc.n - 1, S.cc.cat[cat].sizes[0] ? S.cc.cat[cat].sizes : "\1", had + 1)) {
+        char t[80];
+        snprintf(t, sizeof t, "No room for %s", S.cc.cat[cat].title);
+        S.cc.n--;
+        cc_pack();
+        cc_problem(t);
+        return;
+    }
     cc_texts(c, S.cc.cat[cat].title, ""); /* its value comes with the service's answer */
-    cc_pack();
     S.cc.index = S.cc.n - 1;
     cc_save();
 }
@@ -2882,10 +2959,10 @@ static void cc_activate(void)
         return;
     }
     if (!strcmp(c->id, "power")) {
-        net_post("/api/control", "{\"action\":\"powerOff\"}", TAG_CONTROL);
+        cc_post("{\"action\":\"powerOff\"}");
         cc_close();
     } else if (!strcmp(c->id, "screenOff")) {
-        net_post("/api/control", "{\"action\":\"screenOff\"}", TAG_CONTROL);
+        cc_post("{\"action\":\"screenOff\"}");
         cc_close();
     } else if (!strcmp(c->id, "network")) { /* LG's network settings, as its own Quick Settings open them */
         cc_close();
@@ -2906,7 +2983,7 @@ static void cc_activate(void)
     } else if (!strcmp(c->kind, "stepper") || !strcmp(c->kind, "switch")) { /* the service steps or switches it */
         char body[96];
         snprintf(body, sizeof body, "{\"action\":\"run\",\"value\":\"%s\"}", c->id);
-        net_post("/api/control", body, TAG_CONTROL);
+        cc_post(body);
         S.cc.ran = S.cc.index;
         if (c->units == 1 && !strcmp(c->kind, "stepper")) c->flash = SDL_GetTicks(); /* its new value shows under it */
     }
@@ -3311,7 +3388,7 @@ static int pointer_at(int mx, int my, int apply)
             float x, y, w, h;
             if (!cc_rect(i, &x, &y, &w, &h)) continue;
             if (mx >= x && mx < x + w && my >= y && my < y + h) {
-                if (apply) S.cc.index = i;
+                if (apply && S.cc.index != i) S.cc.index = i, cc_problem(NULL);
                 return 1;
             }
         }
@@ -4078,6 +4155,7 @@ static int sheet_rows(int nfoot)
 
 static void draw_sheet_button(const SheetItem *it, int focused, float bx, float y, float bw, float k, Uint8 ca)
 {
+    static const Uint8 RED[2][3] = { { RED_ON_GLASS }, { RED_ON_WHITE } };
     const float BH = SHEET_BH;
     Uint8 a = (Uint8)(ca * k);
     /* Settings rows (a value or a page): label on the left, value and › on the right */
@@ -4087,17 +4165,22 @@ static void draw_sheet_button(const SheetItem *it, int focused, float bx, float 
     if (focused) { /* tvOS: the focused button turns opaque white with a dark label */
         r_shadow(bx, y, bw, BH, BH / 2, 18, 8, 0.4f * a / 255);
         r_shape(bx, y, bw, BH, BH / 2, 245, 245, 247, a, 0, 1, 1);
-        if (it->destructive) lr = 215, lg = 40, lb = 40;
-        else lr = 28, lg = 28, lb = 30;
+        lr = 28, lg = 28, lb = 30;
         la = a;
     } else { /* dark under the light glass: the label reads over white tiles too */
         r_shape(bx, y, bw, BH, BH / 2, 12, 12, 16, (Uint8)(95 * a / 255), 0, 1, 1);
         r_shape(bx, y, bw, BH, BH / 2, 255, 255, 255, (Uint8)(18 * a / 255), 0, 1, 1);
-        if (it->destructive) lr = 255, lg = 138, lb = 128;
-        else lr = lg = lb = 255;
-        la = (Uint8)(235 * a / 255);
+        lr = lg = lb = 255;
+        la = (Uint8)(SHEET_LABEL_A * a / 255);
     }
+    if (it->destructive) lr = RED[!!focused][0], lg = RED[!!focused][1], lb = RED[!!focused][2];
     r_image(it->tex, tx, ty, (float)it->w, (float)it->h, lr, lg, lb, la, 0);
+    if (it->check) { /* the choice that's on: a tick on the right, in its label's colour */
+        static Tex *tick;
+        static int kw, kh;
+        if (!tick) tick = text_render(S.f_medium, SHEET_BUTTON_PX, "\xE2\x9C\x93", 0, &kw, &kh);
+        r_image(tick, bx + bw - 36 - kw, y + (BH - kh) / 2, (float)kw, (float)kh, lr, lg, lb, la, 0);
+    }
     if (!row) return;
     float right = bx + bw - 36;
     if (it->chevron) {
@@ -4123,7 +4206,7 @@ static void draw_sheet(void)
     const float BH = SHEET_BH, BGAP = SHEET_GAP, rad = BH / 2 + PAD; /* corners concentric with the buttons */
     float big = S.sheet_big ? S.sheet_big_h + 24 : 0;
     int nfoot = sheet_footer(), nlist = S.sheet.n - nfoot, rows = sheet_rows(nfoot);
-    float pw = S.sheet.wide ? 900 : 720; /* Settings: room for a label and its value */
+    float pw = S.sheet.wide ? 900 : SHEET_W; /* Settings: room for a label and its value */
     if (S.sheet.tw + 2 * PAD > pw) pw = S.sheet.tw + 2 * PAD;
     for (int i = 0; i < S.sheet.nbody; i++) if (S.sheet.bw[i] + 2 * PAD > pw) pw = S.sheet.bw[i] + 2 * PAD;
     float ph = sheet_head() + (rows + nfoot) * (BH + BGAP) - (S.sheet.n ? BGAP : 24) + PAD;
@@ -4142,10 +4225,10 @@ static void draw_sheet(void)
     float c = (t - 0.55f) / 0.45f; /* content fades in once the panel is nearly there */
     Uint8 ca = (Uint8)(255 * (c < 0 ? 0 : c > 1 ? 1 : c));
     if (!ca) return;
-    draw_text(S.sheet.title, S.sheet.tw, S.sheet.th, px + (pw - S.sheet.tw) / 2, py + PAD, (Uint8)(200 * ca / 255));
+    draw_text(S.sheet.title, S.sheet.tw, S.sheet.th, px + (pw - S.sheet.tw) / 2, py + PAD, (Uint8)(SHEET_TITLE_A * ca / 255));
     float y = py + PAD + S.sheet.th + 24;
     for (int i = 0; i < S.sheet.nbody; i++) {
-        draw_text(S.sheet.body[i], S.sheet.bw[i], S.sheet.bh[i], px + (pw - S.sheet.bw[i]) / 2, y, (Uint8)(185 * ca / 255));
+        draw_text(S.sheet.body[i], S.sheet.bw[i], S.sheet.bh[i], px + (pw - S.sheet.bw[i]) / 2, y, (Uint8)(SHEET_BODY_A * ca / 255));
         y += S.sheet.bh[i] + 6;
     }
     if (S.sheet.nbody) y += 18;
@@ -4265,7 +4348,7 @@ static void draw_cc_list(float a)
 {
     float x = cc_grid_x(), y = cc_grid_y(), w = 4 * CC_U + 3 * CC_G;
     int rows = S.cc.list_n < CC_LIST_ROWS ? S.cc.list_n : CC_LIST_ROWS;
-    const float rh = 56, gap = 6, head = 66;
+    const float rh = CC_LIST_ROW_H, gap = CC_LIST_GAP, head = CC_LIST_HEAD;
     float h = head + (rows ? rows * (rh + gap) - gap : 40) + 14;
     if (!S.reduce_motion) y -= 12 * (1 - a); /* it settles in */
     r_shadow(x, y, w, h, 34, 30, 12, 0.35f * a);
@@ -4278,10 +4361,11 @@ static void draw_cc_list(float a)
         float ry = y + head + r * (rh + gap), rx = x + 14, rw = w - 28;
         int f = i == S.cc.list_index;
         if (f) r_shape(rx, ry, rw, rh, rh / 2, 245, 245, 247, al, 0, 1, 1);
-        Uint8 c = f ? 28 : 255;
-        r_image(S.cc.list_row[i], rx + 24, ry + (rh - S.cc.lrh[i]) / 2, S.cc.lrw[i], S.cc.lrh[i], c, c, c, (Uint8)(al * (f ? 1 : 0.92f)), 0);
-        if (S.cc.list_val[i])
-            r_image(S.cc.list_val[i], rx + rw - 24 - S.cc.lvw[i], ry + (rh - S.cc.lvh[i]) / 2, S.cc.lvw[i], S.cc.lvh[i], c, c, c, (Uint8)(al * 0.8f), 0);
+        Uint8 c = f ? 28 : 255, ra = (Uint8)(f ? al : CC_ROW_A * al / 255);
+        r_image(S.cc.list_row[i], rx + 24, ry + (rh - S.cc.lrh[i]) / 2, S.cc.lrw[i], S.cc.lrh[i], c, c, c, ra, 0);
+        if (S.cc.list_val[i]) /* the tick as its name; a detail dimmer */
+            r_image(S.cc.list_val[i], rx + rw - 24 - S.cc.lvw[i], ry + (rh - S.cc.lvh[i]) / 2, S.cc.lvw[i], S.cc.lvh[i], c, c, c,
+                    S.cc.list_kind == 1 ? ra : (Uint8)(CC_DETAIL_A * al / 255), 0);
     }
 }
 
@@ -4330,8 +4414,8 @@ static void draw_control_center(void)
     float open = fminf(fmaxf(S.cc.t, 0), 1), lt = fminf(fmaxf(S.cc.list_t, 0), 1);
     float stagger = S.cc.n > 1 ? fminf(0.04f, 0.45f / (S.cc.n - 1)) : 0, span = 1 - stagger * (S.cc.n > 1 ? S.cc.n - 1 : 0);
     Uint32 now = SDL_GetTicks();
-    float dim = cc_edit_dim(); /* (also behind the gallery: still editing) */
-    if (dim > 0.002f) r_fill(0, 0, 0, (Uint8)(255 * dim)); /* editing: the home screen steps back */
+    float dim = cc_dim(); /* (also behind the gallery: still editing) */
+    if (dim > 0.002f) r_fill(0, 0, 0, (Uint8)(255 * dim)); /* editing, or a row over the dock: the home screen steps back */
     for (int i = 0; i < S.cc.n; i++) {
         CCItem *c = &S.cc.it[i];
         float x, y, w, h;
@@ -4415,14 +4499,19 @@ static void draw_control_center(void)
         Tex *ht = S.cc.picked >= 0 ? S.cc.move_hint : S.cc.plus_row < 0 ? S.cc.no_room : S.cc.edit_hint;
         int hw = ht == S.cc.move_hint ? S.cc.mhw : ht == S.cc.no_room ? S.cc.nrw : S.cc.ehw;
         int hh = ht == S.cc.move_hint ? S.cc.mhh : ht == S.cc.no_room ? S.cc.nrh : S.cc.ehh;
-        draw_text(ht, hw, hh, RIGHT - hw, cc_grid_y() + cc_rows() * (CC_U + CC_G) + 4, (Uint8)(TEXT_STATIC * a));
+        if (!S.cc.problem) draw_text(ht, hw, hh, RIGHT - hw, cc_grid_y() + cc_rows() * (CC_U + CC_G) + 4, (Uint8)(TEXT_STATIC * a));
         if (cc_rect(S.cc.n + 1, &x, &y, &w, &h)) { /* Reset: red, like sheets' destructive buttons */
+            static const Uint8 G[3] = { RED_ON_GLASS }, F[3] = { RED_ON_WHITE };
             float g = fminf(fmaxf(S.cc.reset_s, 0), 1);
             panel(0, x, y, w, h, h / 2, 1, g, a);
             if (g > 0.01f) r_shape(x, y, w, h, h / 2, 245, 245, 247, (Uint8)(255 * a * g), 0, 1, 1);
-            r_image(S.cc.reset, x + (w - S.cc.rsw) / 2, y + (h - S.cc.rsh) / 2, S.cc.rsw, S.cc.rsh, 255, (Uint8)(90 - 40 * g), (Uint8)(80 - 40 * g),
-                    (Uint8)(255 * a), 0);
+            r_image(S.cc.reset, x + (w - S.cc.rsw) / 2, y + (h - S.cc.rsh) / 2, S.cc.rsw, S.cc.rsh, (Uint8)(G[0] + (F[0] - G[0]) * g),
+                    (Uint8)(G[1] + (F[1] - G[1]) * g), (Uint8)(G[2] + (F[2] - G[2]) * g), (Uint8)(255 * a), 0);
         }
+    }
+    if (S.cc.problem && lt < 0.99f) { /* what went wrong, in the hint's place under the grid */
+        int rows = cc_rows() > 1 ? cc_rows() : 1;
+        draw_text(S.cc.problem, S.cc.prw, S.cc.prh, RIGHT - S.cc.prw, cc_grid_y() + rows * (CC_U + CC_G) + 4, (Uint8)(TEXT_STATIC * open * (1 - lt)));
     }
     if (lt > 0.004f) {
         if (S.cc.list_kind == 3) draw_cc_gallery(lt * open);
@@ -4462,7 +4551,7 @@ static void draw_switcher(void)
     static Tex *hint, *close_all;
     static int hw, hh, cw, ch;
     if (!hint) hint = text_render(S.f_medium, 26, "OK opens  \xC2\xB7  Up closes", 0, &hw, &hh);
-    if (!close_all) close_all = text_render(S.f_medium, 31, "Close All", 0, &cw, &ch);
+    if (!close_all) close_all = text_render(S.f_medium, SHEET_BUTTON_PX, "Close All", 0, &cw, &ch);
     draw_text(hint, hw, hh, (W - hw) / 2.0f, SW_CY + SW_H / 2.0f + 48, (Uint8)(ca * 0.62f));
     SheetItem it = { 0 };
     it.tex = close_all;
@@ -4513,7 +4602,7 @@ static int render(float dt, const char *shot)
     if (S.sheet.open || S.ghost.on || S.toast_t > 0.01f || S.recents.t > 0.004f || S.cc.t > 0.004f) { /* overlays refract the whole scene */
         r_backdrop_begin();
         draw_scene(1);
-        if (cc_edit_dim() > 0.002f) r_fill(0, 0, 0, (Uint8)(255 * cc_edit_dim())); /* (what the glass refracts steps back too) */
+        if (cc_dim() > 0.002f) r_fill(0, 0, 0, (Uint8)(255 * cc_dim())); /* (what the glass refracts steps back too) */
         r_backdrop_end();
     }
     draw_switcher();

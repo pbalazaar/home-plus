@@ -22,11 +22,33 @@ FocusScope {
     readonly property int gridX: rightEdge - 4 * unit - 3 * gap
     readonly property int gridY: 52 + 56 + 26
     readonly property int gridW: 4 * unit + 3 * gap
+    readonly property int gridRows: 7         // main.c: CC_ROWS
     readonly property color cyan: "#10e8f4"   // tvOS 26's colour for what's on
     readonly property color teal: "#0089ad"   // the same, on a focused (white) control
     readonly property color ink: "#1c1c1e"    // a focused control's glyph and text
     readonly property color white: "#f5f5f7"  // a focused control
-    readonly property color red: "#ff5a50"    // what can't be undone (Home+'s sheets)
+    readonly property color red: "#ff5a50"    // what can't be undone: its label on glass (main.c: RED_ON_GLASS),
+    readonly property color redOnWhite: "#d72828" // and on a focused (white) button (RED_ON_WHITE)
+
+    // Home+'s lists and sheets (main.c: CC_LIST_*, CC_*_PX, CC_*_A; SHEET_*, PAD): opacities are of 255
+    readonly property int listRowH: 56
+    readonly property int listGap: 6
+    readonly property int listHead: 66
+    readonly property int listPx: 24
+    readonly property int detailPx: 18
+    readonly property int rowA: 235
+    readonly property int detailA: 179
+    readonly property int problemPx: 22
+    readonly property int sheetW: 720
+    readonly property int sheetPad: 40
+    readonly property int sheetBtn: 80
+    readonly property int sheetGap: 16
+    readonly property int sheetTitlePx: 30
+    readonly property int sheetBodyPx: 26
+    readonly property int sheetButtonPx: 31
+    readonly property int sheetTitleA: 200
+    readonly property int sheetBodyA: 185
+    readonly property int sheetLabelA: 235
 
     readonly property bool still: !!cc.reduceMotion      // Settings -> Accessibility: Reduce Motion
     readonly property bool solid: !!cc.reduceTransparency // ... and Reduce Transparency
@@ -37,7 +59,7 @@ FocusScope {
     property var listItems: []
     property bool closing: false
     property bool opening: true    // the first drop; controls placed later just appear
-    property string problem: ""    // a control that didn't work says why, under the grid
+    property string problem: ""    // a control that didn't work, or one with no room, says why under the grid
 
     // editing (main.c: cc_edit_ok, cc_move_picked, cc_long_press)
     property bool editing: false
@@ -155,10 +177,10 @@ FocusScope {
     // slot takes the first free unit after the last of them (main.c: cc_pack). Row -1: no room.
     function relayout() {
         var used = [], last = -1, i, y, x, yy, xx;
-        for (y = 0; y < 6; y++) used.push([0, 0, 0, 0]);
+        for (y = 0; y < gridRows; y++) used.push([0, 0, 0, 0]);
         for (i = 0; i < tiles.count; i++) {
             var t = tiles.get(i), w = t.size === "small" ? 1 : 2, h = t.size === "large" ? 2 : 1, row = -1, col = -1;
-            for (y = 0; y + h <= 6 && row < 0; y++) {
+            for (y = 0; y + h <= gridRows && row < 0; y++) {
                 for (x = 0; x + w <= 4 && row < 0; x++) {
                     var fits = true;
                     for (yy = y; yy < y + h; yy++)
@@ -174,7 +196,7 @@ FocusScope {
             tiles.set(i, { col: col, row: row, w: w, h: h });
         }
         plusRow = plusCol = -1;
-        for (var u = last + 1; u < 24; u++) {
+        for (var u = last + 1; u < gridRows * 4; u++) {
             if (!used[Math.floor(u / 4)][u % 4]) {
                 plusRow = Math.floor(u / 4);
                 plusCol = u % 4;
@@ -211,7 +233,7 @@ FocusScope {
 
     // Home+'s focus sounds, unless they're off in its Settings (Sounds.qml)
     property var sounds: null
-    onFocusIndexChanged: if (sounds) sounds.tick()
+    onFocusIndexChanged: { if (sounds) sounds.tick(); problem = ""; } // what went wrong goes with the focus
     onListIndexChanged: if (sounds) sounds.tick()
     onSheetIndexChanged: if (sounds) sounds.tick()
 
@@ -363,14 +385,15 @@ FocusScope {
         run({ action: "layout", controls: list });
     }
 
-    // a control from the gallery, at the end in the first of its sizes that fits
+    // a control from the gallery, at the end in the first of its sizes that fits (main.c: cc_add)
     function add(e) {
+        var had = placed();
         var o = tileOf({ id: e.id, size: e.sizes[0], kind: e.kind, icon: e.icon, title: e.title, available: true });
         o.col = -1; o.row = -1; o.w = 1; o.h = 1;
         tiles.append(o);
         listKind = 0;
         edits++;
-        if (!fit(tiles.count - 1, e.sizes)) {
+        if (!fit(tiles.count - 1, e.sizes, had + 1)) {
             tiles.remove(tiles.count - 1, 1);
             relayout();
             problem = "No room for " + e.title;
@@ -380,13 +403,21 @@ FocusScope {
         save();
     }
 
-    // gives control i the first of `sizes` that leaves it on screen; false (and as it was) if none does
-    function fit(i, sizes) {
+    // the controls with a place on the grid
+    function placed() {
+        var k = 0;
+        for (var i = 0; i < tiles.count; i++) if (tiles.get(i).row >= 0) k++;
+        return k;
+    }
+
+    // gives control i the first of `sizes` that leaves `need` controls on the grid, it among them;
+    // false (and as it was) if none does (main.c: cc_fit)
+    function fit(i, sizes, need) {
         var was = tiles.get(i).size;
         for (var k = 0; k < sizes.length; k++) {
             tiles.setProperty(i, "size", sizes[k]);
             relayout();
-            if (tiles.get(i).row >= 0) return true;
+            if (tiles.get(i).row >= 0 && placed() >= need) return true;
         }
         tiles.setProperty(i, "size", was);
         relayout();
@@ -410,9 +441,7 @@ FocusScope {
             relayout();
         } else if (it.act === "size") {
             edits++;
-            var keep = tiles.get(at).size;
-            if (!fit(at, [it.arg])) { // no room at that size
-                fit(at, [keep]);
+            if (!fit(at, [it.arg], placed())) { // it, or one after it, would leave the grid
                 problem = "No room for it at that size";
                 return;
             }
@@ -438,8 +467,9 @@ FocusScope {
                 items.push({ id: modes[i].id, label: modes[i].label, detail: "", ticked: modes[i].id === p.mode });
         } else {
             var inputs = cc.inputs || [];
-            for (i = 0; i < inputs.length; i++)
-                items.push({ id: inputs[i].appId, label: inputs[i].label, detail: inputs[i].plugged ? inputs[i].device : "Nothing Connected", ticked: false });
+            for (i = 0; i < inputs.length; i++) // named as Home+ names them: "Soundbar · PS5"
+                items.push({ id: inputs[i].appId, label: inputs[i].device ? inputs[i].label + " · " + inputs[i].device : inputs[i].label,
+                             detail: inputs[i].plugged ? "" : "Nothing Connected", ticked: false });
         }
         listItems = items;
         listIndex = 0;
@@ -777,7 +807,7 @@ FocusScope {
             Component.onCompleted: if (view.opening) dropIn.start(); else popIn.start()
             SequentialAnimation {
                 id: dropOut
-                PauseAnimation { duration: (5 - model.row) * 12 }
+                PauseAnimation { duration: (view.gridRows - 1 - Math.max(0, model.row)) * 12 } // the bottom row first
                 NumberAnimation { target: tile; property: "drop"; to: 0; duration: 200; easing.type: Easing.InCubic }
             }
             function leave() { dropIn.stop(); popIn.stop(); dropOut.start(); }
@@ -957,7 +987,7 @@ FocusScope {
         MouseArea { anchors.fill: parent; hoverEnabled: true; enabled: !view.sheet && !view.listKind; onEntered: view.focusIndex = tiles.count; onClicked: { view.focusIndex = tiles.count; view.ok(); } }
     }
     Text {
-        visible: view.editing && !view.listKind && !view.closing
+        visible: view.editing && !view.listKind && !view.closing && view.problem === ""
         x: view.rightEdge - width
         y: view.gridY + view.rows * (view.unit + view.gap) + 4
         text: view.picked >= 0 ? "Arrows move it  ·  OK puts it down"
@@ -989,7 +1019,7 @@ FocusScope {
         Text {
             anchors.centerIn: parent
             text: "Reset"
-            color: reset.focused ? "#e03024" : view.red
+            color: reset.focused ? view.redOnWhite : view.red
             font.family: semi.name
             font.weight: Font.DemiBold
             font.pixelSize: 24
@@ -997,18 +1027,19 @@ FocusScope {
         MouseArea { anchors.fill: parent; hoverEnabled: true; enabled: !view.sheet && !view.listKind; onEntered: view.focusIndex = tiles.count + 1; onClicked: { view.focusIndex = tiles.count + 1; view.ok(); } }
     }
 
-    // what went wrong, under the grid
+    // what went wrong, in the hint's place under the grid, as Home+ says it
     Text {
         x: view.gridX
         width: view.gridW
-        y: view.gridY + Math.max(view.rows, 1) * (view.unit + view.gap) + (view.editing ? 124 : 4)
+        y: view.gridY + Math.max(view.rows, 1) * (view.unit + view.gap) + 4
         horizontalAlignment: Text.AlignRight
         visible: view.problem !== "" && !view.listKind
         text: view.problem
         color: "white"
         opacity: 0.85
         font.family: medium.name
-        font.pixelSize: 20
+        font.weight: Font.Medium
+        font.pixelSize: view.problemPx
         wrapMode: Text.WordWrap
         style: Text.Raised
         styleColor: "#80000000"
@@ -1020,9 +1051,9 @@ FocusScope {
         id: list
         property real t: (view.listKind === 1 || view.listKind === 2) && !view.closing ? 1 : 0
         Behavior on t { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-        readonly property int rowH: 56
-        readonly property int rowGap: 6
-        readonly property int head: 66
+        readonly property int rowH: view.listRowH
+        readonly property int rowGap: view.listGap
+        readonly property int head: view.listHead
         readonly property int shown: Math.min(view.listItems.length, 8)
         readonly property int first: Math.max(0, Math.min(view.listIndex - 4, view.listItems.length - shown))
         x: view.gridX
@@ -1044,7 +1075,7 @@ FocusScope {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             y: (list.head - height) / 2 + 3
-            text: view.listKind === 1 ? "Picture" : "Inputs"
+            text: view.listKind === 1 ? "Picture Mode" : "Inputs"
             color: "white"
             font.family: semi.name
             font.weight: Font.DemiBold
@@ -1064,24 +1095,26 @@ FocusScope {
                 Text {
                     x: 24
                     anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width - 48 - detail.width
-                    text: (parent.it.ticked ? "✓  " : "") + (parent.it.label || "")
+                    width: Math.min(300, parent.width - 48 - detail.width)
+                    text: parent.it.label || ""
                     color: parent.f ? view.ink : "white"
+                    opacity: parent.f ? 1 : view.rowA / 255
                     font.family: medium.name
                     font.weight: Font.Medium
-                    font.pixelSize: 22
+                    font.pixelSize: view.listPx
                     elide: Text.ElideRight
                 }
-                Text {
+                Text { // on the right: the tick, as its name; a detail, dimmer
                     id: detail
                     anchors.right: parent.right
                     anchors.rightMargin: 24
                     anchors.verticalCenter: parent.verticalCenter
-                    text: parent.it.detail || ""
+                    text: parent.it.ticked ? "✓" : parent.it.detail || ""
                     color: parent.f ? view.ink : "white"
-                    opacity: 0.7
+                    opacity: parent.it.ticked ? (parent.f ? 1 : view.rowA / 255) : view.detailA / 255
                     font.family: medium.name
-                    font.pixelSize: 19
+                    font.weight: Font.Medium
+                    font.pixelSize: parent.it.ticked ? view.listPx : view.detailPx
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -1190,12 +1223,13 @@ FocusScope {
         }
     }
 
-    // ---- a sheet, as Home+'s: in the middle, over the rest stepped back
+    // ---- a sheet, as Home+'s (main.c: draw_sheet, draw_sheet_button): in the middle, over the rest
+    // stepped back; its title, its words a line at a time, then its buttons, each label in the middle
 
     Rectangle {
         anchors.fill: parent
         color: "black"
-        opacity: view.sheet ? 0.35 : 0
+        opacity: view.sheet ? 80 / 255 : 0
         visible: opacity > 0.01
         Behavior on opacity { NumberAnimation { duration: 180 } }
         MouseArea { anchors.fill: parent; enabled: !!view.sheet; hoverEnabled: true } // clicks behind a sheet do nothing
@@ -1205,8 +1239,10 @@ FocusScope {
         property var s: view.sheet || ({ title: "", body: "", items: [] })
         property real t: view.sheet ? 1 : 0
         Behavior on t { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-        width: 640
-        height: 36 + sheetTitle.height + (sheetBody.visible ? sheetBody.height + 14 : 0) + 28 + s.items.length * (80 + 16) - 16 + 32
+        readonly property real buttonsY: (sheetBody.visible ? sheetBody.y + sheetBody.height : sheetTitle.y + sheetTitle.height) + 24 // its buttons
+        readonly property real rad: view.sheetBtn / 2 + view.sheetPad // corners concentric with the buttons
+        width: Math.max(view.sheetW, sheetTitle.width + 2 * view.sheetPad, sheetBody.width + 2 * view.sheetPad)
+        height: buttonsY + s.items.length * (view.sheetBtn + view.sheetGap) - view.sheetGap + view.sheetPad
         x: (view.width - width) / 2
         y: (view.height - height) / 2
         opacity: t
@@ -1215,72 +1251,94 @@ FocusScope {
 
         Glass {
             anchors.fill: parent
-            radius: 40
+            radius: sheetBox.rad
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
             solid: view.solid; dim: view.editDim
             screenX: sheetBox.x
             screenY: sheetBox.y
         }
-        Rectangle { anchors.fill: parent; radius: 40; color: Qt.rgba(16 / 255, 16 / 255, 20 / 255, 0.35) } // sheets are darker
+        Rectangle { anchors.fill: parent; radius: sheetBox.rad; color: Qt.rgba(16 / 255, 16 / 255, 20 / 255, 0.35) } // sheets are darker
         Text {
             id: sheetTitle
-            y: 36
-            width: parent.width - 64
+            y: view.sheetPad
+            width: Math.min(implicitWidth, 900)
             anchors.horizontalCenter: parent.horizontalCenter
-            horizontalAlignment: Text.AlignHCenter
             text: sheetBox.s.title
             color: "white"
+            opacity: view.sheetTitleA / 255
             font.family: semi.name
             font.weight: Font.DemiBold
-            font.pixelSize: 30
-            wrapMode: Text.WordWrap
+            font.pixelSize: view.sheetTitlePx
+            elide: Text.ElideRight
         }
-        Text {
+        Column {
             id: sheetBody
             visible: !!sheetBox.s.body
-            y: sheetTitle.y + sheetTitle.height + 14
-            width: parent.width - 80
+            y: sheetTitle.y + sheetTitle.height + 24
             anchors.horizontalCenter: parent.horizontalCenter
-            horizontalAlignment: Text.AlignHCenter
-            text: sheetBox.s.body || ""
-            color: "white"
-            opacity: 0.7
-            font.family: medium.name
-            font.pixelSize: 22
-            wrapMode: Text.WordWrap
+            spacing: 6
+            Repeater {
+                model: sheetBox.s.body ? sheetBox.s.body.split("\n") : []
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Math.min(implicitWidth, 900)
+                    text: modelData
+                    color: "white"
+                    opacity: view.sheetBodyA / 255
+                    font.family: medium.name
+                    font.weight: Font.Medium
+                    font.pixelSize: view.sheetBodyPx
+                    elide: Text.ElideRight
+                }
+            }
         }
         Repeater {
             model: sheetBox.s.items.length
             delegate: Item {
                 property var it: sheetBox.s.items[index]
                 property bool f: index === view.sheetIndex
-                x: 32
-                y: (sheetBody.visible ? sheetBody.y + sheetBody.height : sheetTitle.y + sheetTitle.height) + 28 + index * (80 + 16)
-                width: sheetBox.width - 64
-                height: 80
-                Rectangle {
+                property color labelColor: it.destructive ? (f ? view.redOnWhite : view.red) : f ? view.ink : "white"
+                property real labelOpacity: f ? 1 : view.sheetLabelA / 255
+                x: view.sheetPad
+                y: sheetBox.buttonsY + index * (view.sheetBtn + view.sheetGap)
+                width: sheetBox.width - 2 * view.sheetPad
+                height: view.sheetBtn
+                RectangularGlow { // focused, it lifts
+                    visible: parent.f
+                    x: 0; y: 8; width: parent.width; height: parent.height
+                    glowRadius: 18; spread: 0.1; cornerRadius: height / 2 + glowRadius
+                    color: "black"
+                    opacity: 0.4
+                }
+                Rectangle { anchors.fill: parent; radius: height / 2; color: view.white; visible: parent.f }
+                Rectangle { // not focused: dark under the glass, so its label reads over anything bright
                     anchors.fill: parent
                     radius: height / 2
-                    color: parent.f ? view.white : Qt.rgba(1, 1, 1, 0.12)
+                    color: Qt.rgba(12 / 255, 12 / 255, 16 / 255, 95 / 255)
+                    visible: !parent.f
+                    Rectangle { anchors.fill: parent; radius: height / 2; color: Qt.rgba(1, 1, 1, 18 / 255) }
                 }
                 Text {
                     anchors.centerIn: parent
                     text: parent.it.label
-                    color: parent.it.destructive ? (parent.f ? "#e03024" : view.red) : parent.f ? view.ink : "white"
-                    font.family: semi.name
-                    font.weight: Font.DemiBold
-                    font.pixelSize: 26
+                    color: parent.labelColor
+                    opacity: parent.labelOpacity
+                    font.family: medium.name
+                    font.weight: Font.Medium
+                    font.pixelSize: view.sheetButtonPx
                 }
-                Text {
+                Text { // the choice that's on
                     visible: !!parent.it.check
                     anchors.right: parent.right
-                    anchors.rightMargin: 32
+                    anchors.rightMargin: 36
                     anchors.verticalCenter: parent.verticalCenter
                     text: "✓"
-                    color: parent.f ? view.ink : "white"
-                    font.family: semi.name
-                    font.pixelSize: 26
+                    color: parent.labelColor
+                    opacity: parent.labelOpacity
+                    font.family: medium.name
+                    font.weight: Font.Medium
+                    font.pixelSize: view.sheetButtonPx
                 }
                 MouseArea {
                     anchors.fill: parent

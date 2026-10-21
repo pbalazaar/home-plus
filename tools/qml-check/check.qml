@@ -117,13 +117,33 @@ Item {
             v.back(); v.focusIndex = v.focusCount() - 1; v.ok(); expect(!!v.sheet && v.sheet.items[0].act === "reset", "Reset asks first");
             v.back(); v.back(); expect(!v.editing, "Back: done editing");
             break;
-        case 13:
-            w.lifeCycleStatus.launch({ params: {} }); // the Settings key again
+        case 13: // no room: 28 units fill the seven rows, so nothing grows and nothing's added, and it says so
+            var full = JSON.parse(JSON.stringify(sample));
+            ["soundMode", "brightness", "energySaving", "gameOptimizer"].forEach(function (id) {
+                full.controls.push({ id: id, size: "wide", title: id, kind: "stepper", icon: "controls", value: "", on: null, available: true });
+            });
+            full.controls.push({ id: "recents", size: "small", title: "Recents", kind: "opens", icon: "recents", value: "", on: null, available: true });
+            v.load(full);
+            expect(v.placed() === 15 && v.rows === 7, "28 units: every control on the seven rows (" + v.placed() + " on " + v.rows + ")");
+            v.longPress(); v.sheetOk();
+            var at = v.find("inputs");
+            v.focusIndex = at;
+            v.openSheet("Inputs", "", [{ label: "Wide", act: "size", arg: "wide" }], 0, "inputs");
+            v.sheetOk();
+            expect(v.problem === "No room for it at that size" && v.rectOf(at).w === v.unit && v.placed() === 15,
+                   "a size that would push one off the grid isn't taken: " + v.problem);
+            v.move(1, 0); expect(v.problem === "", "what went wrong goes with the focus");
+            v.add({ id: "x", title: "Extra", kind: "stepper", icon: "controls", sizes: ["wide", "small"] });
+            expect(v.problem === "No room for Extra" && v.find("x") < 0, "no room to add one: it isn't added: " + v.problem);
+            v.back(); expect(!v.editing, "done editing");
             break;
         case 14:
+            w.lifeCycleStatus.launch({ params: {} }); // the Settings key again
+            break;
         case 15:
-            break; // it animates out
         case 16:
+            break; // it animates out
+        case 17:
             expect(w.exited, "the Settings key again closes it");
             log(function (got) {
                 expect(got.some(function (g) { return g.url === "/api/overlay" && g.body.event === "closed"; }), "the service hears it closed");
