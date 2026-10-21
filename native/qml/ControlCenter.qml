@@ -50,8 +50,7 @@ StarfishSystemUIWindow {
             return;
         }
         if (params.again) { // the Input key again, but the panel has gone: the next press opens it anew
-            call("overlay", { "event": "closed" });
-            root.exit();
+            leave({ "event": "closed" });
             return;
         }
         webOSShell.setWindowProperty("_WEBOS_ACCESS_POLICY_KEYS_BACK", "true"); // Back is ours: out of a sheet, editing, then closed
@@ -77,15 +76,23 @@ StarfishSystemUIWindow {
 
     // gone: the service stops taking frames of the video
     function quit() {
-        if (view) call("overlay", { "event": "closed" });
-        root.exit();
+        if (view) leave({ "event": "closed" });
+        else root.exit();
     }
 
     function failed(why) {
         console.warn("[Home+] Control Center: " + why);
-        call("overlay", { "event": "failed", "error": String(why) });
-        root.exit();
+        leave({ "event": "failed", "error": String(why) });
     }
+
+    // Tells the service, and goes once that has gone out (300 ms at most): the compositor may drop a
+    // request still on its way when the window goes, and the service would think it's still open.
+    function leave(body) {
+        if (leaving.running) return; // (on its way out already)
+        leaving.start();
+        call("overlay", body, function () { if (leaving.running) { leaving.stop(); root.exit(); } });
+    }
+    Timer { id: leaving; interval: 300; onTriggered: root.exit() }
 
     Connections {
         target: root.lifeCycleStatus

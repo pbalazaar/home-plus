@@ -187,9 +187,10 @@ Item {
             expect(w.exited, "closed");
             relaunch(null);
             win.item.lifeCycleStatus.launch({ params: { again: "input", port: 47999, token: "t0ken" } });
-            expect(win.item.exited && !win.item.view, "the Input key again, but the panel has gone: nothing opens");
+            expect(!win.item.view, "the Input key again, but the panel has gone: nothing opens");
             break;
         case 26:
+            expect(w.exited, "and the window goes");
             relaunch({});
             win.item.lifeCycleStatus.close(undefined); // LG closes it, and gives no reason
             break;
@@ -198,6 +199,20 @@ Item {
             break; // it animates out
         case 29:
             expect(w.exited, "LG closing it without a reason closes it");
+            relaunch({});
+            break;
+        case 30: // the TV going to sleep: no animation, but the window waits for the service to hear it closed
+            w.lifeCycleStatus.close({ reason: "powerSuspend" });
+            expect(!w.exited, "the window doesn't go before the service has heard it closed");
+            break;
+        case 31:
+            expect(w.exited, "then it goes");
+            log(function (got) {
+                var last = got[got.length - 1];
+                expect(!!last && last.body.event === "closed", "the service heard it closed: " + JSON.stringify(last));
+            });
+            break;
+        case 32:
             finish();
             break;
         }
