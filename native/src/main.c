@@ -27,7 +27,7 @@ State S;
 
 static const char *const LOOK_NAME[] = { "Default", "Dark", "Clear", "Tinted" };
 
-static void request_data(void)
+void request_data(void)
 {
     if (!S.layout_loaded) net_get_json("/api/layout", TAG_LAYOUT, 0, 0);
     net_get_json("/api/apps", TAG_APPS, 0, 0);
@@ -39,9 +39,6 @@ static void request_data(void)
     net_get_json("/api/prefs", TAG_PREFS, 0, 0);
 }
 
-static void on_status(Result *r);
-static void setup_set(int state);
-
 /* what the Control Center over another app can ask Home+ to open */
 enum { OPEN_SETTINGS = 1, OPEN_RECENTS, OPEN_ACCESSIBILITY };
 static void open_asked(int what)
@@ -50,7 +47,6 @@ static void open_asked(int what)
     else if (what == OPEN_RECENTS) sw_open();
     else if (what == OPEN_ACCESSIBILITY) settings_page(PAGE_ACCESS, 0);
 }
-static void on_elevate(Result *r);
 
 /* ------------------------------------------------------------------ results */
 
@@ -216,92 +212,13 @@ static void handle_result(Result *r)
         }
         break;
     case TAG_MEDIA_LINK:
-    case TAG_MEDIA_STATUS: { /* Stremio, Jellyfin and Plex sign-in */
-        int src = S.media_poll_src;
-        cJSON *o = r->status == 200 ? cJSON_Parse(r->body) : NULL;
-        const char *err = o ? jstr(o, "error") : "";
-        cJSON *pend = o ? cJSON_GetObjectItem(o, "pending") : NULL;
-        int code_shown = S.sheet.open && S.sheet.page == PAGE_SIGNIN;
-        if (o && cJSON_IsTrue(cJSON_GetObjectItem(o, "connected"))) {
-            char msg[64];
-            snprintf(msg, sizeof msg, "%s connected", SRC_NAME[src]);
-            S.media_poll = 0;
-            S.src_connected[src] = 1;
-            if (code_shown) sheet_dismiss();
-            toast(msg, 3000);
-            if (want_source() == src) rail_request(src);
-        } else if (cJSON_IsObject(pend)) {
-            if (r->tag == TAG_MEDIA_LINK) { /* the code, big, with where to enter it */
-                char title[64];
-                snprintf(title, sizeof title, "Connect %s", SRC_NAME[src]);
-                sheet_open(title);
-                S.toast_until = SDL_GetTicks(); /* "Asking for a code…": the sheet takes over */
-                const char *qr = jstr(pend, "qr");
-                if (src == SRC_JELLYFIN) {
-                    sheet_body("In any Jellyfin app you\xE2\x80\x99re signed in to, open\n"
-                               "Settings \xE2\x86\x92 Quick Connect and enter this code:");
-                } else {
-                    char body[200];
-                    snprintf(body, sizeof body, "Scan this with your phone, or go to %s\nand enter the code below.", jstr(pend, "url"));
-                    sheet_body(body);
-                }
-                if (qr[0]) { /* room for it now; the picture follows */
-                    S.qr_gen++;
-                    S.sheet_qr_s = 360;
-                    net_get_image(qr, TAG_QR, 0, S.qr_gen, 0, 0, 0);
-                }
-                tex_free(&S.sheet_big);
-                S.sheet_big = text_render(S.f_bold, 96, jstr(pend, "code"), 0, &S.sheet_big_w, &S.sheet_big_h);
-                sheet_add("Cancel", ACT_UP, 0, 0);
-                S.sheet.page = PAGE_SIGNIN;
-                if (S.at_page == PAGE_ACCOUNTS) /* Cancel goes back there; from an app's options it closes */
-                    S.sheet.parent = PAGE_ACCOUNTS, S.sheet.parent_index = S.at_index;
-            }
-            S.media_poll = SDL_GetTicks() + 3000;
-        } else {
-            S.media_poll = 0;
-            if (code_shown) sheet_dismiss();
-            if (err[0]) toast(err, 7000);
-            else if (r->tag == TAG_MEDIA_LINK) toast("Couldn\xE2\x80\x99t start the sign-in. Try again.", 5000);
-            else if (code_shown) toast("The code expired. Try again.", 5000);
-        }
-        cJSON_Delete(o);
+    case TAG_MEDIA_STATUS: /* Stremio, Jellyfin and Plex sign-in */
+        on_media_signin(r);
         break;
-    }
     case TAG_TRAKT_LINK:
-    case TAG_TRAKT_STATUS: {
-        cJSON *o = r->status == 200 ? cJSON_Parse(r->body) : NULL;
-        if (!o) {
-            if (r->tag == TAG_TRAKT_LINK) toast("Trakt isn\xE2\x80\x99t set up yet. The README\xE2\x80\x99s Trakt section says how.", 7000);
-            S.trakt_poll = 0;
-            break;
-        }
-        int connected = cJSON_IsTrue(cJSON_GetObjectItem(o, "connected"));
-        cJSON *pend = cJSON_GetObjectItem(o, "pending");
-        if (connected) {
-            S.trakt_poll = 0;
-            S.trakt_connected = 1;
-            if (S.sheet.open && S.sheet_big) sheet_dismiss();
-            toast("Trakt connected", 3000);
-            rail_request(SRC_STREMIO);
-        } else if (cJSON_IsObject(pend)) {
-            if (r->tag == TAG_TRAKT_LINK) {
-                /* show the code big, like tvOS sign-in screens */
-                char title[160];
-                snprintf(title, sizeof title, "On your phone, go to %s and enter", jstr(pend, "url"));
-                sheet_open(title);
-                tex_free(&S.sheet_big);
-                S.sheet_big = text_render(S.f_bold, 96, jstr(pend, "code"), 0, &S.sheet_big_w, &S.sheet_big_h);
-                sheet_add("Cancel", ACT_CANCEL, 0, 0);
-            }
-            S.trakt_poll = SDL_GetTicks() + 3000;
-        } else {
-            S.trakt_poll = 0;
-            if (r->tag == TAG_TRAKT_LINK) toast("Trakt sign-in didn\xE2\x80\x99t start. Check the Client ID/Secret (see README).", 6000);
-        }
-        cJSON_Delete(o);
+    case TAG_TRAKT_STATUS:
+        on_trakt_signin(r);
         break;
-    }
     case TAG_ICON:
         if (r->generation == S.generation && r->index < S.napps) {
             App *a = &S.apps[r->index];
@@ -392,157 +309,6 @@ void focus_rect(float *x, float *y, float *w, float *h)
         *y = (H - *h) / 2;
     }
 }
-
-/* Control Center: TV settings + accounts */
-/* ------------------------------------------------------------------ first run */
-
-static void setup_check(void) { net_get_json("/api/status", TAG_STATUS, 0, 0); }
-
-/* The screen for the current setup step: plain words, no SSH or service names. */
-static void setup_screen(void)
-{
-    const char *title, *body;
-    switch (S.setup) {
-    case SETUP_NO_HBC:
-        title = "Homebrew Channel Needed";
-        body = "Home+ runs on rooted LG TVs with the Homebrew Channel installed.\nInstall it, then try again.";
-        break;
-    case SETUP_DENIED:
-        title = "Couldn\xE2\x80\x99t Get Permission";
-        body = "The Homebrew Channel didn\xE2\x80\x99t give Home+ the access it needs.\nCheck that your TV is rooted and the Homebrew Channel is up to date.";
-        break;
-    case SETUP_FAILED:
-        title = "Home+ Couldn\xE2\x80\x99t Start";
-        body = "Part of Home+ that runs in the background didn\xE2\x80\x99t respond.\nRestarting the TV usually fixes this.";
-        break;
-    case SETUP_OLD:
-        title = "Uninstall the Old Home+";
-        body = "This Home+ has a new app ID, and the one it replaces is still installed.\n"
-               "Uninstall the old one, com.github.pmiraka.homeplus, then try again.\n"
-               "Not with its Remove Home+: that deletes your settings and sign-ins.";
-        break;
-    case SETUP_REMOVING:
-        title = "Removing Home+\xE2\x80\xA6";
-        body = "Turning off the Home button takeover and clearing Home+\xE2\x80\x99s settings.";
-        break;
-    default:
-        title = "Setting Up Home+";
-        body = "Getting Home+ ready. The first time takes a few seconds.";
-    }
-    sheet_open(title);
-    sheet_body(body);
-    S.sheet.locked = 1;
-    if (S.setup == SETUP_NO_HBC || S.setup == SETUP_DENIED || S.setup == SETUP_FAILED || S.setup == SETUP_OLD)
-        sheet_add("Try Again", ACT_SETUP_RETRY, 0, 0);
-}
-
-static void setup_set(int state)
-{
-    int changed = state != S.setup;
-    S.setup = state;
-    if (state == SETUP_DONE) {
-        if (S.sheet.open && S.sheet.locked) sheet_dismiss();
-        return;
-    }
-    /* "Setting up" steps share one screen: only redraw it when the words change */
-    int working = state == SETUP_STARTING || state == SETUP_ELEVATING || state == SETUP_RESTARTING;
-    if (changed && !(working && S.sheet.open && S.sheet.locked && S.sheet.n == 0)) setup_screen();
-}
-
-static void ask_home_screen(void)
-{
-    sheet_open("Use Home+ as Your Home Screen?");
-    sheet_body("The Home button will open Home+ instead of LG\xE2\x80\x99s home screen.\nYou can change this any time in Settings.");
-    sheet_add("Use Home+", ACT_HOME_YES, 0, 0);
-    sheet_add("Not Now", ACT_HOME_NO, 0, 0);
-}
-
-static void set_home_mode(const char *mode, int asked)
-{
-    char body[64];
-    snprintf(body, sizeof body, "{\"mode\":\"%s\"%s}", mode, asked ? ",\"asked\":true" : "");
-    net_post("/api/home", body, TAG_HOME_SET);
-    snprintf(S.home_mode, sizeof S.home_mode, "%s", mode);
-}
-
-static void on_status(Result *r)
-{
-    if (S.setup == SETUP_DONE || S.setup == SETUP_REMOVING) return;
-    cJSON *o = r->status == 200 ? cJSON_Parse(r->body) : NULL;
-    if (!o) {
-        /* nothing answered: start the service (luna starts it on demand) and look again */
-        if (S.setup_tries++ < 12) {
-            net_wake_service();
-            S.setup_retry = SDL_GetTicks() + 2000;
-            if (S.setup != SETUP_RESTARTING) setup_set(SETUP_STARTING);
-        } else {
-            setup_set(SETUP_FAILED);
-        }
-        return;
-    }
-    if (strcmp(jstr(o, "id"), SERVICE_ID)) { /* another service on our port: the old Home+'s (it says no id) */
-        cJSON_Delete(o);
-        setup_set(SETUP_OLD);
-        return;
-    }
-    int elevated = cJSON_IsTrue(cJSON_GetObjectItem(o, "elevated"));
-    snprintf(S.svc_version, sizeof S.svc_version, "%s", jstr(o, "version"));
-    S.svc_elevated = elevated;
-    S.home_asked = cJSON_IsTrue(cJSON_GetObjectItem(o, "homeAsked"));
-    cJSON_Delete(o);
-    if (elevated) {
-        setup_set(SETUP_DONE);
-        request_data();
-        if (!S.home_asked) ask_home_screen();
-        return;
-    }
-    if (S.setup == SETUP_RESTARTING && S.setup_tries++ < 6) {
-        S.setup_retry = SDL_GetTicks() + 1500; /* still the old, unelevated process: give it a moment */
-        return;
-    }
-    if (S.elevate_tries++ < 2) {
-        setup_set(SETUP_ELEVATING);
-        net_luna(HBC_ELEVATE, "{\"id\":\"" SERVICE_ID "\"}", TAG_ELEVATE);
-    } else {
-        setup_set(SETUP_DENIED);
-    }
-}
-
-static void on_elevate(Result *r)
-{
-    if (r->status == 200) {
-        /* elevated: the running process is still unprivileged, so restart it */
-        S.setup_tries = 0;
-        setup_set(SETUP_RESTARTING);
-        net_post("/api/restart", "{}", TAG_RESTART);
-        S.setup_retry = SDL_GetTicks() + 1500;
-        return;
-    }
-    const char *out = r->body ? r->body : "";
-    fprintf(stderr, "homeplus: elevateService: %s\n", out);
-    if (contains_ci(out, "does not exist") || contains_ci(out, "unknown service") || contains_ci(out, "not found") ||
-        contains_ci(out, "luna-send: not found") || !*out)
-        setup_set(SETUP_NO_HBC);
-    else
-        setup_set(SETUP_DENIED);
-}
-
-static void setup_retry_now(void)
-{
-    S.setup_tries = S.elevate_tries = S.wake_tries = 0;
-    S.setup = SETUP_CHECK;
-    setup_screen();
-    setup_check();
-}
-
-static int source_installed(int src)
-{
-    for (int i = 0; i < S.napps; i++)
-        if (media_source(&S.apps[i]) == src) return 1;
-    return 0;
-}
-
-static int stremio_installed(void) { return source_installed(SRC_STREMIO); }
 
 /* ---- Settings, like tvOS's: each row shows its current value, › opens a page,
  * and Back goes up one. */

@@ -472,6 +472,7 @@ static inline float smooth01(float a, float b, float x)
 }
 
 /* main.c */
+void request_data(void);
 void enter_top(int col);
 void focus_rect(float *x, float *y, float *w, float *h);
 void settings_page(int page, int index);
@@ -601,5 +602,19 @@ void open_app_sheet(void);
 void open_hidden_sheet(void);
 void move_item_to(int to);
 int apps_loading(void);
+
+/* setup.c */
+void setup_check(void);
+void setup_set(int state);
+void set_home_mode(const char *mode, int asked);
+void on_status(Result *r);
+void on_elevate(Result *r);
+void setup_retry_now(void);
+
+/* accounts.c */
+void on_media_signin(Result *r);
+void on_trakt_signin(Result *r);
+int source_installed(int src);
+int stremio_installed(void);
 
 #endif
