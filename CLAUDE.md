@@ -1,8 +1,8 @@
 # Home+ — notes for Claude
 
 tvOS-style launcher for a rooted LG C3 (webOS 23.20.59, kernel aarch64, **32-bit ARM userland**,
-SDL2 2.0.14, GLES2/EGL/Wayland). Owner's TV: `192.168.1.50`, root SSH via Homebrew Channel
-(`ssh lgtv` if the key/alias from the README is set up; otherwise `root@192.168.1.50`).
+SDL2 2.0.14, GLES2/EGL/Wayland). The TV: `<tv-ip>`, root SSH via Homebrew Channel
+(`ssh root@<tv-ip>`, or an alias of your own).
 PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
 
 ## Pieces
@@ -88,6 +88,11 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   `HOMEPLUS_APP_DIR`, `HOMEPLUS_INITD_DIR` and `HOMEPLUS_INPUTHOOK_BINDS` stand in for the app folder,
   Homebrew Channel's init.d and LG Input Hook's binds (`startService` in `test/helpers.js` starts it).
   `HOMEPLUS_SERVICE_NODE` runs the tests' service on another Node (CI: 16, as on the TV).
+  `HOMEPLUS_LOG` and `HOMEPLUS_RECENTS_FILE` move its files in /tmp (opened only as its own, never
+  through a link: `service/tmp.js`); `HOMEPLUS_FETCH_TIMEOUT_MS` and `HOMEPLUS_LUNA_TIMEOUT_MS` shorten
+  the image proxy's and luna calls' 15 s. The harness's `HOMEPLUS_PREVIEW_ART` serves the mock Stremio
+  titles' pictures from a test's server, `HOMEPLUS_PREVIEW_LUNA_SILENT` (a regular expression) makes
+  those luna calls never answer, and `HOMEPLUS_PREVIEW_NO_APPS` has webOS list no apps.
   `tools/native-preview/glass-test.sh <art.jpg> <out.png>` renders a glass test card.
 - Docker on a Mac can see a file before it's fully written: if a build reports
   "expected ... at end of input", just run it again.

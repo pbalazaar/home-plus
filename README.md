@@ -263,6 +263,10 @@ Without Docker, unpack the toolchain, run its `relocate-sdk.sh`, then `WEBOS_SDK
 
 Every push is built and tested by GitHub Actions. Pushing a `v*` tag does the same, and once everything has passed, publishes a release with the `.ipk` attached. To send a change, see [CONTRIBUTING.md](CONTRIBUTING.md); everyone here follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as [SECURITY.md](SECURITY.md) explains. What Home+ does for accessibility, and what it can't do yet, is in [ACCESSIBILITY.md](ACCESSIBILITY.md).
 
+## How Home+ is built and tested
+
+Home+ is designed by its author, who makes every decision about what it does and how it does it. Claude, an AI assistant, helps write its code and its documentation. Every commit has been tried on the author's own LG C3 (webOS 9.2.1, firmware 23.20.59). The launcher is a native app, written in C, and on every change CI also runs the service's tests (with the service on the TV's Node 16), renders and checks every screen of the launcher, drives the Control Center's QML, and builds and checks the package.
+
 ## How it works
 
 One package, `com.github.pmiraka.homeplus`, holds three things:
@@ -302,7 +306,7 @@ preview/    screenshots from tools/native-preview
 docs/       design notes
 ```
 
-`CLAUDE.md` holds development notes, including the webOS quirks found along the way. Home+ was built with help from Claude, an AI assistant.
+`CLAUDE.md` holds development notes, including the webOS quirks found along the way. Who makes Home+, and how: [How Home+ is built and tested](#how-home-is-built-and-tested).
 
 ## License
 
