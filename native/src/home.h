@@ -470,4 +470,16 @@ int keep_in_view(int first, int i, int visible, int n, int margin);
 /* tiles.c */
 void make_logo(App *a, const unsigned char *px, int w, int h);
 
+/* draw.c */
+void draw_text(Tex *t, int w, int h, float x, float y, Uint8 a);
+void sway(float *dx, float *dy);
+void glass(const Glass *g);
+void panel(int backdrop, float x, float y, float w, float h, float radius, float legible, float focus, float alpha);
+void ensure_label(App *a);
+void ensure_big(App *a);
+int draw_face(App *a, float x, float y, float w, float h, float rad, float lk, Uint8 alpha, float focus, int backdrop);
+void draw_skeleton(float x, float y, float w, float h, float radius, float alpha);
+void draw_scrims(Uint8 alpha);
+void draw_marquee(Tex *t, int tw, int th, float x, float y, float room, Uint8 c, Uint8 a, Uint32 since);
+
 #endif
