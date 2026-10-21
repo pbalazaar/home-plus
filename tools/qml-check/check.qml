@@ -40,6 +40,7 @@ Item {
     Loader { id: win; anchors.fill: parent; source: Qt.resolvedUrl("../../native/qml/ControlCenter.qml") }
 
     property int step: 0
+    property int movedTo: -1
     Timer {
         id: driver
         interval: 250
@@ -58,7 +59,7 @@ Item {
                 var c = Qt.createComponent(Qt.resolvedUrl("../../native/qml/" + f));
                 expect(c.status === Component.Ready, f + " compiles: " + c.errorString());
             }
-            w.lifeCycleStatus.launch({ params: { state: JSON.parse(JSON.stringify(sample)), token: "t", port: 1, frame: "" } });
+            w.lifeCycleStatus.launch({ params: { state: JSON.parse(JSON.stringify(sample)), token: "t0ken", port: 47999, frame: "" } });
             break;
         case 1:
             expect(w.shown, "the window is shown");
@@ -80,26 +81,74 @@ Item {
             v.longPress(); v.sheetOk(); expect(v.editing, "editing");
             v.focusIndex = 1; v.ok(); expect(v.picked === 1, "OK picks Wi-Fi up");
             v.move(0, 1); expect(v.picked === 2, "Down moves it");
-            v.move(0, -1); v.ok(); expect(v.picked === -1, "OK puts it down (and saves)");
+            v.ok(); expect(v.picked === -1, "OK puts it down, and saves");
+            // before that save is answered (the mock takes 600 ms), it's picked up and moved again
+            v.focusIndex = 2; v.ok(); v.move(0, 1); movedTo = v.picked;
+            expect(movedTo > 2 && order(v)[movedTo] === "network", "picked up again and moved: " + order(v).join());
             break;
         case 4:
-            v.focusIndex = 1; v.longPress(); expect(!!v.sheet && v.sheet.items.some(function (i) { return i.act === "remove"; }), "its options: Remove");
-            v.back();
-            v.focusIndex = v.focusCount() - 2; v.ok(); expect(v.listKind === 3 && v.gallery.length === 2, "the + slot: the gallery, without what's placed");
+        case 5:
+        case 6:
+            break; // the first save's answer comes, and must not undo the move
+        case 7:
+            expect(v.picked === movedTo && order(v)[movedTo] === "network", "an older answer doesn't undo a newer move: " + order(v).join());
+            v.ok(); expect(v.picked === -1, "put down again");
+            break;
+        case 8:
+        case 9:
+        case 10:
+            break;
+        case 11:
+            log(function (got) {
+                var saves = got.filter(function (g) { return g.body.action === "layout"; });
+                expect(saves.length === 2, "two saves: " + saves.length);
+                expect(got.every(function (g) { return g.token === "t0ken"; }), "every request carries the token");
+                var last = saves.length ? saves[saves.length - 1].body.controls.map(function (c) { return c.id; }) : [];
+                expect(last[movedTo] === "network" && last.join() === order(v).join(), "the last save is the order on screen: " + last.join());
+            });
+            break;
+        case 12:
+            v.focusIndex = 0; v.longPress(); expect(!!v.sheet && v.sheet.cid === "power", "options for Power Off");
+            v.focusIndex = 2; // the pointer moving behind the sheet
+            v.sheetIndex = v.sheet.items.length - 2; expect(v.sheet.items[v.sheetIndex].act === "remove", "Remove");
+            v.sheetOk();
+            expect(v.find("power") < 0 && v.find("screenOff") >= 0, "Remove takes the control the sheet was for, not the one with the focus");
+            v.focusIndex = v.focusCount() - 2; v.ok(); expect(v.listKind === 3 && v.gallery.length >= 2, "the + slot: the gallery, without what's placed");
             v.back(); v.focusIndex = v.focusCount() - 1; v.ok(); expect(!!v.sheet && v.sheet.items[0].act === "reset", "Reset asks first");
             v.back(); v.back(); expect(!v.editing, "Back: done editing");
             break;
-        case 5:
+        case 13:
             w.lifeCycleStatus.launch({ params: {} }); // the Settings key again
             break;
-        case 6:
-        case 7:
+        case 14:
+        case 15:
             break; // it animates out
-        case 8:
+        case 16:
             expect(w.exited, "the Settings key again closes it");
-            finish();
+            log(function (got) {
+                expect(got.some(function (g) { return g.url === "/api/overlay" && g.body.event === "closed"; }), "the service hears it closed");
+                finish();
+            });
             break;
         }
+    }
+
+    function order(v) { // the controls' ids, in order
+        var ids = [];
+        for (var k = 0; v.idAt(k); k++) ids.push(v.idAt(k));
+        return ids;
+    }
+
+    function log(then) { // what the mock API got
+        var x = new XMLHttpRequest();
+        x.onreadystatechange = function () {
+            if (x.readyState !== XMLHttpRequest.DONE) return;
+            var got = [];
+            try { got = JSON.parse(x.responseText); } catch (e) { fail("the mock API's log: " + x.responseText); }
+            then(got);
+        };
+        x.open("GET", "http://127.0.0.1:47999/log");
+        x.send();
     }
 
     function finish() {

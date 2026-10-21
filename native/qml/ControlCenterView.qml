@@ -46,6 +46,7 @@ FocusScope {
     property int plusRow: -1
     property int rows: 0           // the rows in use (with the + slot while editing)
     property real wobble: 0        // seconds, while editing
+    property int edits: 0          // local changes to the layout: an answer to an older request doesn't undo them
 
     // a sheet over it, as Home+'s: {title, body, items: [{label, act, arg, destructive, check}]}
     property var sheet: null
@@ -212,11 +213,13 @@ FocusScope {
         for (var i = 0; i < tiles.count; i++) if (tiles.get(i).cid === id) return i;
         return -1;
     }
+    function idAt(i) { return i >= 0 && i < tiles.count ? tiles.get(i).cid : ""; }
 
     // ---- what OK does (main.c: cc_activate)
 
     function run(body, then) {
         problem = "";
+        var asked = edits;
         host.call("control", body, function (r) {
             if (r.returnValue === false) {
                 problem = r.errorText || "That didn't work";
@@ -224,7 +227,7 @@ FocusScope {
                 if (t) t.shake();
                 return;
             }
-            if (r.controls) { // the new state, with what only the opening said
+            if (r.controls && asked === edits && picked < 0) { // the new state (unless moved on since), with what only the opening said
                 r.frame = cc.frame;
                 r.clock24 = cc.clock24;
                 r.debugFps = cc.debugFps;
@@ -284,6 +287,7 @@ FocusScope {
             save();
         } else if (focusIndex < n) {
             picked = focusIndex;
+            edits++;
         } else if (focusIndex === n) {
             if (plusRow >= 0) openGallery();
         } else {
@@ -306,7 +310,7 @@ FocusScope {
             items.push({ label: names[sizes[k]] || sizes[k], act: "size", arg: sizes[k], check: sizes[k] === t.size });
         if (!e || !e.pinned) items.push({ label: "Remove", act: "remove", destructive: true }); // not Settings: the only way in
         items.push({ label: "Cancel", act: "cancel" });
-        openSheet(t.title, "", items, 0);
+        openSheet(t.title, "", items, 0, t.cid);
     }
 
     // the picked control moves through the order; up and down, to the control in that row nearest
@@ -328,6 +332,7 @@ FocusScope {
         if (to < 0 || to >= tiles.count || to === i) return;
         tiles.move(i, to, 1);
         picked = focusIndex = to;
+        edits++;
         relayout();
     }
 
@@ -338,37 +343,63 @@ FocusScope {
         run({ action: "layout", controls: list });
     }
 
+    // a control from the gallery, at the end in the first of its sizes that fits
     function add(e) {
         var o = tileOf({ id: e.id, size: e.sizes[0], kind: e.kind, icon: e.icon, title: e.title, available: true });
         o.col = -1; o.row = -1; o.w = 1; o.h = 1;
         tiles.append(o);
         listKind = 0;
-        relayout();
+        edits++;
+        if (!fit(tiles.count - 1, e.sizes)) {
+            tiles.remove(tiles.count - 1, 1);
+            relayout();
+            problem = "No room for " + e.title;
+            return;
+        }
         focusIndex = tiles.count - 1;
         save();
     }
 
+    // gives control i the first of `sizes` that leaves it on screen; false (and as it was) if none does
+    function fit(i, sizes) {
+        var was = tiles.get(i).size;
+        for (var k = 0; k < sizes.length; k++) {
+            tiles.setProperty(i, "size", sizes[k]);
+            relayout();
+            if (tiles.get(i).row >= 0) return true;
+        }
+        tiles.setProperty(i, "size", was);
+        relayout();
+        return false;
+    }
+
     // ---- sheets
 
-    function openSheet(title, body, items, index) {
-        sheet = { title: title, body: body, items: items };
+    function openSheet(title, body, items, index, cid) {
+        sheet = { title: title, body: body, items: items, cid: cid || "" }; // cid: the control it's about
         sheetIndex = index;
     }
 
     function sheetOk() {
-        var it = sheet.items[sheetIndex];
+        var it = sheet.items[sheetIndex], at = sheet.cid ? find(sheet.cid) : focusIndex;
         sheet = null;
-        if (!it) return;
+        if (!it || at < 0) return;
         if (it.act === "edit") {
             editing = true;
             picked = -1;
             relayout();
         } else if (it.act === "size") {
-            tiles.setProperty(focusIndex, "size", it.arg);
-            relayout();
+            edits++;
+            var keep = tiles.get(at).size;
+            if (!fit(at, [it.arg])) { // no room at that size
+                fit(at, [keep]);
+                problem = "No room for it at that size";
+                return;
+            }
             save();
         } else if (it.act === "remove") {
-            tiles.remove(focusIndex, 1);
+            edits++;
+            tiles.remove(at, 1);
             relayout();
             if (focusIndex >= tiles.count) focusIndex = Math.max(0, tiles.count - 1);
             save();
@@ -455,8 +486,7 @@ FocusScope {
     // 45 degrees of the way (main.c: cc_move); -1: nothing that way
 
     function nearest(count, rect, from, dx, dy) {
-        var a = rect(from);
-        if (!a) return -1;
+        var a = rect(from) || { x: gridX, y: gridY, w: 0, h: 0 }; // (on nothing on screen: from the grid's corner)
         var ax = a.x + a.w / 2, ay = a.y + a.h / 2, best = -1, bestScore = 1e9;
         for (var i = 0; i < count; i++) {
             if (i === from) continue;
@@ -798,10 +828,11 @@ FocusScope {
             }
             function flash() { flashing.restart(); }
 
-            MouseArea { // the Magic Remote's pointer
+            MouseArea { // the Magic Remote's pointer (not behind a sheet or a list)
                 anchors.fill: parent
                 hoverEnabled: true
-                onEntered: if (!view.listKind && !view.sheet && !view.closing && view.picked < 0) view.focusIndex = index
+                enabled: !view.listKind && !view.sheet && !view.closing
+                onEntered: if (view.picked < 0) view.focusIndex = index
                 onClicked: { view.focusIndex = index; view.ok(); }
                 onPressAndHold: { view.focusIndex = index; view.longPress(); }
             }
@@ -828,7 +859,7 @@ FocusScope {
         }
         Image { id: plusGlyph; anchors.centerIn: parent; width: 34; height: 34; source: "glyphs/plus.png"; smooth: true; mipmap: true; visible: false }
         Tint { anchors.fill: plusGlyph; src: plusGlyph; color: plus.focused ? view.ink : "white" }
-        MouseArea { anchors.fill: parent; hoverEnabled: true; onEntered: view.focusIndex = tiles.count; onClicked: { view.focusIndex = tiles.count; view.ok(); } }
+        MouseArea { anchors.fill: parent; hoverEnabled: true; enabled: !view.sheet && !view.listKind; onEntered: view.focusIndex = tiles.count; onClicked: { view.focusIndex = tiles.count; view.ok(); } }
     }
     Text {
         visible: view.editing && !view.listKind && !view.closing
@@ -868,7 +899,7 @@ FocusScope {
             font.weight: Font.DemiBold
             font.pixelSize: 24
         }
-        MouseArea { anchors.fill: parent; hoverEnabled: true; onEntered: view.focusIndex = tiles.count + 1; onClicked: { view.focusIndex = tiles.count + 1; view.ok(); } }
+        MouseArea { anchors.fill: parent; hoverEnabled: true; enabled: !view.sheet && !view.listKind; onEntered: view.focusIndex = tiles.count + 1; onClicked: { view.focusIndex = tiles.count + 1; view.ok(); } }
     }
 
     // what went wrong, under the grid
@@ -960,6 +991,7 @@ FocusScope {
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
+                    enabled: !view.sheet
                     onEntered: view.listIndex = parent.i
                     onClicked: { view.listIndex = parent.i; view.listOk(); }
                 }
@@ -1055,6 +1087,7 @@ FocusScope {
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
+                    enabled: !view.sheet
                     onEntered: view.listIndex = index
                     onClicked: { view.listIndex = index; view.galleryOk(); }
                 }
@@ -1070,6 +1103,7 @@ FocusScope {
         opacity: view.sheet ? 0.35 : 0
         visible: opacity > 0.01
         Behavior on opacity { NumberAnimation { duration: 180 } }
+        MouseArea { anchors.fill: parent; enabled: !!view.sheet; hoverEnabled: true } // clicks behind a sheet do nothing
     }
     Item {
         id: sheetBox

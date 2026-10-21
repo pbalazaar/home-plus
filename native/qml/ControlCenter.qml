@@ -34,6 +34,7 @@ StarfishSystemUIWindow {
 
     function open(params) {
         if (params.preload) { // compiled now, so the first time it opens is as quick as the rest
+            if (view) return; // (it's open: leave it be)
             var p = Qt.createComponent("ControlCenterView.qml");
             if (p.status !== Component.Ready) console.warn("[Home+] Control Center: " + p.errorString());
             root.exit();
@@ -59,15 +60,18 @@ StarfishSystemUIWindow {
             failed("couldn't create the panel");
             return;
         }
-        view.closed.connect(function () {
-            root.call("overlay", { "event": "closed" });
-            root.exit();
-        });
+        view.closed.connect(root.quit);
         root.show();
         view.forceActiveFocus();
         shown.start();
     }
     Timer { id: shown; interval: 16; onTriggered: root.call("overlay", { "event": "opened" }) } // after its first frame
+
+    // gone: the service stops taking frames of the video
+    function quit() {
+        if (view) call("overlay", { "event": "closed" });
+        root.exit();
+    }
 
     function failed(why) {
         console.warn("[Home+] Control Center: " + why);
@@ -80,7 +84,7 @@ StarfishSystemUIWindow {
         onLaunch: root.open(payload.params || payload || {})
         onClose: { // LG closes it (another app, the TV going to sleep): animated, unless it's going to sleep
             if (view && payload.reason !== "powerSuspend") view.close();
-            else root.exit();
+            else root.quit();
         }
     }
 }

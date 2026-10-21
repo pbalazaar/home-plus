@@ -56,6 +56,7 @@ test.before(async () => {
   fs.mkdirSync(path.join(app, 'qml'), { recursive: true });
   for (const f of ['ControlCenter.qml', 'ControlCenterView.qml']) fs.copyFileSync(path.join(ROOT, 'native/qml', f), path.join(app, 'qml', f));
   fs.symlinkSync('qml', path.join(app, 'qml-old')); /* an older version's link */
+  fs.mkdirSync(path.join(dir, 'frames')); /* where the frames' folders go (on the TV, /tmp) */
   port = await freePort();
   child = spawn(NODE, [path.join(ROOT, 'tools/native-preview/harness.js'), dir, path.join(ROOT, 'service')], {
     env: Object.assign({}, process.env, {
@@ -103,11 +104,14 @@ test('overlay: the Settings key opens it over the app in front, with the control
   assert.ok(Array.isArray(p.state.controls) && p.state.controls.length, 'the controls on show');
   assert.equal(p.token, token, 'the API token: it can only reach the service over the API');
   assert.equal(p.port, port);
-  assert.equal(p.frame, 'file://' + path.join(dir, 'frames', 'frame.jpg'));
+  const fm = new RegExp(`^file://${path.join(dir, 'frames')}/(homeplus-cc-[^/]+)/frame\\.jpg$`).exec(p.frame);
+  assert.ok(fm, `a folder of its own for the frames, with a name nobody can guess: ${p.frame}`);
+  const frames = path.join(dir, 'frames', fm[1]);
   await until(() => calls('luna://com.webos.service.capture/executeOneShot').length > 0, 3000, 'a frame');
   assert.equal(calls('luna://com.webos.service.capture/executeOneShot')[0].params.method, 'VIDEO', 'the video only, not what is drawn over it');
-  await until(() => fs.existsSync(path.join(dir, 'frames', 'frame.jpg')), 3000, 'the frame file');
-  assert.equal(fs.statSync(path.join(dir, 'frames')).mode & 0o777, 0o700, 'frames are what is on screen: root only');
+  await until(() => fs.existsSync(path.join(frames, 'frame.jpg')), 3000, 'the frame file');
+  assert.equal(fs.statSync(frames).mode & 0o777, 0o700, 'frames are what is on screen: root only');
+  await call('POST', '/api/overlay', { body: { event: 'closed' } });
 });
 
 test('overlay: it asks for what it can\'t do itself, and nothing else', async () => {
@@ -126,9 +130,10 @@ test('overlay: it asks for what it can\'t do itself, and nothing else', async ()
 
 test('overlay: once it has closed, the frames stop and are deleted', async () => {
   await call('POST', '/api/key', { body: { key: 'settings' } });
-  await until(() => fs.existsSync(path.join(dir, 'frames', 'frame.jpg')), 3000, 'a frame');
+  const frames = () => fs.readdirSync(path.join(dir, 'frames'));
+  await until(() => frames().some((f) => fs.existsSync(path.join(dir, 'frames', f, 'frame.jpg'))), 3000, 'a frame');
   assert.equal((await call('POST', '/api/overlay', { body: { event: 'closed' } })).status, 200);
-  await until(() => !fs.existsSync(path.join(dir, 'frames')), 3000, 'the frames to go');
+  await until(() => frames().length === 0, 3000, 'the frames to go');
   const n = calls('luna://com.webos.service.capture/executeOneShot').length;
   await new Promise((done) => setTimeout(done, 800));
   assert.equal(calls('luna://com.webos.service.capture/executeOneShot').length, n, 'no more frames');
@@ -142,5 +147,21 @@ test('overlay: without its QML (an older package), the Settings key opens LG\'s 
     assert.deepEqual(calls('luna://com.webos.service.systemUIManager/launch').at(-1).params, { appId: 'com.webos.app.quicksettings' });
   } finally {
     fs.renameSync(qml + '.away', qml);
+  }
+});
+
+test('overlay: with Reduce Transparency (solid panels), no frames of the video are taken', async () => {
+  await call('POST', '/api/prefs', { body: { reduceTransparency: true } });
+  try {
+    const before = calls('luna://com.webos.service.capture/executeOneShot').length;
+    await call('POST', '/api/key', { body: { key: 'settings' } });
+    const launch = calls('luna://com.webos.service.systemUIManager/launch').at(-1);
+    assert.equal(launch.params.params.frame, '', 'no frames to show');
+    assert.equal(launch.params.params.state.reduceTransparency, true);
+    await new Promise((done) => setTimeout(done, 700));
+    assert.equal(calls('luna://com.webos.service.capture/executeOneShot').length, before, 'none taken');
+    await call('POST', '/api/overlay', { body: { event: 'closed' } });
+  } finally {
+    await call('POST', '/api/prefs', { body: { reduceTransparency: false } });
   }
 });

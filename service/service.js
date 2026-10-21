@@ -10,6 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const https = require('https');
 const http = require('http');
 const pkg = require('./package.json');
@@ -483,8 +484,7 @@ async function remoteKey(key) {
     return { opened: 'controlCenter' };
   }
   try {
-    await openOverlay();
-    return { opened: 'overlay' };
+    return { opened: (await openOverlay()) ? 'overlay' : 'nothing' }; /* nothing: another app came to the front */
   } catch (e) {
     log('control center overlay:', e.message);
   }
@@ -501,54 +501,78 @@ const SYSUI = 'luna://com.webos.service.systemUIManager';
 const OVERLAY_ID = 'com.github.pmiraka.homeplus.cc';
 const OVERLAY_QML = path.join(APP_DIR, 'qml', 'ControlCenter.qml');
 let overlayOpen = false;
+let overlayGen = 0; /* counts each open, and each thing that cancels one on its way (another app in front) */
+let overlayBusy = false; /* an open on its way */
 let overlayAsked = 0; /* when it was asked for: how long it takes to show is logged */
 let overlayInputs = []; /* the inputs it offered: the only apps it may open */
 
+// false: cancelled on the way (another app came to the front)
 async function openOverlay() {
   if (!fs.existsSync(OVERLAY_QML)) throw new Error('not installed');
+  const gen = ++overlayGen;
+  overlayBusy = true;
   overlayAsked = Date.now();
-  const state = await control.state();
-  overlayInputs = (state.inputs || []).map((i) => i.appId);
-  const prefs = readConfig().prefs || {}; /* the launcher's: its clock, and Settings -> Accessibility */
-  Object.assign(state, { clock24: !!prefs.clock24, reduceMotion: !!prefs.reduceMotion, reduceTransparency: !!prefs.reduceTransparency,
-    sounds: prefs.sounds !== false });
-  if (fs.existsSync('/tmp/homeplus-cc-fps')) state.debugFps = true; /* its frame rate, on screen */
-  const r = await luna(SYSUI + '/launch', {
-    appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
-    params: { state, port: IMAGE_PORT, token: TOKEN, frame: 'file://' + FRAME } /* the API: the compositor may only call LG's services over luna */
-  });
-  if (!r || r.returnValue === false) throw new Error((r && r.errorText) || "the TV didn't open it");
-  overlayOpen = true;
-  captureFrames();
+  try {
+    const state = await control.state();
+    if (gen !== overlayGen) return false;
+    overlayInputs = (state.inputs || []).map((i) => i.appId);
+    const prefs = readConfig().prefs || {}; /* the launcher's: its clock, and Settings -> Accessibility */
+    Object.assign(state, { clock24: !!prefs.clock24, reduceMotion: !!prefs.reduceMotion, reduceTransparency: !!prefs.reduceTransparency,
+      sounds: prefs.sounds !== false });
+    if (fs.existsSync('/tmp/homeplus-cc-fps')) state.debugFps = true; /* its frame rate, on screen */
+    const frames = prefs.reduceTransparency ? '' : framesDir(); /* solid panels: no frames */
+    const r = await luna(SYSUI + '/launch', {
+      appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
+      params: { state, port: IMAGE_PORT, token: TOKEN, frame: frames && 'file://' + path.join(frames, 'frame.jpg') } /* the API: the compositor may only call LG's services over luna */
+    });
+    if (!r || r.returnValue === false) {
+      if (frames) fs.rm(frames, { recursive: true, force: true }, () => {});
+      throw new Error((r && r.errorText) || "the TV didn't open it");
+    }
+    if (gen !== overlayGen) { /* another app came to the front while it opened */
+      luna(SYSUI + '/closeByAppId', { appId: OVERLAY_ID });
+      if (frames) fs.rm(frames, { recursive: true, force: true }, () => {});
+      return false;
+    }
+    overlayOpen = true;
+    if (frames) captureFrames(gen, frames);
+    return true;
+  } finally {
+    overlayBusy = false;
+  }
 }
 
 // Its glass shows the picture behind it, blurred: while it's open, a small frame of the video (VIDEO:
 // without any graphics, so not the Control Center itself) about three times a second. Protected
-// video gives no frame, and the glass is a tint. The frames are what's on screen, so they stay in a
-// folder only root can read (the compositor, root, shows them), in memory, and go when it closes.
-const FRAMES = process.env.HOMEPLUS_FRAMES_DIR || '/tmp/homeplus-cc'; /* tests: elsewhere */
-const FRAME = path.join(FRAMES, 'frame.jpg');
-let capturing = false;
+// video gives no frame, and the glass is a tint. The frames are what's on screen, so they go in a
+// folder the service makes for each opening, with a name nobody can guess, that only root can read
+// (the compositor, root, shows them); in memory, and deleted when it closes.
+const FRAMES_IN = process.env.HOMEPLUS_FRAMES_DIR || os.tmpdir(); /* tests: elsewhere */
+const framesDir = () => fs.mkdtempSync(path.join(FRAMES_IN, 'homeplus-cc-')); /* new, root's, 0700 */
+try { /* left by a service that stopped (only its own) */
+  for (const f of fs.readdirSync(FRAMES_IN).filter((f) => /^homeplus-cc-/.test(f))) {
+    const p = path.join(FRAMES_IN, f), st = fs.lstatSync(p);
+    if (st.isDirectory() && st.uid === process.getuid?.()) fs.rmSync(p, { recursive: true, force: true });
+  }
+} catch (e) { /* nothing there */ }
+const settle = (promise, ms) => Promise.race([promise, new Promise((done) => setTimeout(done, ms, null))]);
 
-async function captureFrames() {
-  if (capturing) return;
-  capturing = true;
+async function captureFrames(gen, dir) {
+  const frame = path.join(dir, 'frame.jpg');
+  const until = Date.now() + 5 * 60000; /* in case it's never said to have closed */
   try {
-    fs.mkdirSync(FRAMES, { recursive: true, mode: 0o700 });
-    fs.chmodSync(FRAMES, 0o700);
-    const until = Date.now() + 5 * 60000; /* in case it's never said to have closed */
-    while (overlayOpen && Date.now() < until) {
-      const r = await luna('luna://com.webos.service.capture/executeOneShot',
-        { path: FRAME + '.tmp', method: 'VIDEO', format: 'JPEG', width: 160, height: 90 });
+    while (overlayOpen && gen === overlayGen && Date.now() < until) {
+      const r = await settle(luna('luna://com.webos.service.capture/executeOneShot',
+        { path: frame + '.tmp', method: 'VIDEO', format: 'JPEG', width: 160, height: 90 }), 3000); /* (it may never answer) */
       let got = !!(r && r.returnValue);
-      if (got) try { fs.renameSync(FRAME + '.tmp', FRAME); } catch (e) { got = false; } /* whole frames only */
+      if (got) try { fs.renameSync(frame + '.tmp', frame); } catch (e) { got = false; } /* whole frames only */
       await new Promise((done) => setTimeout(done, got ? 40 : 600));
     }
   } catch (e) {
     log('control center frames:', e.message);
+  } finally {
+    fs.rm(dir, { recursive: true, force: true }, () => {});
   }
-  capturing = false;
-  fs.rm(FRAMES, { recursive: true, force: true }, () => {});
 }
 
 // The compositor keeps every QML file it has loaded, by its address, until the TV restarts; so each
@@ -568,6 +592,7 @@ function overlayMain() {
 // key opens the Control Center, have it compiled once, unseen, a little after the service starts.
 function preloadOverlay() {
   if (!fs.existsSync(OVERLAY_QML) || !settingsKeyState().on || process.getuid?.() !== 0) return;
+  if (overlayOpen || overlayBusy) return; /* (it would close it) */
   luna(SYSUI + '/launch', {
     appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
     params: { preload: true }
@@ -576,6 +601,7 @@ function preloadOverlay() {
 if (!process.env.HOMEPLUS_PREVIEW) setTimeout(preloadOverlay, 20000);
 
 function closeOverlay() {
+  overlayGen++; /* also one still on its way */
   if (!overlayOpen) return;
   overlayOpen = false;
   luna(SYSUI + '/closeByAppId', { appId: OVERLAY_ID });

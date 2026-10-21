@@ -307,6 +307,7 @@ static struct {
     Uint32 ok_down;
     int ok_long;
     int away;           /* we launched another app; reset to the top when we're back */
+    int asked;          /* the Control Center over another app asked for one of OPEN_*, for when we're back */
     int service_ok, wake_tries;
     int setup, setup_tries, elevate_tries, home_asked;
     int reduce_motion, reduce_transparency; /* Settings -> Accessibility (tvOS's names) */
@@ -1078,6 +1079,15 @@ static void sheet_body(const char *text);
 static void settings_page(int page, int index);
 static void sw_open(void);
 static void open_settings_sheet(void);
+
+/* what the Control Center over another app can ask Home+ to open */
+enum { OPEN_SETTINGS = 1, OPEN_RECENTS, OPEN_ACCESSIBILITY };
+static void open_asked(int what)
+{
+    if (what == OPEN_SETTINGS) open_settings_sheet();
+    else if (what == OPEN_RECENTS) sw_open();
+    else if (what == OPEN_ACCESSIBILITY) settings_page(PAGE_ACCESS, 0);
+}
 static void on_elevate(Result *r);
 static void sw_fill(const char *json);
 static void sw_reset(void);
@@ -1385,9 +1395,12 @@ static void handle_result(Result *r)
         break;
     case TAG_EVENTS:
         if (r->body && strstr(r->body, "\"controlCenter\"")) settings_key();
-        if (r->body && strstr(r->body, "\"settings\"")) open_settings_sheet(); /* asked for from the Control Center over another app */
-        if (r->body && strstr(r->body, "\"recents\"")) sw_open();
-        if (r->body && strstr(r->body, "\"accessibility\"")) settings_page(PAGE_ACCESS, 0);
+        if (r->body) { /* asked for from the Control Center over another app, which brings Home+ to the front */
+            int want = strstr(r->body, "\"settings\"") ? OPEN_SETTINGS : strstr(r->body, "\"recents\"") ? OPEN_RECENTS
+                     : strstr(r->body, "\"accessibility\"") ? OPEN_ACCESSIBILITY : 0;
+            if (want && S.away) S.asked = want; /* coming back starts at the top: opened after that */
+            else if (want) open_asked(want);
+        }
         break;
     case TAG_HOME:
     case TAG_HOME_SET:
@@ -4654,6 +4667,8 @@ static void come_back(void)
 {
     if (S.away) go_home(); /* back from another app (or the Home button): start at the top */
     S.away = 0;
+    if (S.asked) open_asked(S.asked); /* ...unless the Control Center over that app asked for something */
+    S.asked = 0;
     S.offscreen = 0;
     S.last_input = SDL_GetTicks();
     S.idle_stage = 0;
