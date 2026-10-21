@@ -407,6 +407,9 @@ typedef struct {
 
 extern State S;
 
+static const char *const SRC_ID[SRC_COUNT] = { "", "stremio", "jellyfin", "plex" };
+static const char *const SRC_NAME[SRC_COUNT] = { "", "Stremio", "Jellyfin", "Plex" };
+
 /* Tinted's colours on their row in App Icons: swatch i's centre, the row's right end like a value's */
 #define SWATCH_D 34
 
@@ -571,5 +574,23 @@ void cc_list_key(SDL_Keycode k);
 void cc_list_ok(void);
 void draw_cc_list(float a);
 void draw_cc_gallery(float a);
+
+/* shelf.c */
+void pic_hold(Pic *p, Tex **tex);
+int pic_rail(int i);
+void rail_focus(int i);
+App *shelf_app(void);
+int want_source(void);
+int rail_for(const App *a);
+void featured_request(App *a);
+void rail_request(int src);
+void rail_clear(void);
+void parse_continue(const char *json, int src);
+void parse_featured(const char *json, App *a);
+int rail_active(void);
+int carousel_coming(const App *a);
+void update_page(float dt, int *anim);
+void draw_shelf_art(Uint8 alpha, int backdrop);
+void draw_shelf_content(Uint8 alpha, int backdrop);
 
 #endif
