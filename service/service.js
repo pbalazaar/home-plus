@@ -17,6 +17,7 @@ const pkg = require('./package.json');
 const { requestJSON } = require('./net');
 const Service = require('webos-service');
 const callers = require('./callers');
+const png = require('./png');
 
 const service = new Service(pkg.name);
 
@@ -527,7 +528,7 @@ async function openOverlay() {
     if (fs.existsSync('/tmp/homeplus-cc-fps')) state.debugFps = true; /* its frame rate, on screen */
     const r = await luna(SYSUI + '/launch', {
       appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
-      params: { state, port: IMAGE_PORT, token: TOKEN, frame: frames && 'file://' + path.join(frames, 'frame.jpg') } /* the API: the compositor may only call LG's services over luna */
+      params: { state, port: IMAGE_PORT, token: TOKEN, frame: frames && 'file://' + path.join(frames, 'frame.png') } /* the API: the compositor may only call LG's services over luna */
     });
     if (!r || r.returnValue === false) {
       if (frames) fs.rm(frames, { recursive: true, force: true }, () => {});
@@ -548,9 +549,13 @@ async function openOverlay() {
 
 // Its glass shows the picture behind it, blurred: first a snapshot of the screen as it opens, then,
 // while it's open, a small frame of the video (VIDEO: without any graphics, so not the Control Center
-// itself) about three times a second. Protected video gives none, and the glass is a tint. The frames are what's on screen, so they go in a
-// folder the service makes for each opening, with a name nobody can guess, that only root can read
-// (the compositor, root, shows them); in memory, and deleted when it closes.
+// itself) about three times a second. With no frame, the glass is a tint over what's there. The TV
+// can't always capture its video: not protected video, and not while its one video capture is taken
+// (PicCap's, for the ambient light, takes it): no frames of the video then, and the screen's are
+// black where it is, so a frame that's black where the panel is isn't shown. The frames are what's
+// on screen, so they go in a folder the service makes for each opening, with a name nobody can
+// guess, that only root can read (the compositor, root, shows them); in memory, and deleted when it
+// closes.
 const FRAMES_IN = process.env.HOMEPLUS_FRAMES_DIR || os.tmpdir(); /* tests: elsewhere */
 const framesDir = () => fs.mkdtempSync(path.join(FRAMES_IN, 'homeplus-cc-')); /* new, root's, 0700 */
 try { /* left by a service that stopped (only its own) */
@@ -561,23 +566,42 @@ try { /* left by a service that stopped (only its own) */
 } catch (e) { /* nothing there */ }
 const settle = (promise, ms) => Promise.race([promise, new Promise((done) => setTimeout(done, ms, null))]);
 
-// a small picture of the screen (DISPLAY) or the video (VIDEO) into dir/frame.jpg, whole or not at
-// all; true if there's one
+const PANEL = { x0: 0.75, x1: 0.98, y0: 0.04, y1: 0.93 }; /* where the panel is (ControlCenterView.qml) */
+
+// a small picture of the screen (DISPLAY) or the video (VIDEO) into dir/frame.png, whole or not at
+// all: 'picture'; 'dark' (not kept) if it's black where the panel is; else why there's none
 async function grab(dir, method) {
-  const frame = path.join(dir, 'frame.jpg'), tmp = `${frame}.${method}.tmp`;
+  const frame = path.join(dir, 'frame.png'), tmp = `${frame}.${method}.tmp`;
   const r = await settle(luna('luna://com.webos.service.capture/executeOneShot',
-    { path: tmp, method, format: 'JPEG', width: 160, height: 90 }), 3000); /* (it may never answer) */
-  if (!r || !r.returnValue) return false;
-  try { fs.renameSync(tmp, frame); return true; } catch (e) { return false; }
+    { path: tmp, method, format: 'PNG', width: 160, height: 90 }), 3000); /* (it may never answer) */
+  if (!r || !r.returnValue) return (r && r.errorText) || 'no answer';
+  try {
+    if (png.brightness(fs.readFileSync(tmp), PANEL) < 24) {
+      fs.rmSync(tmp, { force: true });
+      return 'dark';
+    }
+    fs.renameSync(tmp, frame);
+    return 'picture';
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    return e.message;
+  }
 }
 
 async function captureFrames(gen, dir, snapshot) {
   const until = Date.now() + 5 * 60000; /* in case it's never said to have closed */
+  let video = false; /* the frame on show is the video's, not the snapshot */
   try {
-    await snapshot; /* (one capture at a time) */
-    while (overlayOpen && gen === overlayGen && Date.now() < until) {
+    const screen = await snapshot; /* (one capture at a time) */
+    for (let n = 0; overlayOpen && gen === overlayGen && Date.now() < until; n++) {
       const got = await grab(dir, 'VIDEO'); /* none (no video playing): the snapshot stays */
-      await new Promise((done) => setTimeout(done, got ? 40 : 600));
+      if (!n) log('control center frames: the screen', screen, '- the video', got);
+      if (got === 'picture') video = true;
+      else if (video) { /* the video went dark, or can't be captured now: the tint, over what's there */
+        fs.rmSync(path.join(dir, 'frame.png'), { force: true });
+        video = false;
+      }
+      await new Promise((done) => setTimeout(done, got === 'picture' ? 40 : got === 'dark' ? 300 : 1500));
     }
   } catch (e) {
     log('control center frames:', e.message);

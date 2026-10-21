@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const { EventEmitter } = require('events');
+const { png } = require('./png');
 
 const [assets, serviceDir] = process.argv.slice(2);
 const APPS = fs.readFileSync(path.join(assets, 'apps.txt'), 'utf8').trim().split(',').map((s) => s.split('|'));
@@ -244,8 +245,13 @@ global.__stubLuna = (uri, params) => {
   // the Control Center over other apps: LG's system UI manager, and a frame of the video for its glass
   if (/systemUIManager\/(launch|closeByAppId)$/.test(uri)) return { returnValue: true };
   if (uri === 'luna://com.webos.service.capture/executeOneShot') {
-    fs.writeFileSync(params.path, 'a frame of the video');
-    return { returnValue: true };
+    // <assets>/capture.json, when it's there: what the TV gives for each method: "picture" (the
+    // default), "black" (video it couldn't capture), or "busy" (its one video capture taken, as PicCap takes it)
+    let kind = 'picture';
+    try { kind = JSON.parse(fs.readFileSync(path.join(assets, 'capture.json'), 'utf8'))[params.method] || kind; } catch (e) { /* the default */ }
+    if (kind === 'busy') return { returnValue: false, errorCode: 2, errorText: 'ERROR_NOT_INITIALIZED' };
+    fs.writeFileSync(params.path, png(params.width, params.height, () => (kind === 'black' ? [0, 0, 0] : [90, 120, 160])));
+    return { returnValue: true, capturedWidth: params.width, capturedHeight: params.height };
   }
   if (process.env.HOMEPLUS_PREVIEW_AMBIENT) { /* PicCap's service */
     if (uri === 'luna://org.webosbrew.piccap.service/status') return { returnValue: true, isRunning: ambient.capture };

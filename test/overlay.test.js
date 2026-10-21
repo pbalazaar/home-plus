@@ -12,6 +12,7 @@ const path = require('path');
 const net = require('net');
 const http = require('http');
 const { spawn } = require('child_process');
+const { fileURLToPath } = require('url');
 const { until } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
@@ -104,7 +105,7 @@ test('overlay: the Settings key opens it over the app in front, with the control
   assert.ok(Array.isArray(p.state.controls) && p.state.controls.length, 'the controls on show');
   assert.equal(p.token, token, 'the API token: it can only reach the service over the API');
   assert.equal(p.port, port);
-  const fm = new RegExp(`^file://${path.join(dir, 'frames')}/(homeplus-cc-[^/]+)/frame\\.jpg$`).exec(p.frame);
+  const fm = new RegExp(`^file://${path.join(dir, 'frames')}/(homeplus-cc-[^/]+)/frame\\.png$`).exec(p.frame);
   assert.ok(fm, `a folder of its own for the frames, with a name nobody can guess: ${p.frame}`);
   const frames = path.join(dir, 'frames', fm[1]);
   await until(() => calls('luna://com.webos.service.capture/executeOneShot').length > 1, 3000, 'frames');
@@ -113,7 +114,7 @@ test('overlay: the Settings key opens it over the app in front, with the control
   assert.ok(log.indexOf(grabs[0]) < log.map((c) => c.uri).lastIndexOf('luna://com.webos.service.systemUIManager/launch'),
     'taken before the panel is opened over it');
   assert.equal(grabs[1].params.method, 'VIDEO', 'then the video only, not what is drawn over it');
-  await until(() => fs.existsSync(path.join(frames, 'frame.jpg')), 3000, 'the frame file');
+  await until(() => fs.existsSync(path.join(frames, 'frame.png')), 3000, 'the frame file');
   assert.equal(fs.statSync(frames).mode & 0o777, 0o700, 'frames are what is on screen: root only');
   await call('POST', '/api/overlay', { body: { event: 'closed' } });
 });
@@ -135,7 +136,7 @@ test('overlay: it asks for what it can\'t do itself, and nothing else', async ()
 test('overlay: once it has closed, the frames stop and are deleted', async () => {
   await call('POST', '/api/key', { body: { key: 'settings' } });
   const frames = () => fs.readdirSync(path.join(dir, 'frames'));
-  await until(() => frames().some((f) => fs.existsSync(path.join(dir, 'frames', f, 'frame.jpg'))), 3000, 'a frame');
+  await until(() => frames().some((f) => fs.existsSync(path.join(dir, 'frames', f, 'frame.png'))), 3000, 'a frame');
   assert.equal((await call('POST', '/api/overlay', { body: { event: 'closed' } })).status, 200);
   await until(() => frames().length === 0, 3000, 'the frames to go');
   const n = calls('luna://com.webos.service.capture/executeOneShot').length;
@@ -167,5 +168,49 @@ test('overlay: with Reduce Transparency (solid panels), no frames of the video a
     await call('POST', '/api/overlay', { body: { event: 'closed' } });
   } finally {
     await call('POST', '/api/prefs', { body: { reduceTransparency: false } });
+  }
+});
+
+// opens it with the stand-in TV's capture giving `what` ({DISPLAY, VIDEO}: see harness.js); its frames'
+// folder, once it has taken the screen and asked for the video twice (the first answer dealt with)
+async function openWith(what) {
+  fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify(what));
+  const grabs = () => calls('luna://com.webos.service.capture/executeOneShot').length, before = grabs();
+  assert.deepEqual((await call('POST', '/api/key', { body: { key: 'settings' } })).json, { opened: 'overlay' });
+  await until(() => grabs() >= before + 3, 5000, 'the screen, then the video twice');
+  return path.dirname(fileURLToPath(calls('luna://com.webos.service.systemUIManager/launch').at(-1).params.params.frame));
+}
+async function close() {
+  await call('POST', '/api/overlay', { body: { event: 'closed' } });
+  fs.rmSync(path.join(dir, 'capture.json'), { force: true });
+}
+
+test('overlay: video the TV can\'t capture gives the glass no picture (it\'s a tint over the video), not a black one', async () => {
+  /* PicCap has the TV's one video capture: none of the video, and the screen's is black where it plays */
+  try {
+    const frames = await openWith({ DISPLAY: 'black', VIDEO: 'busy' });
+    assert.deepEqual(fs.readdirSync(frames), [], 'no frame, and nothing left over');
+  } finally {
+    await close();
+  }
+});
+
+test('overlay: over an app with no video, the screen as it opened stays the glass\'s picture', async () => {
+  try {
+    const frames = await openWith({ VIDEO: 'busy' });
+    assert.deepEqual(fs.readdirSync(frames), ['frame.png']);
+  } finally {
+    await close();
+  }
+});
+
+test('overlay: once the video goes black (or can\'t be captured), its last frame goes', async () => {
+  try {
+    const frames = await openWith({});
+    assert.ok(fs.existsSync(path.join(frames, 'frame.png')), 'a frame of the video');
+    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'black' }));
+    await until(() => !fs.existsSync(path.join(frames, 'frame.png')), 3000, 'the frame to go');
+  } finally {
+    await close();
   }
 });

@@ -59,7 +59,8 @@ FocusScope {
     // (see the service; the TV gives about three a second, each a third of a second old), loaded in
     // turn into two images, blurred hard and small so the glass carries the video's colours rather
     // than its detail (which would show the delay), the newer faded in over the older. A blur runs
-    // when its frame comes, not every frame.
+    // when its frame comes, not every frame. No frame (none yet, or the video can't be captured):
+    // the glass is a tint over what's there.
     property real fade: 0          // 0: frame A on show, 1: frame B
     property int frameN: 0
     property bool hasFrame: false
@@ -73,12 +74,12 @@ FocusScope {
     Image {
         id: frameA
         visible: false; width: 160; height: 90; sourceSize: Qt.size(160, 90); cache: false; asynchronous: true
-        onStatusChanged: if (status === Image.Ready) view.show(0)
+        onStatusChanged: if (status === Image.Ready) view.show(0); else if (status === Image.Error) view.hasFrame = false
     }
     Image {
         id: frameB
         visible: false; width: 160; height: 90; sourceSize: Qt.size(160, 90); cache: false; asynchronous: true
-        onStatusChanged: if (status === Image.Ready) view.show(1)
+        onStatusChanged: if (status === Image.Ready) view.show(1); else if (status === Image.Error) view.hasFrame = false
     }
     NumberAnimation { id: fadeTo; target: view; property: "fade"; duration: 140; easing.type: Easing.InOutQuad }
     function show(which) { // the first frame at once; then each fades in
