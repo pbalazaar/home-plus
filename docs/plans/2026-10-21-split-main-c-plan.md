@@ -23,12 +23,12 @@ The code already has section dividers (`/* ---- ... */`). Those sections are whe
 |---|---|---|
 | 1–432 | layout `#define`s, enums, tables (`CC_ICONS`, `TINTS`, `LOOK_NAME`), types (`App`, `RailItem`, `CCItem`, `SheetItem`, `Pic`, `Action`), the global `S` | 430 |
 | 433–591 | helpers: `approach`, `spring`, `toast`, `log_remote`, JSON and string helpers, `item_app`, `media_source` | 160 |
-| 592–1164 | items and layout, `parse_apps`, the Top Shelf rail (`rail_fill`, `parse_continue`), `parse_control`, `parse_featured`, `parse_system`, plus 35 forward declarations | 570 |
-| 1165–1442 | uniform tiles: `make_cover`, `make_logo` (pixel code only) | 280 |
-| 1443–1741 | `handle_result`: one switch over 30 `TAG_*`s, some with long inline bodies (sign-in, Trakt, prefs) | 300 |
+| 592–1164 | items and layout, `parse_apps`, the Top Shelf rail (`rail_fill`, `parse_continue`), `parse_control`, `parse_featured`, `parse_system`, plus 24 forward declarations | 570 |
+| 1165–1442 | uniform tiles: `make_cover`, `make_logo` (pixel code; reads only `S.vivid_covers`) | 280 |
+| 1443–1741 | `handle_result`: one switch over the 29 `TAG_*`s, some with long inline bodies (sign-in, Trakt, prefs) | 300 |
 | 1742–2015 | launching, sheet open/close, focus rects, Recents (`sw_*`) | 270 |
 | 2016–2165 | first run (`setup_*`, `on_status`, `on_elevate`) | 150 |
-| 2166–2725 | Settings pages, swatches, and `run_action` (a 300-line switch over 43 `ACT_*`s) | 560 |
+| 2166–2725 | Settings pages, swatches, and `run_action` (a 300-line switch with 43 cases over the 46 `ACT_*`s) | 560 |
 | 2726–3332 | Control Center: packing, editing, lists, gallery, `activate`, `move_focus`, `go_home` | 600 |
 | 3333–3660 | input: remote keys, the pointer, `on_key_down`/`up`, hit-testing | 330 |
 | 3661–3936 | animation: Top Shelf paging, `update()` | 275 |
@@ -81,23 +81,30 @@ function, add its prototype to `home.h`, and add the file to `SRC` in `native/Ma
 that calls nothing else in `main.c`) so each one needs few new prototypes.
 
 0. **Baseline and safety net** (before any move; see section 4):
-   - render every preview screen into `build/screens-before/`;
-   - add `tools/native-preview/compare-screens.py` (pixel diff against the baseline, ignoring the clock's rect);
+   - render every preview screen into `build/screens-before/`, twice: the second run measures the noise (see section 4);
+   - add `tools/native-preview/compare-screens.py` (pixel diff against the baseline, with the clock masked and a
+     tolerance for the scenes caught mid-animation);
    - make `test/qml-sizes.test.js` read its `#define`s from `home.h`, and run its apostrophe and "No room" checks over
-     every `native/src/*.c` instead of `main.c` alone. Otherwise the checks would quietly stop covering moved code.
-1. **`home.h`**: lines 32–432 (layout, enums, types, `State`). Tables that only one file uses (`CC_ICONS`, `TINTS`,
-   `LOOK_NAME`, `SRC_ID`/`SRC_NAME`) stay as `static const` in their file. In a header they'd trip
-   `-Wunused-const-variable` in every file that doesn't use them.
-2. **`util.c`**, with `approach`, `spring` and `smooth01` as `static inline` in `home.h` (they run for every element,
-   every frame, so they should still inline).
-3. **`tiles.c`**: pure pixel code that only touches `App`. This is the easiest cut.
+     every `native/src/*.c` instead of `main.c` alone. This isn't optional: tried on a copy after steps 1–3, three of
+     its six tests fail (the `#define`s are gone from `main.c`), and the copy test keeps passing while it no longer
+     sees the strings that moved.
+1. **`home.h`**: lines 32–432 (layout, enums, types, `State`). `TINTS`/`NTINTS` (Settings, prefs, `draw_face`, the sheet,
+   input) and `SRC_ID`/`SRC_NAME` (the shelf, sign-in, Settings, actions, drawing, `main`) are used from five or six of
+   the new files, so they go in `home.h` as `static const`: GCC's `-Wall` doesn't warn about an unused `static const`
+   from a header in C (that's `-Wunused-const-variable=2`, which nothing enables; checked). `CC_ICONS` (only `cc_icon`)
+   and `LOOK_NAME` (only Settings) stay in their own file, for tidiness rather than warnings.
+2. **`util.c`**, with `approach`, `spring`, `smooth01` and the one-line `tex_free` as `static inline` in `home.h` (the
+   first three run for every element, every frame, so they should still inline; `tex_free` is called everywhere).
+3. **`tiles.c`**: pixel code that reads `S.vivid_covers` and calls only `r_tex`, `tex_free` and `smooth01`. This is the
+   easiest cut.
 4. **`draw.c`, primitives only**: `draw_text`, `sway`, `glass`, `panel`, `ensure_label`, `ensure_big`, `lift`,
    `draw_face`, `draw_skeleton`, `draw_scrims`, `draw_marquee`. These come early because the feature files' drawing
    calls them.
 5. **`sheet.c`**
 6. **`recents.c`**
-7. **`cc.c` and `cc_list.c`**. The file-scope `special_s`/`special_v` (the Hidden tile's focus) stay with tile drawing in
-   `draw.c`.
+7. **`cc.c` and `cc_list.c`**. The file-scope `special_s`/`special_v` (the Hidden tile's focus) are used by `update()`
+   (which stays in `main.c`) and `draw_tile` (`draw.c`), so they can't stay file-scope: they become two fields of
+   `State`, the only renaming besides `S`'s type.
 8. **`shelf.c`**
 9. **`apps.c`**
 10. **`setup.c` and `accounts.c`**. Moving the sign-in case bodies out of `handle_result` into named functions is the one
@@ -121,9 +128,22 @@ or three PRs.
 
 - `make -C native` builds with no warnings, under `-Wall -Wextra` and a local `-Werror`. A function left behind that
   nothing calls now shows up as `-Wunused-function`, which is a useful signal for this refactor.
-- `tools/test.sh screens`, then `compare-screens.py build/screens-before build/screens`: every scene must be identical
-  outside the clock. `check-screens.py` alone isn't enough: it only checks that each scene isn't blank and isn't the
-  home screen.
+- `tools/test.sh screens`, then `compare-screens.py build/screens-before build/screens`. `check-screens.py` alone isn't
+  enough: it only checks that each scene isn't blank and differs from the home screen by more than 0.1% of its pixels,
+  so a scene can be wrong by less than that and pass.
+
+  The screens aren't pixel-identical from run to run, so "identical" can't be the bar. Measured, two runs of the same
+  binary: 33 of 36 scenes match outside the clock (at most a 16-level difference in a few pixels); `cc-editing`,
+  `cc-options` and `move-hint` differ by up to 0.3% of their pixels, all inside the wobbling controls or the picked
+  tile, and `crossfade` can catch a fade a step apart. The clock capsule (x 1660–1802, y 50–110 on these runs) differs
+  whenever the minute changes. So the script:
+  - masks the band x 1580–1880, y 40–120;
+  - counts the pixels that differ by more than 16 levels, and prints that share and its bounding box per scene;
+  - passes a scene below 0.5%, and prints the rest for a look. A moved block that changed behaviour shows up as a
+    difference elsewhere than those boxes, or on a scene that's otherwise still.
+
+  A deterministic preview (a fixed step per frame when `HOMEPLUS_SCREENSHOT` is set) would make the bar "identical",
+  but that's a code change, so it's in section 6.
 - `git diff --color-moved=dimmed-zebra --color-moved-ws=allow-indentation-change` shows that the moved blocks didn't
   change.
 - `node --test test/*.test.js`, for the updated `qml-sizes` test.
@@ -136,19 +156,24 @@ or three PRs.
 - **Conflicts with work in progress.** Commits that only move code conflict with every open branch that touches
   `main.c`. Do the split when nothing else is open, keep each PR short-lived, and rebase other branches straight after.
 - **Global names.** Functions that lose `static` (`toast`, `launch`, `wake`, `update`, `render`, `glass`, `panel`,
-  `minutes`) become external symbols. They don't clash with libc, SDL or cJSON, and the binary doesn't export them
-  dynamically (no `-rdynamic`), so they can't interpose on the libraries `luna.c` loads with `dlopen`. If the linker
-  reports a duplicate, rename that one function in its own commit.
+  `minutes`, `activate`, `lift`, `sway`) become external symbols. Checked against the exports of libc, libm, SDL2 and
+  cJSON: none clash. The binary doesn't export them dynamically (no `-rdynamic`), so they can't interpose on the
+  libraries `luna.c` loads with `dlopen`. If the TV's linker still reports a duplicate, rename that one function in its
+  own commit.
 - **Inlining.** Calls across files at `-O2` no longer inline. The hot helpers become `static inline` in `home.h` (step 2).
   Everything else runs once per frame or per event, so the cost doesn't matter. `-flto` is available if a profile ever
   disagrees.
-- **Preview-only paths.** `getenv("HOMEPLUS_…")` switches are spread through the code. Moving them doesn't change them,
-  and the screens step runs every scene they drive.
+- **Preview-only paths.** Not a risk, as it turns out: `main.c` reads only three variables (`HOMEPLUS_SCREENSHOT`,
+  `HOMEPLUS_SCREENSHOT_MS`, `HOMEPLUS_REST_REPORT_MS`), all inside `main()`, which doesn't move; the key and pointer
+  scripts live in `preview.c`. Nothing in `tools/`, `docker/` or CI names a source file: the Makefile's `SRC` is the
+  one list, and the TV build goes through the same Makefile.
 
 ## 6. Later, optional: changes that aren't only moves
 
 Each of these is a separate PR after the split, and each still renders the same screens:
 
+- **A deterministic preview.** With `HOMEPLUS_SCREENSHOT` set, step the animations by a fixed `dt` per frame (and show
+  a fixed time on the clock), so two renders of one build are identical and `compare-screens.py` can demand that.
 - **Split `update()` into per-feature `*_update(dt, &anim)` functions**, as `sw_update` already does for Recents
   (`shelf_update`, `cc_update`, `sheet_update`, `idle_update`). That brings `main.c` down to about 400 lines.
 - **Group `S`'s loose fields** the way `S.recents`, `S.sheet` and `S.cc` already are: `S.shelf` (rail and paging),
@@ -175,3 +200,22 @@ part of this plan:
   The service's tests already exercise these modules through the HTTP API.
 - **`native/qml/ControlCenterView.qml` (1,368 lines).** It could split into components for the grid, the lists, the
   gallery and the sheets. `test/qml-sizes.test.js` and `tools/qml-check` cover it.
+
+## 8. What was checked
+
+Done on a copy of the tree on 2026-10-21, on a Linux desktop (the host build, Xvfb and Mesa), before this plan was
+settled; the numbers above come from it:
+
+- **Steps 1–3, as a dry run.** A script cut `home.h` (lines 32–432 with `typedef struct {...} State; extern State S;`,
+  `CC_ICONS` and `LOOK_NAME` left in `main.c`, plus the four inline helpers and two prototypes) and `tiles.c` (lines
+  1165–1442, `make_cover` and `make_logo` no longer `static`) out of `main.c`, and added `src/tiles.c` to `SRC`. It built
+  with no warnings under `-Wall -Wextra -Werror` at the first attempt. `main.c` went from 5,400 to 4,734 lines.
+- **The screens of that build**, all 36, against two renders of the unchanged build: the same outside the clock, except
+  the three animated scenes above, which differ from each other by the same amounts the two baseline renders do.
+- **`test/qml-sizes.test.js` on that copy**: 3 of 6 tests fail, and the copy test passes while covering less. Hence
+  step 0.
+- **The names that lose `static`**: looked up in `nm -D` of libc, libm and SDL2, and in cJSON's header: no clash.
+- **`-Wunused-const-variable`**: a `static const` table in a header included by a file that doesn't use it gives no
+  warning under `-Wall -Wextra` in C; it does under `-Wunused-const-variable=2`, which the Makefile doesn't set.
+- **Not checked:** the TV build and the package check, which need the ARM toolchain, and the TV itself. Those are
+  still the end-of-PR checks in section 4.
