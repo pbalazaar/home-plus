@@ -410,6 +410,21 @@ extern State S;
 /* Tinted's colours on their row in App Icons: swatch i's centre, the row's right end like a value's */
 #define SWATCH_D 34
 
+/* ------------------------------------------------------------------ input */
+
+/* LG's own key numbers: SDL_WEBOS_SCANCODE_* in LG's SDL_webOS.h, which the vendored
+ * 2.0.14 headers don't have. Like the arrows they arrive in keysym.sym (Back is sym=482).
+ * Settings and Input never showed up in the key log on the C3: webOS opens its own menus. */
+enum {
+    WEBOS_KEY_BACK = 482,
+    WEBOS_KEY_CURSOR_SHOW = 484, /* the Magic Remote pointer woke up / went to sleep: not presses */
+    WEBOS_KEY_CURSOR_HIDE = 485,
+    WEBOS_KEY_RED = 486,
+    WEBOS_KEY_GREEN = 487,
+    WEBOS_KEY_YELLOW = 488,
+    WEBOS_KEY_BLUE = 489
+};
+
 static inline float approach(float *v, float target, float speed, float dt, int *moving)
 {
     float d = target - *v;
@@ -454,8 +469,13 @@ static inline float smooth01(float a, float b, float x)
 }
 
 /* main.c */
+void launch(const char *id, const char *hint);
 void focus_rect(float *x, float *y, float *w, float *h);
+void close_apps(const char *id);
+App *app_by_id(const char *id);
 float swatch_x(float bx, float bw, int i);
+int is_back(SDL_Keycode k);
+void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop);
 
 /* util.c */
 void log_remote(const char *fmt, ...);
@@ -502,5 +522,14 @@ int sheet_rows(int nfoot);
 void draw_sheet_button(const SheetItem *it, int focused, float bx, float y, float bw, float k, Uint8 ca);
 void draw_sheet(void);
 void draw_ghost(void);
+
+/* recents.c */
+void sw_reset(void);
+void sw_open(void);
+void sw_fill(const char *json);
+void sw_ok(void);
+void sw_update(float dt, int *anim);
+void sw_key(SDL_Keycode k);
+void draw_switcher(void);
 
 #endif
