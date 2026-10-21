@@ -1,4 +1,4 @@
-/* The Control Center over other apps (native/qml) is drawn as Home+'s own (native/src/main.c), and
+/* The Control Center over other apps (native/qml) is drawn as Home+'s own (native/src), and
  * its sizes are copies of the launcher's: these keep the two in step. */
 'use strict';
 
@@ -8,19 +8,24 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const C = fs.readFileSync(path.join(ROOT, 'native/src/main.c'), 'utf8');
+/* the launcher's own code: main.c, home.h and the files that include it (not the libraries: render.c, net.c, ...) */
+const SRC = path.join(ROOT, 'native/src');
+const C = fs.readdirSync(SRC).filter((f) => /\.[ch]$/.test(f)).sort()
+  .map((f) => [f, fs.readFileSync(path.join(SRC, f), 'utf8')])
+  .filter(([f, src]) => f === 'main.c' || f === 'home.h' || src.includes('#include "home.h"'))
+  .map(([, src]) => src).join('\n');
 const QML = fs.readFileSync(path.join(ROOT, 'native/qml/ControlCenterView.qml'), 'utf8');
 
-/* a #define's number, in main.c */
+/* a #define's number, in the launcher */
 function define(name) {
   const m = new RegExp(`^#define ${name} (\\d+)\\b`, 'm').exec(C);
-  assert.ok(m, `main.c defines ${name}`);
+  assert.ok(m, `the launcher defines ${name}`);
   return Number(m[1]);
 }
-/* a #define's colour, in main.c: "255, 90, 80" */
+/* a #define's colour, in the launcher: "255, 90, 80" */
 function defineRgb(name) {
   const m = new RegExp(`^#define ${name} (\\d+), (\\d+), (\\d+)\\b`, 'm').exec(C);
-  assert.ok(m, `main.c defines ${name} as r, g, b`);
+  assert.ok(m, `the launcher defines ${name} as r, g, b`);
   return m.slice(1).map(Number);
 }
 /* a readonly int's value, in ControlCenterView.qml, worked out from the ones before it */
@@ -44,7 +49,7 @@ test('qml sizes: the overlay\'s grid is where Home+\'s is, in the same units', (
   assert.equal(seen.gap, define('CC_G'));
   assert.equal(seen.rightEdge, define('W') - define('DOCK_X'), 'RIGHT');
   assert.equal(seen.gridX, seen.rightEdge - 4 * define('CC_U') - 3 * define('CC_G'), 'cc_grid_x()');
-  assert.match(C, /static float cc_grid_y\(void\) \{ return TOP_Y \+ BAR \+ 26; \}/, 'cc_grid_y() as the overlay has it');
+  assert.match(C, /(?:static )?float cc_grid_y\(void\) \{ return TOP_Y \+ BAR \+ 26; \}/, 'cc_grid_y() as the overlay has it');
   assert.equal(seen.gridY, define('TOP_Y') + define('BAR') + 26, 'cc_grid_y()');
   assert.equal(prop('gridRows'), define('CC_ROWS'), 'as many rows');
 });
@@ -80,7 +85,7 @@ function onScreen(src) {
 }
 
 test('copy: apostrophes are curly, and no room is "No room"', () => {
-  for (const [file, src] of [['main.c', C], ['ControlCenterView.qml', QML]]) {
+  for (const [file, src] of [['the launcher', C], ['ControlCenterView.qml', QML]]) {
     const straight = onScreen(src).filter((t) => /[A-Za-z]'[a-z]/.test(t));
     assert.deepEqual(straight, [], `${file}: straight apostrophes`);
     assert.doesNotMatch(src, /No Room/, `${file}: "No room", as the hints are in sentence case`);
