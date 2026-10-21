@@ -110,7 +110,7 @@ static const struct { const char *name; int icon; } CC_ICONS[] = { /* the servic
 
 /* A control on show: what the service says it is, and where it's placed (cc_pack) */
 typedef struct {
-    char id[24], kind[8], title_s[48], value_s[72];
+    char id[24], kind[8], title_s[48], name_s[48], value_s[72]; /* name: the whole one (the tile's may be short) */
     int icon, units, on, stateful, available; /* units: 1 Small, 2 Wide, 4 Large; stateful: it can be off */
     int col, row, w, h;              /* on the grid; row -1: no room for it */
     Tex *title, *value;
@@ -956,6 +956,7 @@ static void parse_control(const char *json)
             CCItem *c = &S.cc.it[S.cc.n++];
             snprintf(c->id, sizeof c->id, "%s", jstr(v, "id"));
             snprintf(c->kind, sizeof c->kind, "%s", jstr(v, "kind"));
+            snprintf(c->name_s, sizeof c->name_s, "%s", jstr(v, "name"));
             const char *size = jstr(v, "size");
             c->units = !strcmp(size, "large") ? 4 : !strcmp(size, "wide") ? 2 : 1;
             c->icon = cc_icon(jstr(v, "icon"));
@@ -2660,20 +2661,31 @@ static void cc_list_texts(void)
     }
 }
 
+/* While the Control Center is being edited, the home screen steps back (as iOS's does): this much
+ * black over it, 0..1, in the picture its glass refracts too, so the glass over the dock (Reset,
+ * the hints) dims with what's under it */
+static float cc_edit_dim(void)
+{
+    return S.cc.editing ? 150 / 255.0f * fminf(fmaxf(S.cc.t, 0), 1) : 0;
+}
+
 /* The gallery's layout: each group's name, then its controls four to a row, buttons with their names
- * under them (as iOS 18's Add a Control shows them) */
-#define GAL_PAD 16
+ * under them (as iOS 18's Add a Control shows them). Wider than the grid (its right edge the grid's),
+ * so names read from the couch */
+#define GAL_W 600
+#define GAL_PAD 24
 #define GAL_HEAD 66
 #define GAL_GROUP 34
 #define GAL_BTN 72
-#define GAL_ROW 126
+#define GAL_ROW 144
+#define GAL_NAME_PX 20
 static void cc_gallery_build(void)
 {
     for (int i = 0; i < MAX_CAT; i++) tex_free(&S.cc.gal_label[i][0]), tex_free(&S.cc.gal_label[i][1]);
     for (int i = 0; i < 6; i++) tex_free(&S.cc.gal_head[i]);
     tex_free(&S.cc.list_title);
     S.cc.list_title = text_render(S.f_semi, 24, "Add a Control", 0, &S.cc.ltw, &S.cc.lth);
-    float cw = (4 * CC_U + 3 * CC_G - 2 * GAL_PAD) / 4.0f, y = GAL_HEAD;
+    float cw = (GAL_W - 2 * GAL_PAD) / 4.0f, y = GAL_HEAD;
     const char *group = "";
     int col = 4;
     S.cc.gal_n = S.cc.gal_nhead = 0;
@@ -2683,7 +2695,7 @@ static void cc_gallery_build(void)
         if (strcmp(e->group, group) && S.cc.gal_nhead < 6) { /* a new group: its name */
             if (col < 4) y += GAL_ROW;
             group = e->group;
-            S.cc.gal_head[S.cc.gal_nhead] = text_render(S.f_semi, 18, group, 0, &S.cc.gal_hw[S.cc.gal_nhead], &S.cc.gal_hh[S.cc.gal_nhead]);
+            S.cc.gal_head[S.cc.gal_nhead] = text_render(S.f_semi, 22, group, 0, &S.cc.gal_hw[S.cc.gal_nhead], &S.cc.gal_hh[S.cc.gal_nhead]);
             S.cc.gal_hy[S.cc.gal_nhead++] = y;
             y += GAL_GROUP;
             col = 0;
@@ -2696,23 +2708,23 @@ static void cc_gallery_build(void)
         S.cc.gal_x[k] = GAL_PAD + col * cw + (cw - GAL_BTN) / 2;
         S.cc.gal_y[k] = y;
         int room = (int)cw + 6, w0, h0, split = -1, best = 1 << 30; /* (a name may reach into the gap) */
-        Tex *t = text_render(S.f_medium, 15, e->title, 0, &w0, &h0);
+        Tex *t = text_render(S.f_medium, GAL_NAME_PX, e->title, 0, &w0, &h0);
         tex_free(&t);
         for (const char *sp = e->title; w0 > room && (sp = strchr(sp, ' ')); sp++) { /* two lines: the split whose longer line is shortest */
             char first[48];
             int w1, w2, h;
             snprintf(first, sizeof first, "%.*s", (int)(sp - e->title), e->title);
-            t = text_render(S.f_medium, 15, first, 0, &w1, &h), tex_free(&t);
-            t = text_render(S.f_medium, 15, sp + 1, 0, &w2, &h), tex_free(&t);
+            t = text_render(S.f_medium, GAL_NAME_PX, first, 0, &w1, &h), tex_free(&t);
+            t = text_render(S.f_medium, GAL_NAME_PX, sp + 1, 0, &w2, &h), tex_free(&t);
             if ((w1 > w2 ? w1 : w2) < best) best = w1 > w2 ? w1 : w2, split = (int)(sp - e->title);
         }
         if (split >= 0) { /* "Dynamic" / "Tone Mapping" */
             char first[48];
             snprintf(first, sizeof first, "%.*s", split, e->title);
-            S.cc.gal_label[k][0] = text_render(S.f_medium, 15, first, room, &S.cc.gal_lw[k][0], &S.cc.gal_lh[k][0]);
-            S.cc.gal_label[k][1] = text_render(S.f_medium, 15, e->title + split + 1, room, &S.cc.gal_lw[k][1], &S.cc.gal_lh[k][1]);
+            S.cc.gal_label[k][0] = text_render(S.f_medium, GAL_NAME_PX, first, room, &S.cc.gal_lw[k][0], &S.cc.gal_lh[k][0]);
+            S.cc.gal_label[k][1] = text_render(S.f_medium, GAL_NAME_PX, e->title + split + 1, room, &S.cc.gal_lw[k][1], &S.cc.gal_lh[k][1]);
         } else {
-            S.cc.gal_label[k][0] = text_render(S.f_medium, 15, e->title, room, &S.cc.gal_lw[k][0], &S.cc.gal_lh[k][0]);
+            S.cc.gal_label[k][0] = text_render(S.f_medium, GAL_NAME_PX, e->title, room, &S.cc.gal_lw[k][0], &S.cc.gal_lh[k][0]);
         }
         col++;
     }
@@ -2825,7 +2837,7 @@ static void cc_long_press(void)
     if (S.cc.index >= S.cc.n) return;
     const CCItem *c = &S.cc.it[S.cc.index];
     int e = cc_cat(c->id);
-    sheet_open(c->title_s);
+    sheet_open(c->name_s[0] ? c->name_s : c->title_s);
     static const char *const NAME[5] = { "", "Small", "Wide", "", "Large" };
     for (int k = 0; e >= 0 && S.cc.cat[e].sizes[k]; k++) {
         int u = S.cc.cat[e].sizes[k];
@@ -4275,7 +4287,7 @@ static void draw_cc_list(float a)
  * as round buttons with their names under them; the focused one white, like the controls themselves */
 static void draw_cc_gallery(float a)
 {
-    float x = cc_grid_x(), y = cc_grid_y(), w = 4 * CC_U + 3 * CC_G, h = S.cc.gal_h;
+    float x = RIGHT - GAL_W, y = cc_grid_y(), w = GAL_W, h = S.cc.gal_h;
     if (!S.reduce_motion) y -= 12 * (1 - a); /* it settles in */
     r_shadow(x, y, w, h, 34, 30, 12, 0.35f * a);
     panel(0, x, y, w, h, 34, 1, 0, a);
@@ -4316,8 +4328,8 @@ static void draw_control_center(void)
     float open = fminf(fmaxf(S.cc.t, 0), 1), lt = fminf(fmaxf(S.cc.list_t, 0), 1);
     float stagger = S.cc.n > 1 ? fminf(0.04f, 0.45f / (S.cc.n - 1)) : 0, span = 1 - stagger * (S.cc.n > 1 ? S.cc.n - 1 : 0);
     Uint32 now = SDL_GetTicks();
-    float ed = S.cc.editing ? open : 0; /* (also behind the gallery: still editing) */
-    if (ed > 0.004f) r_fill(0, 0, 0, (Uint8)(150 * ed)); /* editing: the home screen steps back, as iOS's does */
+    float dim = cc_edit_dim(); /* (also behind the gallery: still editing) */
+    if (dim > 0.002f) r_fill(0, 0, 0, (Uint8)(255 * dim)); /* editing: the home screen steps back */
     for (int i = 0; i < S.cc.n; i++) {
         CCItem *c = &S.cc.it[i];
         float x, y, w, h;
@@ -4499,6 +4511,7 @@ static int render(float dt, const char *shot)
     if (S.sheet.open || S.ghost.on || S.toast_t > 0.01f || S.recents.t > 0.004f || S.cc.t > 0.004f) { /* overlays refract the whole scene */
         r_backdrop_begin();
         draw_scene(1);
+        if (cc_edit_dim() > 0.002f) r_fill(0, 0, 0, (Uint8)(255 * cc_edit_dim())); /* (what the glass refracts steps back too) */
         r_backdrop_end();
     }
     draw_switcher();

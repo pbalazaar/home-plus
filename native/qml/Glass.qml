@@ -15,6 +15,7 @@ Item {
     property real fade: 0          // 0: A, 1: B
     property bool live: false      // there's a picture
     property bool solid: false     // Reduce Transparency
+    property real dim: 0           // the picture behind stepped back (editing): this much black over it
     property real radius: height / 2
     property real screenX: 0       // where it is on the screen, before any movement
     property real screenY: 0
@@ -28,6 +29,7 @@ Item {
         property variant srcA: glass.sourceA
         property variant srcB: glass.sourceB
         property real fade: glass.fade
+        property real dim: glass.dim
         property rect area: Qt.rect(glass.screenX / 1920, glass.screenY / 1080, glass.width / 1920, glass.height / 1080)
         property real radius: Math.min(glass.radius, Math.min(width, height) / 2)
         property size box: Qt.size(width, height)
@@ -36,6 +38,7 @@ Item {
             uniform sampler2D srcA;
             uniform sampler2D srcB;
             uniform lowp float fade;
+            uniform lowp float dim;
             uniform highp vec4 area;
             uniform highp float radius;
             uniform highp vec2 box;
@@ -58,7 +61,7 @@ Item {
                 highp float bevel = t * t;
                 highp vec2 sp = p - n * (bevel * band * 0.9);
                 highp vec2 uv = area.xy + (sp / box + 0.5) * area.zw;
-                lowp vec3 col = mix(texture2D(srcA, uv).rgb, texture2D(srcB, uv).rgb, fade);
+                lowp vec3 col = mix(texture2D(srcA, uv).rgb, texture2D(srcB, uv).rgb, fade) * (1.0 - dim);
                 col *= 1.0 - 0.10 * bevel;
                 lowp float lum = dot(col, vec3(0.299, 0.587, 0.114));
                 col *= 1.0 - 0.35 * smoothstep(0.35, 0.75, lum);

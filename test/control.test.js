@@ -241,3 +241,17 @@ test('control: extra controls (like ambient light) join the catalogue', async ()
   await control.act('run', 'lamp');
   assert.deepEqual((await control.state()).controls[0].value, 'On');
 });
+
+test('control: a name too long for a Wide tile has a short one there; its options and the gallery have the whole', async () => {
+  const extra = [{ id: 'lamp', title: 'Ambient Light Strip', short: 'Lamp', kind: 'switch', icon: 'ambient', group: 'Ambient Light',
+    sizes: ['wide'], available: async () => true, read: async () => ({ on: false, value: 'Off' }), run: async () => {} }];
+  const mem = memoryConfig({ controlCenter: [{ id: 'brightness', size: 'wide' }, { id: 'lamp', size: 'wide' }, { id: 'network', size: 'wide' }] });
+  const st = await fakeTv(Object.assign({ extra }, mem)).control.state();
+  const tile = (id) => st.controls.find((c) => c.id === id);
+  assert.deepEqual([tile('brightness').title, tile('brightness').name], ['Brightness', 'OLED Brightness']);
+  assert.deepEqual([tile('lamp').title, tile('lamp').name], ['Lamp', 'Ambient Light Strip'], 'extra controls too');
+  assert.deepEqual([tile('network').title, tile('network').name], ['Wi-Fi', 'Wi-Fi'], 'no short name: the same');
+  assert.equal(st.catalog.find((e) => e.id === 'brightness').title, 'OLED Brightness', 'the gallery has the whole name');
+  const wired = await fakeTv(Object.assign({ wifi: '', wired: true }, memoryConfig({ controlCenter: [{ id: 'network', size: 'wide' }] }))).control.state();
+  assert.deepEqual([wired.controls[0].title, wired.controls[0].name], ['Ethernet', 'Ethernet'], 'what the network is, both');
+});

@@ -51,8 +51,9 @@ const DEFAULT_LAYOUT = [['power', 'large'], ['network', 'wide'], ['screenOff', '
   ['pictureMode', 'wide'], ['eyeComfort', 'wide'], ['inputs', 'small'], ['recents', 'small'], ['accessibility', 'small'],
   ['settings', 'small']].map(([id, size]) => ({ id, size }));
 
-/* extra: more catalogue entries ({ id, title, kind, icon, group, sizes, available(), read(), run() }),
- * like ambient.js's */
+/* extra: more catalogue entries ({ id, title, short, kind, icon, group, sizes, available(), read(), run() }),
+ * like ambient.js's. short: a name for the tile, when the whole one doesn't fit a Wide tile (the
+ * gallery and a control's options use the whole one: its `name`) */
 module.exports = function createControl({ luna, log, readConfig = () => ({}), writeConfig = () => {}, extra = [] }) {
   // the other outputs this TV has used (Optical, Bluetooth...), so Sound can switch back to them
   const used = new Set(readConfig().soundOutputs || []);
@@ -164,13 +165,13 @@ module.exports = function createControl({ luna, log, readConfig = () => ({}), wr
       run: () => act('sound', 'next') },
     Object.assign({ id: 'soundMode', title: 'Sound Mode', icon: 'soundMode', group: 'Picture & Sound', sizes: ['wide', 'small'] },
       setting('sound', 'soundMode', { names: SOUND_MODES })),
-    Object.assign({ id: 'brightness', title: 'OLED Brightness', icon: 'brightness', group: 'Picture & Sound', sizes: ['wide', 'small'] },
+    Object.assign({ id: 'brightness', title: 'OLED Brightness', short: 'Brightness', icon: 'brightness', group: 'Picture & Sound', sizes: ['wide', 'small'] },
       setting('picture', 'backlight', { steps: BRIGHTNESS })),
     Object.assign({ id: 'energySaving', title: 'Energy Saving', icon: 'energy', group: 'Picture & Sound', sizes: ['wide', 'small'] },
       setting('picture', 'energySaving', { names: ENERGY, skip: ['screen_off', 'screenOff'], off: 'off' })), /* Screen Off does that */
     Object.assign({ id: 'gameOptimizer', title: 'Game Optimizer', icon: 'game', group: 'Picture & Sound', sizes: ['wide', 'small'] },
       setting('other', 'gameOptimization', { names: ON_OFF, kind: 'switch', off: 'off' })),
-    Object.assign({ id: 'toneMapping', title: 'Dynamic Tone Mapping', icon: 'hdr', group: 'Picture & Sound', sizes: ['wide', 'small'] },
+    Object.assign({ id: 'toneMapping', title: 'Dynamic Tone Mapping', short: 'Tone Map', icon: 'hdr', group: 'Picture & Sound', sizes: ['wide', 'small'] },
       setting('picture', 'hdrDynamicToneMapping', { names: { on: 'On', off: 'Off', HGIG: 'HGIG' }, off: 'off' })),
     ...extra,
     { id: 'recents', title: 'Recents', kind: 'opens', icon: 'recents', group: 'Home+', sizes: ['small'], available: always },
@@ -236,8 +237,9 @@ module.exports = function createControl({ luna, log, readConfig = () => ({}), wr
       let s = builtin[c.id] || {};
       if (e.read) s = await e.read().catch((err) => { log('control:', c.id, err.message); return { available: false }; });
       const available = avail[CATALOG.indexOf(e)] && s.available !== false;
-      return Object.assign({ id: c.id, size: c.size, title: e.title, kind: e.kind, icon: e.icon, value: '', on: null },
-        s, { available, value: available ? s.value || '' : 'Not Available' });
+      const name = s.title || e.title; /* (a network's is what it is: Wi-Fi, Ethernet) */
+      return Object.assign({ id: c.id, size: c.size, kind: e.kind, icon: e.icon, value: '', on: null }, s,
+        { title: e.short || name, name, available, value: available ? s.value || '' : 'Not Available' });
     }));
     // the gallery: everything that works on this TV, and whether it's placed
     st.catalog = CATALOG.map((e, i) => ({ id: e.id, title: e.title, kind: e.kind, icon: e.icon, group: e.group, sizes: e.sizes,

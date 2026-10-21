@@ -67,7 +67,7 @@ module.exports = function createAmbient({ luna, log }) {
 
   return [
     {
-      id: 'ambientLight', title: 'Ambient Light', kind: 'switch', icon: 'ambient', group: 'Ambient Light', sizes: ['wide', 'small'],
+      id: 'ambientLight', title: 'Ambient Light', short: 'Ambient', kind: 'switch', icon: 'ambient', group: 'Ambient Light', sizes: ['wide', 'small'],
       available: installed(HYPERHDR_DIR),
       read: async () => onOff((await leds()).on),
       run: async () => {
@@ -83,7 +83,7 @@ module.exports = function createAmbient({ luna, log }) {
       }
     },
     {
-      id: 'screenCapture', title: 'Screen Capture', kind: 'switch', icon: 'capture', group: 'Ambient Light', sizes: ['wide', 'small'],
+      id: 'screenCapture', title: 'Screen Capture', short: 'Capture', kind: 'switch', icon: 'capture', group: 'Ambient Light', sizes: ['wide', 'small'],
       available: installed(PICCAP_DIR),
       read: async () => onOff(paused || await capture()),
       run: async () => {

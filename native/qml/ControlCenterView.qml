@@ -110,6 +110,7 @@ FocusScope {
     function tileOf(c) {
         return {
             cid: c.id, size: c.size || "small", kind: c.kind || "", icon: c.icon || "controls", title: c.title || "",
+            name: c.name || c.title || "", // the whole name (the tile's may be short): its options' title
             value: c.value || "", active: c.on === true, disc: c.kind === "switch" && c.on === false,
             available: c.available !== false
         };
@@ -311,7 +312,7 @@ FocusScope {
             items.push({ label: names[sizes[k]] || sizes[k], act: "size", arg: sizes[k], check: sizes[k] === t.size });
         if (!e || !e.pinned) items.push({ label: "Remove", act: "remove", destructive: true }); // not Settings: the only way in
         items.push({ label: "Cancel", act: "cancel" });
-        openSheet(t.title, "", items, 0, t.cid);
+        openSheet(t.name, "", items, 0, t.cid);
     }
 
     // the picked control moves through the order; up and down, to the control in that row nearest
@@ -439,14 +440,17 @@ FocusScope {
         }
     }
 
-    // ---- the gallery: what can be added, by group, as round buttons with their names under them
-    // (main.c: cc_gallery_build; GAL_PAD, GAL_HEAD, GAL_GROUP, GAL_BTN, GAL_ROW)
+    // ---- the gallery: what can be added, by group, as round buttons with their names under them;
+    // wider than the grid, its right edge the grid's (main.c: cc_gallery_build; GAL_W, GAL_PAD,
+    // GAL_HEAD, GAL_GROUP, GAL_BTN, GAL_ROW, GAL_NAME_PX)
 
-    readonly property int galPad: 16
+    readonly property int galW: 600
+    readonly property int galPad: 24
     readonly property int galHead: 66
     readonly property int galGroup: 34
     readonly property int galBtn: 72
-    readonly property int galRow: 126
+    readonly property int galRow: 144
+    readonly property int galNamePx: 20
     property var gallery: []        // [{entry, x, y}]
     property var galleryHeads: []   // [{text, y}]
     property int galleryH: 0
@@ -460,7 +464,7 @@ FocusScope {
             if (!byGroup[e.group]) { byGroup[e.group] = []; groups.push(e.group); }
             byGroup[e.group].push(e);
         }
-        var cw = (gridW - 2 * galPad) / 4, y = galHead, items = [], heads = [];
+        var cw = (galW - 2 * galPad) / 4, y = galHead, items = [], heads = [];
         for (var g = 0; g < groups.length; g++) {
             heads.push({ text: groups[g], y: y });
             y += galGroup;
@@ -589,10 +593,13 @@ FocusScope {
     Rectangle {
         anchors.fill: parent
         color: "black"
-        opacity: view.editing && !view.closing ? 0.4 : 0
-        Behavior on opacity { NumberAnimation { duration: 250 } }
+        opacity: view.editDim
     }
     NumberAnimation on wobble { running: view.editing && !view.still; from: 0; to: 100000; duration: 100000000; loops: Animation.Infinite }
+    // how much the picture steps back while editing: under the glass too, which shows the picture
+    // (so the glass over something bright, Reset say, dims with it)
+    property real editDim: editing && !closing ? 0.4 : 0
+    Behavior on editDim { NumberAnimation { duration: 250 } }
 
     // ---- the clock, as Home+'s header while its Control Center is open (main.c: draw_clock): the
     // time on its own, and the Control Center's circle, grown and white. Over another app it's over
@@ -775,7 +782,7 @@ FocusScope {
                 radius: tile.rad
                 sourceA: glassA; sourceB: glassB; fade: view.fade
                 live: view.hasFrame
-                solid: view.solid
+                solid: view.solid; dim: view.editDim
                 screenX: tile.x
                 screenY: tile.y
                 visible: tile.lit < 0.99 // under white, nothing to see
@@ -953,7 +960,7 @@ FocusScope {
             anchors.fill: parent
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            solid: view.solid
+            solid: view.solid; dim: view.editDim
             screenX: reset.x; screenY: reset.y
             visible: !reset.focused
         }
@@ -1009,7 +1016,7 @@ FocusScope {
             radius: 34
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            solid: view.solid
+            solid: view.solid; dim: view.editDim
             screenX: list.x
             screenY: view.gridY
         }
@@ -1072,9 +1079,9 @@ FocusScope {
         id: gal
         property real t: view.listKind === 3 && !view.closing ? 1 : 0
         Behavior on t { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-        x: view.gridX
+        x: view.rightEdge - view.galW
         y: view.gridY - 12 * (1 - t)
-        width: view.gridW
+        width: view.galW
         height: view.galleryH
         opacity: t
         visible: t > 0.01
@@ -1084,7 +1091,7 @@ FocusScope {
             radius: 34
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            solid: view.solid
+            solid: view.solid; dim: view.editDim
             screenX: gal.x
             screenY: view.gridY
         }
@@ -1117,7 +1124,7 @@ FocusScope {
                 opacity: 0.6
                 font.family: medium.name
                 font.weight: Font.Medium
-                font.pixelSize: 18
+                font.pixelSize: 22
             }
         }
         Repeater {
@@ -1139,14 +1146,14 @@ FocusScope {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: view.galBtn + 8
-                    width: (view.gridW - 2 * view.galPad) / 4 + 6
+                    width: (view.galW - 2 * view.galPad) / 4 + 6
                     horizontalAlignment: Text.AlignHCenter
                     text: parent.it.entry.title
                     color: "white"
                     opacity: parent.f ? 1 : 0.75
                     font.family: medium.name
                     font.weight: Font.Medium
-                    font.pixelSize: 15
+                    font.pixelSize: view.galNamePx
                     wrapMode: Text.WordWrap
                     maximumLineCount: 2
                     lineHeight: 0.9
@@ -1190,7 +1197,7 @@ FocusScope {
             radius: 40
             sourceA: glassA; sourceB: glassB; fade: view.fade
             live: view.hasFrame
-            solid: view.solid
+            solid: view.solid; dim: view.editDim
             screenX: sheetBox.x
             screenY: sheetBox.y
         }
