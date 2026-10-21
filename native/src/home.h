@@ -1,5 +1,16 @@
 /* Home+ native: the launcher's shared layout, types and state (S, its one global), and what each of its files
- * offers the others. render.h, gfx.h, net.h and sound.h are the libraries under it. */
+ * offers the others. render.h, gfx.h, net.h and sound.h are the libraries under it.
+ *
+ * Its files, each with a feature's data, logic and drawing:
+ *   main.c      start-up, the frame loop, update()          results.c  the service's answers
+ *   apps.c      the app list, your layout, launching        shelf.c    the Top Shelf and its carousel
+ *   cc.c        the Control Center                          cc_list.c  its lists and gallery
+ *   sheet.c     sheets (menus)                              settings.c Settings' pages
+ *   actions.c   what sheets' buttons do                     recents.c  Recents (the App Switcher)
+ *   setup.c     first run                                   accounts.c signing in (Stremio, Jellyfin, Plex, Trakt)
+ *   input.c     keys, the pointer, focus                    idle.c     the idle wait, OLED care, offscreen
+ *   draw.c      shared drawing, the home screen             tiles.c    an icon's logo and cover
+ *   util.c      small helpers */
 #ifndef HOMEPLUS_HOME_H
 #define HOMEPLUS_HOME_H
 

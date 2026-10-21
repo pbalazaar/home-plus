@@ -58,10 +58,12 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
     frame rate and the last key code. A failure to load is reported to the service (`overlay failed:` in its log).
 - `native/` — the launcher (`com.github.pbalazaar.homeplus`): C, SDL2 + our own GLES2 renderer
   (`src/render.c`: Liquid Glass shader, SDF shapes, Kawase blur; GL loaded at run time),
-  `src/sound.c` (synthesised focus sounds), OLED idle stages and pixel orbit in `main.c`.
+  `src/sound.c` (synthesised focus sounds). The launcher itself is a file per feature (`src/home.h` lists them,
+  with the layout, types and the one global state `S` they share): OLED idle stages and pixel orbit are in
+  `main.c`'s `update()`, the wait for the next stage in `idle.c`.
   App icon looks (Settings → Display & OLED → App Icons; prefs `iconLook`, `iconTint` from `TINTS`):
-  `draw_face()` draws every tile (dock, big tile, Recents), `FS_LOGO` the logo in one colour or for a
-  dark tile. `make_logo()` cuts a logo out of its icon's background, edge pixels unblended from it
+  `draw_face()` (`draw.c`) draws every tile (dock, big tile, Recents), `FS_LOGO` the logo in one colour or for a
+  dark tile. `make_logo()` (`tiles.c`) cuts a logo out of its icon's background, edge pixels unblended from it
   (a light icon's logo on a dark tile kept a rim of it); Default's sizes still come from the plain key.
   Build only against the vendored SDL **2.0.14** headers in `third_party/SDL2` — newer SDL
   functions don't exist on the TV. Design: `docs/plans/2026-10-20-liquid-glass-design.md`.
@@ -98,6 +100,8 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   titles' pictures from a test's server, `HOMEPLUS_PREVIEW_LUNA_SILENT` (a regular expression) makes
   those luna calls never answer, and `HOMEPLUS_PREVIEW_NO_APPS` has webOS list no apps.
   `tools/native-preview/glass-test.sh <art.jpg> <out.png>` renders a glass test card.
+  `tools/native-preview/compare-screens.py <before> <after>` compares two folders of preview shots, for a change
+  that should draw the same: it leaves out the clock and allows the few scenes caught mid-animation their ~0.3%.
 - Docker on a Mac can see a file before it's fully written: if a build reports
   "expected ... at end of input", just run it again.
 
@@ -153,7 +157,7 @@ appears in your own SSH command line** — it kills the session. Use:
   (sent when the pointer wakes or sleeps, not real presses), Red/Green/Yellow/Blue 486–489 (from
   LG's `SDL_webOS.h`; not seen yet). Settings and Input never reach apps. Keys Home+ doesn't act on
   are logged as `unknown key sym=...`.
-- With the Magic Remote cursor showing, OK arrives as a mouse click at the cursor. `main.c` keeps
+- With the Magic Remote cursor showing, OK arrives as a mouse click at the cursor. `input.c` keeps
   an input mode: arrow/colour/Back keys (and pointer hide, 485) hand control to the keys, and a
   click then presses the keys' focus; the pointer takes over again after 40 px of real travel
   (`PTR_TAKE_PX`), so tremor doesn't. Not yet confirmed whether LG also sends a Return key with that click

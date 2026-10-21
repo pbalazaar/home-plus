@@ -23,7 +23,7 @@ Tex *r_tex(const unsigned char *rgba, int w, int h)
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-/* the service's names for them (control.js), as main.c's CC_ICONS */
+/* the service's names for them (control.js), as cc.c's CC_ICONS */
 static const struct { const char *name; int icon; } GLYPHS[] = {
     { "power", ICON_POWER }, { "wifi", ICON_WIFI }, { "ethernet", ICON_ETHERNET }, { "screenOff", ICON_SCREEN_OFF },
     { "sound", ICON_SOUND }, { "timer", ICON_TIMER }, { "input", ICON_INPUT }, { "recents", ICON_RECENTS },

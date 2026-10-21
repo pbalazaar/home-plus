@@ -4,7 +4,10 @@
  * rounded shapes and text, a few dozen quads a frame. Animations run at the
  * display refresh rate, and when nothing moves the loop sleeps.
  *
- * Data comes from the Home+ service's local API (see service/service.js). */
+ * Data comes from the Home+ service's local API (see service/service.js).
+ *
+ * This file starts it and runs the frame loop: update() advances every animated value, OLED care's
+ * stages and the pixel orbit included. The rest is a file per feature; home.h lists them. */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

@@ -12,7 +12,7 @@ Thanks for helping with Home+. Most people install a release: the `.ipk` on the 
 
 What the TV allows:
 
-- **The launcher** is a 32-bit ARM program that uses the TV's own SDL, version 2.0.14. It's compiled against SDL 2.0.14's headers (`native/third_party/SDL2`), and the package check turns away a launcher that calls an SDL function the TV doesn't have. LG's additions to SDL are looked up while running, the way `main.c` finds `SDL_webOSCursorVisibility`.
+- **The launcher** is a 32-bit ARM program that uses the TV's own SDL, version 2.0.14. It's compiled against SDL 2.0.14's headers (`native/third_party/SDL2`), and the package check turns away a launcher that calls an SDL function the TV doesn't have. LG's additions to SDL are looked up while running, the way `input.c` finds `SDL_webOSCursorVisibility`.
 - **The service** runs on the TV's Node 16, so newer JavaScript, such as `fetch`, isn't there. It has no npm dependencies: its folder is copied to the TV as it is.
 - **The GPU and CPU** are shared with the TV's own apps, and often with PicCap and HyperHDR. Keep the launcher's use of them low.
 

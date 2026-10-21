@@ -1,6 +1,6 @@
 # Split the launcher's main.c
 
-A proposal: nothing here is approved yet.
+Carried out on 2026-10-21, steps 0 to 15, as section 9 describes, with the few differences it lists.
 
 ## Goal
 
@@ -219,3 +219,32 @@ settled; the numbers above come from it:
   warning under `-Wall -Wextra` in C; it does under `-Wunused-const-variable=2`, which the Makefile doesn't set.
 - **Not checked:** the TV build and the package check, which need the ARM toolchain, and the TV itself. Those are
   still the end-of-PR checks in section 4.
+
+## 9. How it was done
+
+The steps were made by a script, not by hand: it cuts the original `main.c` into its top-level pieces (each definition
+with the comments before it), puts each in its file by a table of names, takes `static` off a function only when another
+file calls it, and writes that function's prototype into `home.h`. A define, enum or table goes to the one file that uses
+it, or to `home.h` when several do. Each step is that script run with one more file in the table, so each commit is the
+one before plus that file's moves. It was run on `main.c` as of b9d1d99 (after its code review fixes, which added
+`rail_clear`; that went to `shelf.c`).
+
+Every step was checked before its commit:
+- the host build and the TV build (the toolchain from `docker/toolchain.sha256`, GCC 16.2), both with no warnings under
+  `-Werror`;
+- every one of the original's 200 functions found exactly once, its body byte-for-byte the original's but for `static`
+  (or `static inline`), `S.special_s`/`S.special_v` (step 14), and `handle_result`'s two sign-in cases (step 10);
+- `test/qml-sizes.test.js`.
+
+The screens were rendered once, for the end result (step 14), against the original's, rather than for each step: since
+every step is generated from the original and its bodies were checked, a difference would be bisected to its step
+afterwards.
+
+Where it differs from sections 2 and 3:
+- **The sign-in functions** are `on_media_signin()` and `on_trakt_signin()`, not `on_media_link()` and `on_trakt()`: each
+  handles both the link and the status answer.
+- **`keep_in_view`** went to `util.c` (`update()` and Settings both use it, to scroll a sheet's list), and **`parse_system`** to `cc.c` (it fills
+  the Control Center's list of settings apps). **`update_clock`** went to `draw.c` with `draw_clock`.
+- **`SRC_ID` and `SRC_NAME`** stayed in `main.c` until other files used them, then moved to `home.h` as planned.
+- **Line counts** came out a little different from section 2's estimates: `main.c` 493, `home.h` 671, `cc.c` 652,
+  `shelf.c` 532, `input.c` 455, `draw.c` 405; the rest between 102 and 310.

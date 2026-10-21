@@ -77,7 +77,7 @@ int main(int argc, char **argv)
     g.light_y = ly;
     g.alpha = 1;
 
-    /* spacing system (native/src/main.c): tvOS 26's dock at x 48-1872, y 785-1015, six
+    /* spacing system (native/src/home.h): tvOS 26's dock at x 48-1872, y 785-1015, six
      * columns of 5:3 tiles 50 px apart; containers keep their corners concentric */
     const float DOCK_X = 48, TOP_Y = 52, TILE_W = 248, TILE_H = 150, TILE_R = 22, GAP = 50, PAD = 40, PAD_X = 43;
     const float LEFT = DOCK_X + PAD_X, DOCK_Y = 785;
