@@ -265,8 +265,10 @@ global.__stubLuna = (uri, params) => {
   if (uri.endsWith('/running')) return { returnValue: true, running: ['netflix', 'youtube', 'spotify', 'disney'].map((id) => ({ id })) };
   return null;
 };
-process.env.HOMEPLUS_RECENTS_FILE = path.join(CONFIG_DIR, 'recents.json');
-fs.writeFileSync(process.env.HOMEPLUS_RECENTS_FILE, JSON.stringify({ youtube: Date.now() - 60000, netflix: Date.now() - 120000, spotify: Date.now() - 600000 }));
+if (!process.env.HOMEPLUS_RECENTS_FILE) { /* (tests may give one of their own) */
+  process.env.HOMEPLUS_RECENTS_FILE = path.join(CONFIG_DIR, 'recents.json');
+  fs.writeFileSync(process.env.HOMEPLUS_RECENTS_FILE, JSON.stringify({ youtube: Date.now() - 60000, netflix: Date.now() - 120000, spotify: Date.now() - 600000 }));
+}
 
 const BUILT_IN = ['com.webos.app.hdmi1', 'com.palm.app.settings', 'browser']; /* LG's own: they can't be deleted */
 // HOMEPLUS_PREVIEW_NO_APPS: webOS lists no apps, so the launcher never gets its list

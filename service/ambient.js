@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const { requestJSON } = require('./net');
+const tmp = require('./tmp');
 
 const SERVICES = '/media/developer/apps/usr/palm/services';
 // HyperHDR answers JSON-RPC on 127.0.0.1:8090 (no token from the TV itself); its loader service
@@ -51,7 +52,7 @@ module.exports = function createAmbient({ luna, log }) {
   let paused = false, again = null;
   const setPaused = (on) => {
     paused = on;
-    try { if (on) fs.writeFileSync(PAUSED, ''); else fs.rmSync(PAUSED, { force: true }); } catch (e) { /* /tmp */ }
+    try { if (on) tmp.write(PAUSED, ''); else fs.rmSync(PAUSED, { force: true }); } catch (e) { /* /tmp (only ever its own file there) */ }
   };
   async function start(again) {
     const r = await luna(`${PICCAP}/start`, {});
@@ -62,7 +63,7 @@ module.exports = function createAmbient({ luna, log }) {
       if (!again) setTimeout(() => start(true), 2000);
     }
   }
-  if (fs.existsSync(PAUSED)) { /* paused by a service that stopped */
+  if (tmp.has(PAUSED)) { /* paused by a service that stopped */
     setPaused(false);
     setImmediate(start);
   }

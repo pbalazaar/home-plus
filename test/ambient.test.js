@@ -141,6 +141,22 @@ test('ambient: Screen Capture switched off while it\'s paused stays off', async 
   assert.equal(fs.existsSync(PAUSED), false);
 });
 
+test('ambient: the mark that PicCap is paused isn\'t written through a link put there (/tmp is anyone\'s)', { skip: process.platform === 'win32' && 'needs symlinks' }, async () => {
+  const roots = path.join(dir, 'roots-file');
+  fs.writeFileSync(roots, 'root\'s own');
+  fs.symlinkSync(roots, PAUSED);
+  const { capture, pic, calls } = ambient({ capturing: false });
+  await new Promise((done) => setTimeout(done, 100));
+  assert.equal(calls.some((c) => c.uri.endsWith('/start')), false, 'a link isn\'t a mark left by a service that stopped');
+  pic.running = true; /* (then PicCap captures) */
+  assert.equal(await capture.pause(), true);
+  assert.equal(fs.readFileSync(roots, 'utf8'), 'root\'s own', 'what the link pointed to is untouched');
+  assert.ok(fs.lstatSync(PAUSED).isFile(), 'the mark is a file of the service\'s own');
+  capture.resume();
+  await until(() => pic.running, 3000, 'PicCap to start again');
+  assert.equal(fs.existsSync(PAUSED), false);
+});
+
 test('ambient: PicCap paused by a service that stopped is started again by the next', async () => {
   fs.writeFileSync(PAUSED, '');
   const { pic } = ambient({ capturing: false });

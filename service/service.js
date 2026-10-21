@@ -18,6 +18,7 @@ const { requestJSON } = require('./net');
 const Service = require('webos-service');
 const callers = require('./callers');
 const png = require('./png');
+const tmp = require('./tmp');
 
 const service = new Service(pkg.name);
 
@@ -26,15 +27,13 @@ const service = new Service(pkg.name);
 process.on('uncaughtException', (e) => log('uncaught:', (e && e.stack) || e));
 process.on('unhandledRejection', (e) => log('unhandled rejection:', (e && e.stack) || e));
 
-// Diagnostics: /tmp/homeplus-service.log (cleared on each service start, capped at 256 KB).
-const LOG = '/tmp/homeplus-service.log';
-try { fs.writeFileSync(LOG, ''); } catch (e) { /* ignore */ }
+// Diagnostics: /tmp/homeplus-service.log (cleared on each service start, capped at 256 KB; only ever
+// the service's own file: service/tmp.js). HOMEPLUS_LOG: tests keep theirs elsewhere.
+const LOG = process.env.HOMEPLUS_LOG || '/tmp/homeplus-service.log';
+try { tmp.write(LOG, ''); } catch (e) { /* ignore */ }
 function log(...parts) {
   const line = new Date().toISOString() + ' ' + parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join(' ') + '\n';
-  try {
-    if (fs.existsSync(LOG) && fs.statSync(LOG).size > 256 * 1024) fs.writeFileSync(LOG, '');
-    fs.appendFileSync(LOG, line);
-  } catch (e) { /* ignore */ }
+  try { tmp.append(LOG, line, 256 * 1024); } catch (e) { /* ignore */ }
 }
 log('start', { version: pkg.version, uid: process.getuid ? process.getuid() : null, node: process.version });
 const APPMGR = 'luna://com.webos.applicationManager';
@@ -104,18 +103,18 @@ function readConfig() {
 // Written whole or not at all: a power cut mid-write can't leave a truncated file behind (the new
 // one is written beside it, flushed to the disk, then takes its place). mode: the new file's.
 function writeFileAtomic(p, data, mode) {
-  const tmp = `${p}.${process.pid}.tmp`;
+  const beside = `${p}.${process.pid}.tmp`;
   try {
-    const fd = fs.openSync(tmp, 'w', mode);
+    const fd = fs.openSync(beside, 'w', mode);
     try {
       fs.writeFileSync(fd, data);
       fs.fsyncSync(fd);
     } finally {
       fs.closeSync(fd);
     }
-    fs.renameSync(tmp, p);
+    fs.renameSync(beside, p);
   } catch (e) {
-    try { fs.unlinkSync(tmp); } catch (e2) { /* never made */ }
+    try { fs.unlinkSync(beside); } catch (e2) { /* never made */ }
     throw e;
   }
 }
@@ -852,11 +851,11 @@ async function uninstall() {
 // restarted service (an update) still knows them, and a reboot, which closes them, doesn't.
 const RECENTS_FILE = process.env.HOMEPLUS_RECENTS_FILE || '/tmp/homeplus-recents.json';
 const lastUsed = new Map((() => {
-  try { return Object.entries(JSON.parse(fs.readFileSync(RECENTS_FILE, 'utf8'))); } catch (e) { return []; }
+  try { return Object.entries(JSON.parse(tmp.read(RECENTS_FILE))); } catch (e) { return []; }
 })());
 
 function saveRecents() {
-  try { fs.writeFileSync(RECENTS_FILE, JSON.stringify(Object.fromEntries(lastUsed)), { mode: 0o600 }); } catch (e) { /* only for restarts */ }
+  try { tmp.write(RECENTS_FILE, JSON.stringify(Object.fromEntries(lastUsed))); } catch (e) { /* only for restarts */ }
 }
 
 async function onForeground(appId) {

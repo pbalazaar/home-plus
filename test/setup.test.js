@@ -193,6 +193,29 @@ test('setup: the config and the binds are written whole, and the config stays ro
   }
 });
 
+test('setup: the service\'s files in /tmp aren\'t written through links put there', { skip: windows }, async () => {
+  /* a second service, its log and Recents (in /tmp on the TV, where anyone can make files) links to a file of root's */
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-setup-tmp-'));
+  fs.writeFileSync(path.join(d, 'apps.txt'), 'netflix|Netflix');
+  const roots = path.join(d, 'config.json'), logFile = path.join(d, 'homeplus-service.log'), recents = path.join(d, 'homeplus-recents.json');
+  fs.writeFileSync(roots, '{"signedIn": true}');
+  fs.symlinkSync(roots, logFile);
+  fs.symlinkSync(roots, recents);
+  const s = await startService(d, { HOMEPLUS_LOG: logFile, HOMEPLUS_RECENTS_FILE: recents, HOMEPLUS_PREVIEW_FOREGROUND: 'netflix' });
+  try {
+    assert.equal((await s.call('POST', '/api/close', { body: { id: 'netflix' } })).status, 200); /* (it writes Recents) */
+    assert.equal(fs.readFileSync(roots, 'utf8'), '{"signedIn": true}', 'what the links pointed to is untouched');
+    for (const f of [logFile, recents]) {
+      assert.ok(fs.lstatSync(f).isFile(), `${path.basename(f)}: a file of the service's own now`);
+      assert.equal(fs.statSync(f).mode & 0o777, 0o600, `${path.basename(f)}: its own to read`);
+    }
+    assert.match(fs.readFileSync(logFile, 'utf8'), /closed \["netflix"\]/, 'and its log goes there');
+  } finally {
+    await s.stop();
+    fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
 /* last: it removes Home+ */
 test('setup: Remove Home+ takes away its boot script and log, its binds and its settings, and nothing else', async () => {
   const copy = () => { try { return fs.lstatSync(path.join(initd, '50-homeplus')).isFile(); } catch (e) { return false; } };
