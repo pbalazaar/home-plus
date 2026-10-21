@@ -1,0 +1,407 @@
+/* Home+ native: the launcher's shared layout, types and state (S, its one global), and what each of its files
+ * offers the others. render.h, gfx.h, net.h and sound.h are the libraries under it. */
+#ifndef HOMEPLUS_HOME_H
+#define HOMEPLUS_HOME_H
+
+#include <SDL.h>
+
+#include "cJSON.h"
+#include "gfx.h"
+#include "net.h"
+#include "sound.h"
+
+/* ------------------------------------------------------------------ layout */
+
+/* Spacing system, measured from Apple's tvOS 26 Home screen: the dock spans
+ * x 48-1872 and y 785-1015, and inside it six columns of 5:3 tiles sit 50 px
+ * apart, 43 px from its ends and 40 px from its top and bottom. Containers keep
+ * their corners concentric with their content (outer radius = inner radius +
+ * padding). The Top Shelf text, the rail and the top bar line up with the
+ * dock's edges. */
+#define W 1920
+#define H 1080
+#define SAFE_X 80
+#define SAFE_Y 60
+#define COLS 6
+#define TILE_W 248
+#define TILE_H 150
+#define TILE_R 22                      /* every card's corner: app tiles, Continue Watching, the big Top Shelf tile */
+#define PAD 40                         /* the dock's padding above and below the tiles */
+#define PAD_X 43                       /* and at its ends */
+#define DOCK_X 48                      /* glass platform behind the top row, almost the screen's width */
+#define DOCK_W (W - 2 * DOCK_X)
+#define GAP_X ((DOCK_W - 2 * PAD_X - COLS * TILE_W) / (COLS - 1)) /* 50 */
+#define LEFT (DOCK_X + PAD_X)          /* first column */
+#define RIGHT (W - DOCK_X)             /* the top bar ends where the dock does */
+#define DOCK_H (TILE_H + 2 * PAD)
+#define DOCK_Y (1015 - DOCK_H)
+#define GRID_TOP (DOCK_Y + PAD)
+#define ROW_H (TILE_H + 80)            /* the next row peeks out under the dock; labels sit in the gap */
+#define FOCUS_SCALE 1.20f
+#define LONG_PRESS_MS 650
+#define ROTATE_MS 10000                /* the Top Shelf carousel turns to its next title */
+#define PAGE_WAIT_MS 1200              /* the longest the Top Shelf waits for a page's picture */
+#define SKEL_MS 250                    /* a wait longer than this shows placeholders (a skeleton) */
+#define MAX_DOTS 16                    /* its position, as dots */
+#define BAR 56                         /* the clock capsule */
+#define TOP_Y 52                       /* where tvOS 26 has it */
+#define TOP_DOT (BAR - 10)             /* its circle: Settings, where tvOS shows the profile picture */
+#define SW_W 680                       /* App Switcher cards: the app's tile, large */
+#define SW_H (SW_W * TILE_H / TILE_W)
+#define SW_PITCH (SW_W + 80)
+#define SW_CY 500                      /* their centre line */
+#define SHEET_BH 80                    /* sheet buttons, and the gap between them */
+#define SHEET_GAP 16
+#define SHEET_TINT 16, 16, 20, 135 /* sheets' glass: dark tint, 53% */
+#define SHEET_W 720                    /* a sheet (Settings' are wider: a label and its value) */
+#define SHEET_TITLE_PX 30              /* its title, its words, its buttons */
+#define SHEET_BODY_PX 26
+#define SHEET_BUTTON_PX 31
+#define RED_ON_GLASS 255, 90, 80       /* what can't be undone: its label on glass, */
+#define RED_ON_WHITE 215, 40, 40       /* and on a focused (white) button */
+#define ICON_FIT 256                   /* icons feed logos, covers and the big Top Shelf tile */
+#define THUMB_FIT_W 480                /* rail thumbnails: cards, and briefly the background */
+#define THUMB_FIT_H 270
+#define TEXT_STATIC 218                /* OLED: static text stays at ~85% white */
+#define TEXT_SECONDARY 179             /* 70%: values, details, sheets' words, hints */
+#define TEXT_TERTIARY 140              /* 55%: group names, a row's âº, Settings' values */
+#define HINT_PX 26                     /* a hint: what the remote's keys do here */
+#define HEADING_PX 27                  /* the clock, and the Top Shelf's heading as big */
+
+#define MAX_APPS 128
+#define MAX_RAIL 16
+#define MAX_SHEET 64
+#define ID_LEN 160
+
+enum { TAG_APPS = 1, TAG_LAYOUT, TAG_STREMIO, TAG_MEDIA_LINK, TAG_MEDIA_STATUS, TAG_QR, TAG_ICON, TAG_ART, TAG_RAIL_LOGO, TAG_RAIL_BG, TAG_FEATURED, TAG_CONTROL, TAG_LAUNCH, TAG_WAKE,
+       TAG_SYSTEM, TAG_TRAKT_LINK, TAG_TRAKT_STATUS, TAG_RUNNING, TAG_CLOSED, TAG_HOME, TAG_HOME_SET, TAG_KEY_SET,
+       TAG_STATUS, TAG_ELEVATE, TAG_RESTART, TAG_UNINSTALL,
+       TAG_PREFS, TAG_EVENTS, TAG_DELETED };
+
+/* Media sources: each one's Continue Watching is the Top Shelf of its own app */
+enum { SRC_NONE, SRC_STREMIO, SRC_JELLYFIN, SRC_PLEX, SRC_COUNT };
+#define SRC_FEATURED (SRC_COUNT + 1)   /* a streaming app's popular titles (TMDB); not an index */
+
+/* Control Center, like tvOS's: opened from the clock, its controls float under it on the
+ * right, on Apple's grid of four round-button-sized units (91 px, 20 px apart). Which
+ * controls, in what order and size, comes from the service, and is yours to change (like
+ * iOS 18's): each takes the first space it fits, in order. */
+#define CC_U 91
+#define CC_G 20
+#define CC_ROWS 7       /* the rows under the clock (the service's 28 units); editing's hint and Reset still fit under them */
+#define MAX_CC 28       /* the service caps the list at 28 units */
+#define MAX_CAT 32      /* the catalogue */
+#define CC_TITLE_PX 19  /* a pill's name: "Sleep Timer" and "Eye Comfort" fit, with room either side */
+#define CC_LIST_ROW_H 56 /* a list in the Control Center's place (Picture Mode, Inputs): its rows, */
+#define CC_LIST_GAP 6    /* the gap between them, */
+#define CC_LIST_HEAD 66  /* and its title's band */
+#define CC_LIST_PX 24    /* a row's name, and its tick */
+#define CC_DETAIL_PX 18  /* a row's detail: "Nothing Connected" */
+
+/* A control on show: what the service says it is, and where it's placed (cc_pack) */
+typedef struct {
+    char id[24], kind[8], title_s[48], name_s[48], value_s[72]; /* name: the whole one (the tile's may be short) */
+    int icon, units, on, stateful, available; /* units: 1 Small, 2 Wide, 4 Large; stateful: it can be off */
+    int col, row, w, h;              /* on the grid; row -1: no room for it */
+    Tex *title, *value;
+    int tw, th, vw, vh;
+    float s, sv;                     /* focus */
+    Uint32 flash, shake;             /* a Small stepper's new value shows for a moment; a refusal shakes it */
+} CCItem;
+
+/* Settings pages (a sheet's page; 0 = not a Settings page) */
+enum { PAGE_MAIN = 1, PAGE_HOME, PAGE_DISPLAY, PAGE_CC, PAGE_ACCESS, PAGE_ACCOUNTS, PAGE_TV, PAGE_ABOUT, PAGE_CONFIRM, PAGE_SIGNIN, PAGE_ICONS };
+
+/* zones: what the remote is moving through */
+enum { ZONE_GRID, ZONE_RAIL, ZONE_TOP };
+/* how app icons look (Settings -> Display & OLED -> App Icons): their own colours; dark tiles;
+ * glass with white logos; glass in a colour */
+enum { LOOK_DEFAULT, LOOK_DARK, LOOK_CLEAR, LOOK_TINTED };
+/* Tinted's colours: Apple's system colours, as on a dark screen */
+static const struct {
+    const char *name;
+    Uint8 rgb[3];
+} TINTS[] = { { "Red", { 255, 69, 58 } },    { "Orange", { 255, 159, 10 } }, { "Yellow", { 255, 214, 10 } },
+              { "Green", { 48, 209, 88 } },  { "Teal", { 64, 200, 224 } },   { "Blue", { 10, 132, 255 } },
+              { "Indigo", { 94, 92, 230 } }, { "Purple", { 191, 90, 242 } }, { "Pink", { 255, 55, 95 } },
+              { "Graphite", { 142, 142, 147 } } };
+#define NTINTS (int)(sizeof TINTS / sizeof TINTS[0])
+#define TINT_INDIGO 6
+/* the top bar: the clock capsule, with Settings in the circle at its end (Recents is
+ * Back on the first app, or Red; Inputs are the remote's Input key) */
+enum { TOP_SETTINGS, TOP_COUNT };
+#define MAX_RUNNING 32
+#define MAX_SYS 16
+
+typedef struct {
+    char id[ID_LEN], title[ID_LEN], icon[ID_LEN + 16], art[ID_LEN + 16];
+    Uint8 col[3];
+    int has_col, fullbleed;
+    Tex *icon_tex, *art_tex, *label, *big;
+    Tex *logo_tex;          /* the icon's logo, background keyed out and trimmed (tiles) */
+    Tex *cover_tex;         /* made from the icon, for the Top Shelf when the app has no artwork */
+    float logo_w, logo_h, logo_r; /* its size on a tile, and corner radius for picture icons */
+    float ink_ref, ink_span;      /* the luminance its logo stood out from (-1: none), and the most it did */
+    float ink_tint;               /* its logo is grey or white on a coloured icon: on a dark tile it takes that colour */
+    int icon_state, art_state; /* 0 idle, 1 loading, 2 ready, 3 failed */
+    int feat; /* a streaming service with popular titles (TMDB): 0 not asked, 1 asking, 2 yes, 3 no */
+    int removable, deleted; /* it can be deleted from the TV; it was, and the app list hasn't caught up */
+    int lw, lh, bw, bh;
+    float s, sv; /* focus animation 0..1, and its spring velocity */
+} App;
+
+/* A title in the Top Shelf carousel: Continue Watching, or popular on a streaming service */
+typedef struct {
+    char id[64], type[16], name[200], bg[40], logo[40];
+    float progress;
+    int season, episode, remaining, year;
+    Tex *bg_tex, *logo_tex, *title_tex, *meta_tex;
+    int texts_made; /* title_tex and meta_tex are made (either can be NULL: a name with nothing to draw) */
+    int bg_state, logo_state; /* 0 idle, 1 loading, 2 ready, 3 failed */
+    int tw, th, mw, mh, lw, lh;
+} RailItem;
+
+/* A picture the Top Shelf can show: app i's artwork, its glow (its icon blurred, with its
+ * tile large; the cover: the glow alone), title i's picture, or held picture i (one whose
+ * owner let go of it while it was on show, kept until something covers it). */
+enum { PIC_NONE, PIC_ART, PIC_GLOW, PIC_COVER, PIC_RAIL, PIC_HELD };
+typedef struct { int kind, i; } Pic;
+
+typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELETE, ACT_UNHIDE, ACT_UNHIDE_ALL, ACT_CANCEL,
+               ACT_LAUNCH_ID, ACT_TRAKT_LINK, ACT_TRAKT_UNLINK, ACT_MEDIA_LINK, ACT_MEDIA_UNLINK, ACT_ACCOUNT_ASK, ACT_UP, ACT_TMDB, ACT_SHELF,
+               ACT_HOME_MODE, ACT_SOUNDS,
+               ACT_SETUP_RETRY, ACT_HOME_YES, ACT_HOME_NO, ACT_HOME_TOGGLE, ACT_REMOVE_ASK, ACT_REMOVE,
+               ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY, ACT_CC_BLUR_VIDEO,
+               ACT_PAGE, ACT_CLOCK, ACT_DIM, ACT_OFF, ACT_ORBIT, ACT_CALM, ACT_HIDDEN, ACT_SETTINGS_KEY, ACT_INPUT_KEY,
+               ACT_ICON_LOOK, ACT_ICON_TINT,
+               ACT_CC_EDIT, ACT_CC_ADD, ACT_CC_SIZE, ACT_CC_REMOVE, ACT_CC_RESET } Action;
+
+/* First run: the service has to be running and elevated (root, via Homebrew
+ * Channel) before Home+ can list apps. Each step that can fail has a screen. */
+enum { SETUP_CHECK, SETUP_STARTING, SETUP_ELEVATING, SETUP_RESTARTING, SETUP_NO_HBC, SETUP_DENIED,
+       SETUP_FAILED, SETUP_OLD, SETUP_REMOVING, SETUP_DONE };
+#define HBC_ELEVATE "luna://org.webosbrew.hbchannel.service/elevateService"
+#define SHEET_BODY_LINES 5
+#define IDLE_DIM_MS (2 * 60 * 1000)  /* defaults; /api/prefs dimMinutes / offMinutes override */
+#define IDLE_OFF_MS (10 * 60 * 1000)
+#define IDLE_NEVER 0xFFFFFFFFu /* Settings: never dim / never turn off */
+
+typedef struct {
+    Action act;
+    int arg;
+    int destructive;
+    char id[ID_LEN]; /* ACT_LAUNCH_ID's app; the app of ACT_DELETE_ASK, ACT_DELETE and ACT_UNHIDE */
+    Tex *tex;
+    int w, h;
+    Tex *val; /* Settings rows: the current value, drawn on the right */
+    int vw, vh;
+    int chevron; /* opens a page */
+    int check;   /* the choice that's on: a tick on the right (its label still in the middle) */
+    int swatches; /* Tinted's colours, the one that's on ringed: Left and Right pick another */
+} SheetItem;
+
+typedef struct {
+    SDL_Window *win;
+    Font *f_medium, *f_semi, *f_bold;
+
+    /* shared textures, tinted per draw (shapes and glass are shaders) */
+    Tex *scrim_v, *scrim_h, *scrim_top;
+    /* top bar: a label under the focused button, and the Top Shelf hint while it has focus */
+    Tex *top_hint[TOP_COUNT];
+    int top_hw[TOP_COUNT], top_hh[TOP_COUNT];
+    Tex *rail_hint, *rail_browse, *launch_tex; /* "Press OK to open Stremio", and while browsing; "Opening Netflix…" */
+    int rail_hint_w, rail_hint_h, rail_browse_w, rail_browse_h, launch_w, launch_h;
+    int launching, launch_item; /* OK on a tile: it breathes until the app is in front */
+    Uint32 launch_at;
+
+    App apps[MAX_APPS];
+    int napps, generation; /* generation: bumps when the app list is rebuilt */
+    char apps_sig[4096];
+    int items[MAX_APPS + 1], nitems; /* indices into apps; -1 = "Hidden" tile */
+
+    char order[MAX_APPS][ID_LEN];
+    int norder;
+    char hidden[MAX_APPS][ID_LEN];
+    int nhidden;
+    int layout_loaded;
+
+    RailItem rail[MAX_RAIL];      /* the Top Shelf carousel */
+    int nrail, rail_connected, rail_index, rail_generation;
+    char rail_app[ID_LEN];        /* SRC_FEATURED: whose popular titles */
+    Uint32 rail_next;             /* when it turns to its next title (0: it isn't turning) */
+    int feat_req, tmdb_configured; /* the app whose titles are on the way (-1: none); TMDB set up */
+    int rail_trending;            /* SRC_FEATURED: what's trending, not what's on the app */
+    char rail_sig[2048];
+
+    int focus, zone; /* ZONE_* */
+    int top_index, top_col; /* the top bar's focus; the column it was entered from */
+    float top_s[TOP_COUNT], top_v[TOP_COUNT];
+    Tex *top_tex[TOP_COUNT];
+    int top_w[TOP_COUNT], top_h[TOP_COUNT];
+
+    /* Control Center data from /api/system */
+    struct { char id[ID_LEN], label[96]; } settings[MAX_SYS];
+    int nsettings;
+
+    int rail_stremio, trakt_configured, trakt_connected;
+    int rail_source, rail_req;        /* whose items the rail holds; the source asked for */
+    int src_connected[SRC_COUNT];     /* signed in (Stremio counts Trakt too) */
+    int media_poll_src;               /* Jellyfin/Plex sign-in: whose code is on screen */
+    Uint32 media_poll;                /* and when to ask again whether it was approved */
+    Tex *connect_tex[SRC_COUNT];      /* "Connect … to see Continue Watching" */
+    int connect_w[SRC_COUNT], connect_h[SRC_COUNT];
+    char home_mode[16]; /* "redirect" (no-flash), "watch" or "off" */
+    int sounds_off; /* focus sounds switched off in Settings (saved by the service) */
+    Uint32 idle_dim_ms, idle_off_ms; /* OLED idle stages (0 = default) */
+    int noflash_active, noflash_available; /* available: LG's home is a web app we can replace */
+    int settings_key, settings_key_available; /* the remote's Settings key opens the Control Center (LG Input Hook) */
+    int input_key;                    /* ... and its Input key, the Control Center's inputs */
+    int cc_blur_video, piccap; /* Settings -> Control Center: Blur Over Video (over other apps, with PicCap installed) */
+    Uint32 trakt_poll; /* while showing a Trakt code: next status check */
+    int moving;
+    float scroll, scroll_v, scroll_target; /* grid y offset */
+    float scrolled;              /* 0 at the top row, 1 below it */
+    int shelf_cur;               /* the item whose Top Shelf it is */
+    /* The Top Shelf shows a page: an app's own (its name), or one of its carousel's titles
+     * (rail -1: the app's own; -2: none, its carousel left). The next page waits until its
+     * picture is in (PAGE_WAIT_MS at most), so a title never sits on another's picture, and
+     * the picture on show stays underneath until the new one has covered it. */
+    int page_app, page_rail, page_step; /* step: it came from the title before it, in the same carousel */
+    int prev_app, prev_rail;     /* the page that left, fading out */
+    float page_a, page_leave, prev_vis; /* the page coming in; the page on show leaving while the next one loads */
+    float skel_a;                /* placeholders for the text, while the next page takes a while */
+    int want_app, want_rail;     /* the page the Top Shelf wants next, since want_at */
+    Uint32 want_at;
+    Pic pic_under, pic_top;      /* the picture on show, and the next one fading in over it */
+    float pic_a;
+    Tex *pic_held[2];
+
+    /* App Switcher (Recents, like tvOS): the running apps as big cards over the
+     * blurred home screen, most recent first */
+    struct {
+        int open, n, index, loading, failed, close_all; /* close_all: focus is on Close All */
+        float t, tv;                 /* 0 closed .. 1 open */
+        int zooming;                 /* OK: the card grows to fill the screen while the app opens */
+        float zoom, zoomv;
+        Uint32 zoom_at, empty_at;    /* empty_at: the last card went; close soon after */
+        struct {
+            char id[ID_LEN];
+            Tex *name;
+            int nw, nh;
+            float x, xv;             /* offset from the centre, in cards */
+            float s, sv;             /* focus */
+            float fly, flyv;         /* closing: it flies up and away */
+            int flying;
+        } c[MAX_RUNNING];
+    } recents;
+
+    struct {
+        int open, index, n, tw, th;
+        int locked;           /* setup screens: Back doesn't close them */
+        Tex *body[SHEET_BODY_LINES];
+        int bw[SHEET_BODY_LINES], bh[SHEET_BODY_LINES], nbody;
+        int first;            /* first list button on screen: long lists scroll */
+        int page, parent, parent_index; /* Settings pages: Back opens the parent at that row */
+        int wide;             /* label-and-value rows need the room */
+        float scroll, scroll_v; /* where the list is drawn from, springing to first */
+        float t, tv;          /* morph: 0 = still the button it grew from, 1 = open */
+        float fx, fy, fw, fh; /* that button's rect */
+        float px, py, pw, ph, pr; /* where the panel was last drawn */
+        Tex *title;
+        SheetItem it[MAX_SHEET];
+    } sheet;
+
+    Tex *clock_tex, *toast_tex;
+    int clock_w, clock_h, clock_min, toast_w, toast_h;
+    Uint32 toast_until;
+
+    Uint32 ok_down;
+    int ok_long;
+    int away;           /* we launched another app; reset to the top when we're back */
+    int asked;          /* the Control Center over another app asked for one of OPEN_*, for when we're back */
+    int service_ok, wake_tries;
+    int setup, setup_tries, elevate_tries, home_asked;
+    int reduce_motion, reduce_transparency; /* Settings -> Accessibility (tvOS's names) */
+    int clock24, orbit_off, vivid_covers;    /* Settings: 24-hour clock, no pixel shift, brand-colour covers */
+    int shelf_still;                         /* Settings: the Top Shelf doesn't turn pages by itself */
+    int icon_look;                           /* Settings: how app icons look (LOOK_*) */
+    int icon_tint;                           /* ...and the colour Tinted gives them (TINTS) */
+    int click_x;                             /* where the pointer last clicked (-1: the keys' OK) */
+    int at_page, at_index, at_parent_index;  /* the Settings row an action came from */
+    int last_unknown_key;                    /* Settings -> About: what a remote sent that Home+ ignores */
+    char svc_version[24];                    /* from /api/status */
+    int svc_elevated;
+    int ptr_press, ptr_dismiss;             /* the pointer's OK went down on something / outside a sheet */
+    /* Which input is in charge. The remote's keys take over from the pointer: then the
+     * pointer doesn't move focus, and its click (what OK sends while the cursor shows)
+     * presses what the keys focused. Moving the pointer clearly hands it back. */
+    int ptr_mode;
+    int cursor_up; /* the Magic Remote's pointer is on screen */
+    int ptr_ax, ptr_ay; /* where the pointer was when the keys took over, -1: not seen yet */
+    Uint32 setup_retry;
+    Uint32 next_retry;
+    int logged_keys;
+    /* OLED protection: idle stages, fades, pixel orbit */
+    Uint32 last_input;
+    Uint32 drawn_at;                  /* when the last frame was drawn */
+    int idle_stage, swallow_up, offscreen, orbit_k; /* offscreen: another app is in front */
+    int wl_fd;              /* Wayland socket the idle wait sleeps on, -1 = SDL's own wait */
+    Uint32 keys_until;      /* a key went down lately: keep pumping so SDL makes its repeats */
+    float dim, black;
+    /* motion: the focused element sways briefly and its highlight follows a moving light */
+    float sway_t;           /* seconds since focus last moved */
+    int focus_key;          /* changes whenever focus moves */
+    int tick_armed; /* an arrow key was pressed: a focus change it causes ticks */
+    float ptr_x, ptr_y;     /* light direction from the Magic Remote pointer */
+    Uint32 ptr_at;          /* when the pointer last moved */
+    float light_x, light_y; /* light for focused glass and rims this frame */
+    float toast_t, toast_v; /* toast rising in */
+    struct {                /* a closed sheet's glass shrinking back into its button */
+        int on;
+        float t, tv, fx, fy, fw, fh, px, py, pw, ph, pr;
+    } ghost;
+    Tex *heading_tex, *sub_tex, *sub_first_tex, *sheet_big;
+    Tex *sheet_qr; /* sign-in: the service's QR code, scanned with a phone */
+    Tex *chevron;  /* above the dock: Up leads into Continue Watching */
+    struct { /* the Control Center */
+        int open, index, ninputs;    /* index: the focused control (n: the + slot, n + 1: Reset, while editing) */
+        float t, tv;
+        CCItem it[MAX_CC];
+        int n, plus_col, plus_row;   /* the + slot's place (row -1: no room) */
+        Tex *glyph[ICON_COUNT], *glyph_big[ICON_COUNT]; /* glyphs, at 64 px, and at 128 for Large */
+        float plus_s, plus_v, reset_s, reset_v; /* while editing: the + slot's and Reset's focus */
+        struct { char id[24], title[48], group[24], sizes[4]; int available, placed, pinned, icon; } cat[MAX_CAT];
+        int ncat;
+        struct { char app[ID_LEN], name[120]; int plugged; } inputs[12];
+        struct { char id[32], name[48]; } modes[24]; /* the picture modes this input offers now */
+        int nmodes, mode, marquee;   /* mode: the one on (-1 unknown); marquee: a long value is scrolling */
+        Uint32 focus_at;             /* when the focused control got focus: its long value scrolls from then */
+        int ran;                     /* the control whose `run` is on its way (-1 none) */
+        int to_network;              /* just opened: the focus goes to Wi-Fi once the list is in */
+        /* editing, like iOS 18's: picked is the control being moved (-1 none) */
+        int editing, picked;
+        Tex *edit_hint, *move_hint, *no_room, *reset;
+        int ehw, ehh, mhw, mhh, nrw, nrh, rsw, rsh;
+        Tex *problem;                /* what went wrong (no room for one), under the grid until the focus moves or something changes */
+        int prw, prh;
+        /* a list control (Picture, Inputs) opens its list in the Control Center's place */
+        int list, list_kind, list_index, list_n, list_first; /* kind: the one on show (or fading out) */
+        int list_only;               /* opened by the Input key on the inputs alone: Back closes them */
+        float list_t, list_v;
+        Tex *list_title, *list_row[24], *list_val[24];
+        /* list 3, the gallery (iOS 18's Add a Control): what this TV has that isn't placed, as round
+         * buttons with their names, in groups */
+        int gal_cat[MAX_CAT], gal_n, gal_nhead;
+        float gal_x[MAX_CAT], gal_y[MAX_CAT], gal_hy[6], gal_h;
+        Tex *gal_label[MAX_CAT][2], *gal_head[6]; /* a name too long for one line takes two, as iOS's */
+        int gal_lw[MAX_CAT][2], gal_lh[MAX_CAT][2], gal_hw[6], gal_hh[6];
+        int ltw, lth, lrw[24], lrh[24], lvw[24], lvh[24];
+    } cc;
+    float chevron_a;
+    int sheet_qr_s, qr_gen;
+    int sheet_big_w, sheet_big_h;
+    int hw, hh, sw, sh, sfw, sfh;
+} State;
+
+
+#endif
