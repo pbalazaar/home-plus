@@ -17,10 +17,22 @@
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_GIF
+#define STBI_MAX_DIMENSIONS 8192 /* MAX_SIDE */
 #include "stb_image.h"
 
 #define WORKERS 2
 #define MAX_PATH_LEN 512
+
+/* What the launcher takes from the service: its answers are a few KB, and a picture is at most 8 MB
+ * (the service's cap). A picture is decoded only if it's no more than MAX_SIDE a side and MAX_PIXELS
+ * (TMDB's largest are 3840 x 2160): decoded, it's 4 bytes a pixel, on a TV whose memory PicCap and
+ * HyperHDR share. Kept, no side is over MAX_TEX: every webOS GPU takes a texture that size, and past
+ * its limit glTexImage2D fails without a word (a black picture). */
+#define MAX_JSON_BODY (4 << 20)
+#define MAX_IMAGE_BODY (12 << 20)
+#define MAX_SIDE 8192
+#define MAX_PIXELS (16L << 20)
+#define MAX_TEX 4096
 
 /* ------------------------------------------------------------------ HTTP */
 
@@ -53,7 +65,7 @@ static void current_token(char *out, size_t cap)
     SDL_UnlockMutex(token_lock);
 }
 
-static int http_once(const char *path, const char *post_body, const char *tok, char **body, size_t *len)
+static int http_once(const char *path, const char *post_body, const char *tok, size_t max, char **body, size_t *len)
 {
     *body = NULL;
     if (len) *len = 0;
@@ -86,9 +98,16 @@ static int http_once(const char *path, const char *post_body, const char *tok, c
     size_t cap = 65536, n = 0;
     char *buf = malloc(cap + 1);
     for (;;) {
-        if (n == cap) {
-            cap *= 2;
-            buf = realloc(buf, cap + 1);
+        if (buf && n == cap) { /* full: room for more, up to max */
+            size_t more = cap * 2 < max ? cap * 2 : max;
+            char *grown = more > cap ? realloc(buf, more + 1) : NULL;
+            if (!grown) free(buf);
+            buf = grown;
+            cap = more;
+        }
+        if (!buf) { /* more than max, or no memory for it: dropped, and the request fails */
+            close(fd);
+            return 0;
         }
         ssize_t k = recv(fd, buf + n, cap - n, 0);
         if (k < 0 && errno == EINTR) continue;
@@ -103,28 +122,26 @@ static int http_once(const char *path, const char *post_body, const char *tok, c
     char *sep = strstr(buf, "\r\n\r\n");
     size_t off = sep ? (size_t)(sep + 4 - buf) : n;
     size_t bn = n - off;
-    char *out = malloc(bn + 1);
-    memcpy(out, buf + off, bn);
-    out[bn] = 0;
-    free(buf);
-    *body = out;
+    memmove(buf, buf + off, bn); /* the body, in the same buffer */
+    buf[bn] = 0;
+    *body = buf;
     if (len) *len = bn;
     return status;
 }
 
-int http_request(const char *path, const char *post_body, char **body, size_t *len)
+int http_request(const char *path, const char *post_body, size_t max, char **body, size_t *len)
 {
     char tok[128];
     current_token(tok, sizeof tok);
-    int status = http_once(path, post_body, tok, body, len);
+    int status = http_once(path, post_body, tok, max, body, len);
     if (status == 403) { /* a new token: the service restarted, or our folder was reinstalled */
         free(*body);
         char *st = NULL;
-        http_once("/api/status", NULL, "", &st, NULL); /* makes the service write it again */
+        http_once("/api/status", NULL, "", MAX_JSON_BODY, &st, NULL); /* makes the service write it again */
         free(st);
         load_token();
         current_token(tok, sizeof tok);
-        status = http_once(path, post_body, tok, body, len);
+        status = http_once(path, post_body, tok, max, body, len);
     }
     return status;
 }
@@ -292,6 +309,43 @@ static void push_done(Result *r)
     SDL_PushEvent(&e);
 }
 
+/* A picture into r->rgba, shrunk to what it's drawn at; left NULL (the picture fails: the glow, or
+ * none) when it doesn't decode, or is too big to (MAX_SIDE, MAX_PIXELS). */
+static void decode_image(const Job *j, Result *r, const unsigned char *body, size_t len)
+{
+    int w, h, n;
+    if (!stbi_info_from_memory(body, (int)len, &w, &h, &n) || w > MAX_SIDE || h > MAX_SIDE || (long)w * h > MAX_PIXELS) return;
+    r->rgba = stbi_load_from_memory(body, (int)len, &r->w, &r->h, &n, 4);
+    if (!r->rgba) return;
+    if (j->sample) sample_icon(r->rgba, r->w, r->h, r);
+    /* bigger than it's ever drawn: shrink to just cover the fit box */
+    float s = j->fit_w > 0 ? fmaxf((float)j->fit_w / r->w, (float)j->fit_h / r->h) : 1;
+    if (s < 1) {
+        int nw = (int)lroundf(r->w * s), nh = (int)lroundf(r->h * s);
+        if (nw < j->fit_w) nw = j->fit_w;
+        if (nh < j->fit_h) nh = j->fit_h;
+        unsigned char *small = shrink(r->rgba, r->w, r->h, nw, nh);
+        if (small) {
+            stbi_image_free(r->rgba);
+            r->rgba = small; /* malloc'd like stb's own buffers: net_result_free frees either */
+            r->w = nw;
+            r->h = nh;
+        }
+    }
+    /* still too long for a texture (a 10000 x 200 banner covers the box as it is): shrunk to fit MAX_TEX */
+    if (r->w > MAX_TEX || r->h > MAX_TEX) {
+        float k = fminf((float)MAX_TEX / r->w, (float)MAX_TEX / r->h);
+        int nw = (int)lroundf(r->w * k), nh = (int)lroundf(r->h * k);
+        if (nw < 1) nw = 1;
+        if (nh < 1) nh = 1;
+        unsigned char *small = shrink(r->rgba, r->w, r->h, nw, nh);
+        stbi_image_free(r->rgba); /* (no memory to shrink it: no picture, rather than a black one) */
+        r->rgba = small;
+        r->w = nw;
+        r->h = nh;
+    }
+}
+
 static void run_job(Job *j)
 {
     Result r = { 0 };
@@ -338,27 +392,10 @@ static void run_job(Job *j)
 
     char *body = NULL;
     size_t len = 0;
-    r.status = http_request(j->path, j->kind == JOB_POST ? (j->post ? j->post : "{}") : NULL, &body, &len);
-    if (j->kind == JOB_IMAGE) {
-        if (r.status == 200 && body && len) {
-            int n;
-            r.rgba = stbi_load_from_memory((unsigned char *)body, (int)len, &r.w, &r.h, &n, 4);
-            if (r.rgba && j->sample) sample_icon(r.rgba, r.w, r.h, &r);
-            /* bigger than it's ever drawn: shrink to just cover the fit box */
-            float s = r.rgba && j->fit_w > 0 ? fmaxf((float)j->fit_w / r.w, (float)j->fit_h / r.h) : 1;
-            if (s < 1) {
-                int nw = (int)lroundf(r.w * s), nh = (int)lroundf(r.h * s);
-                if (nw < j->fit_w) nw = j->fit_w;
-                if (nh < j->fit_h) nh = j->fit_h;
-                unsigned char *small = shrink(r.rgba, r.w, r.h, nw, nh);
-                if (small) {
-                    stbi_image_free(r.rgba);
-                    r.rgba = small; /* malloc'd like stb's own buffers: net_result_free frees either */
-                    r.w = nw;
-                    r.h = nh;
-                }
-            }
-        }
+    int image = j->kind == JOB_IMAGE;
+    r.status = http_request(j->path, j->kind == JOB_POST ? (j->post ? j->post : "{}") : NULL, image ? MAX_IMAGE_BODY : MAX_JSON_BODY, &body, &len);
+    if (image) {
+        if (r.status == 200 && body && len) decode_image(j, &r, (unsigned char *)body, len);
         free(body);
     } else {
         r.body = body;
@@ -415,7 +452,7 @@ static int events_loop(void *arg)
         Result r = { 0 };
         r.kind = JOB_JSON;
         r.tag = events_tag;
-        r.status = http_request("/api/events", NULL, &r.body, NULL);
+        r.status = http_request("/api/events", NULL, MAX_JSON_BODY, &r.body, NULL);
         if (r.status == 200 && r.body && strstr(r.body, "\"events\":[\"")) {
             push_done(&r);
             continue;

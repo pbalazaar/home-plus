@@ -14,9 +14,9 @@
 #define APP_ID "com.github.pmiraka.homeplus"
 #define SERVICE_ID APP_ID ".service"
 
-/* Blocking request. Returns the HTTP status (0 on connection failure); *body
- * is malloc'd and NUL-terminated (caller frees). post_body NULL means GET. */
-int http_request(const char *path, const char *post_body, char **body, size_t *len);
+/* Blocking request. Returns the HTTP status (0 on connection failure, or an answer of more than
+ * max bytes); *body is malloc'd and NUL-terminated (caller frees). post_body NULL means GET. */
+int http_request(const char *path, const char *post_body, size_t max, char **body, size_t *len);
 
 typedef enum { JOB_JSON, JOB_IMAGE, JOB_POST, JOB_WAKE, JOB_LUNA } JobKind;
 
