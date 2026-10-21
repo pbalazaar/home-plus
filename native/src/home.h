@@ -407,6 +407,9 @@ typedef struct {
 
 extern State S;
 
+/* Tinted's colours on their row in App Icons: swatch i's centre, the row's right end like a value's */
+#define SWATCH_D 34
+
 static inline float approach(float *v, float target, float speed, float dt, int *moving)
 {
     float d = target - *v;
@@ -450,6 +453,10 @@ static inline float smooth01(float a, float b, float x)
     return t * t * (3 - 2 * t);
 }
 
+/* main.c */
+void focus_rect(float *x, float *y, float *w, float *h);
+float swatch_x(float bx, float bw, int i);
+
 /* util.c */
 void log_remote(const char *fmt, ...);
 void toast(const char *text, int ms);
@@ -481,5 +488,19 @@ int draw_face(App *a, float x, float y, float w, float h, float rad, float lk, U
 void draw_skeleton(float x, float y, float w, float h, float radius, float alpha);
 void draw_scrims(Uint8 alpha);
 void draw_marquee(Tex *t, int tw, int th, float x, float y, float room, Uint8 c, Uint8 a, Uint32 since);
+
+/* sheet.c */
+void sheet_close(void);
+void sheet_dismiss(void);
+void sheet_open(const char *title);
+void sheet_add(const char *label, Action act, int arg, int destructive);
+void sheet_add_app(const char *label, Action act, const char *id, int destructive);
+void sheet_body(const char *text);
+int sheet_footer(void);
+float sheet_head(void);
+int sheet_rows(int nfoot);
+void draw_sheet_button(const SheetItem *it, int focused, float bx, float y, float bw, float k, Uint8 ca);
+void draw_sheet(void);
+void draw_ghost(void);
 
 #endif
