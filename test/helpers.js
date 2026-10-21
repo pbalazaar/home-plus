@@ -11,8 +11,8 @@ const { spawn } = require('child_process');
 const ROOT = path.join(__dirname, '..');
 
 /* A local HTTP server standing in for an online service. route(req, url, body) returns
- * { status, json } or { status, body, type }, { hang: true } to never answer, or nothing
- * for a 404. Every request is recorded in .hits. */
+ * { status, json } or { status, body, type } (either with headers too), { hang: true } to never
+ * answer, or nothing for a 404. Every request is recorded in .hits. */
 async function mockServer(route) {
   const hits = [];
   const server = http.createServer((req, res) => {
@@ -23,7 +23,7 @@ async function mockServer(route) {
       hits.push({ method: req.method, path: url.pathname, query: url.searchParams, headers: req.headers, body });
       const r = (await route(req, url, body)) || { status: 404, json: {} };
       if (r.hang) return;
-      res.writeHead(r.status || 200, { 'Content-Type': r.type || 'application/json' });
+      res.writeHead(r.status || 200, Object.assign({ 'Content-Type': r.type || 'application/json' }, r.headers));
       res.end(r.json !== undefined ? JSON.stringify(r.json) : r.body || '');
     });
   });

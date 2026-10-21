@@ -36,11 +36,12 @@ if (process.env.HOMEPLUS_PREVIEW_CC) {
 // HOMEPLUS_PREVIEW_UNROOTED: as Homebrew Channel installs it, before elevation.
 process.getuid = () => (process.env.HOMEPLUS_PREVIEW_UNROOTED ? 1000 : 0);
 const SHOWS = ['Severed Signals', 'The Long Orbit', 'Northbound', 'Glass City', 'Midnight Kitchen'];
-const library = SHOWS.map((name, i) => ({
+const ART = process.env.HOMEPLUS_PREVIEW_ART; // the titles' pictures from this server: <ART>/<i> (tests: the image proxy)
+const library = SHOWS.map((name, i) => Object.assign({
   _id: `tt000000${i}`, type: i % 2 ? 'movie' : 'series', name, removed: false,
   state: { timeOffset: 600000 * (i + 2), duration: 3000000 + i * 900000, video_id: i % 2 ? '' : `tt000000${i}:${i + 1}:${i + 3}`,
     lastWatched: `2026-10-${20 - i}T10:00:00Z` }
-}));
+}, ART ? { background: `${ART}/${i}` } : {}));
 
 https.request = (url, opts, cb) => {
   const req = new EventEmitter();

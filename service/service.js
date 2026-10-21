@@ -924,6 +924,12 @@ function proxied(url) {
 const IMAGE_CACHE_MAX = 64 * 1024 * 1024;
 let imageDir = '', parts = 0, trimTimer = null;
 
+// They come from Stremio's addons, your Jellyfin and Plex servers and TMDB, and the service runs as
+// root, so it takes only so much: a picture up to 8 MB (TMDB's largest are about 3), from a server
+// that keeps sending (15 s without a byte and it's given up), redirected only to another web server
+const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+const IMAGE_TIMEOUT_MS = Number(process.env.HOMEPLUS_FETCH_TIMEOUT_MS) || 15000; /* tests: shorter */
+
 function imageCacheDir() {
   if (!imageDir) {
     imageDir = path.join(path.dirname(findConfigPath()), 'images');
@@ -945,18 +951,22 @@ function sendImage(key, res) {
   });
 }
 
-// a downloaded picture goes into the cache once it has arrived whole
+// a downloaded picture goes into the cache once it has arrived whole; cut short (the server went,
+// stopped sending, or sent too much), what came of it goes
 function keepImage(up, file) {
   const part = `${file}.${++parts}.part`;
   const out = fs.createWriteStream(part, { mode: 0o600 });
-  let ended = false;
+  let ended = false, dropped = false;
   const drop = () => {
+    if (dropped) return;
+    dropped = true;
     out.destroy();
-    fs.unlink(part, () => {});
+    out.once('close', () => fs.unlink(part, () => {})); /* (once closed: it may still have been opening) */
   };
   up.on('end', () => { ended = true; });
   up.on('aborted', drop);
   up.on('error', drop);
+  up.on('close', () => { if (!ended) drop(); });
   out.on('error', drop);
   out.on('finish', () => {
     if (!ended || up.complete === false) return fs.unlink(part, () => {});
@@ -992,21 +1002,54 @@ function trimImages() {
   }, 10000);
 }
 
+// where a redirect may take a picture: another web server, not this TV (its own services answer on
+// 127.0.0.1); servers on the network stay allowed, as Jellyfin's and Plex's are. null: nowhere
+function redirectTo(location, from) {
+  let u;
+  try { u = new URL(location, from); } catch (e) { return null; }
+  const host = u.hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase(); /* (the URL has made 127.1 and the like 127.0.0.1) */
+  const tv = host === 'localhost' || host.endsWith('.localhost') || /^(127|0)\.\d+\.\d+\.\d+$/.test(host) || /^::(1|ffff:7f[0-9a-f]{2}:[0-9a-f]+)?$/.test(host);
+  return (u.protocol === 'http:' || u.protocol === 'https:') && !tv ? u.toString() : null;
+}
+
 function fetchRemote(url, res, depth = 0, file = '') {
   let u;
   try { u = new URL(url); } catch (e) { u = null; }
   const mod = u && u.protocol === 'https:' ? https : u && u.protocol === 'http:' ? http : null;
   if (!mod) { res.writeHead(404); return res.end(); }
-  mod.get(u, { timeout: 15000 }, (up) => {
+  let answered = false; /* a response came: its end says how it went */
+  const req = mod.get(u, { timeout: IMAGE_TIMEOUT_MS }, (up) => {
+    answered = true;
+    up.on('error', () => {}); /* (cut short: 'close' below sees to it) */
     if (up.statusCode >= 300 && up.statusCode < 400 && up.headers.location && depth < 4) {
       up.resume();
-      return fetchRemote(new URL(up.headers.location, url).toString(), res, depth + 1, file);
+      const next = redirectTo(up.headers.location, url);
+      if (next) return fetchRemote(next, res, depth + 1, file);
+      log('image: a redirect to the TV itself, or not to a web server, refused');
+      res.writeHead(502);
+      return res.end();
     }
     if (up.statusCode !== 200) { up.resume(); res.writeHead(404); return res.end(); }
+    if (Number(up.headers['content-length']) > IMAGE_MAX_BYTES) { /* too big to take */
+      up.destroy();
+      res.writeHead(502);
+      return res.end();
+    }
     res.writeHead(200, { 'Content-Type': up.headers['content-type'] || 'image/jpeg', 'Cache-Control': 'max-age=86400' });
+    let got = 0, ended = false;
+    up.on('data', (c) => { if ((got += c.length) > IMAGE_MAX_BYTES) up.destroy(); }); /* too big after all: not kept */
+    up.on('end', () => { ended = true; });
+    up.on('close', () => { if (!ended || up.complete === false) res.destroy(); }); /* cut short: so is the launcher's */
     up.pipe(res);
     if (file) keepImage(up, file);
-  }).on('error', () => { res.writeHead(502); res.end(); });
+  });
+  req.on('timeout', () => req.destroy(new Error('timed out'))); /* the server stopped sending */
+  req.on('error', () => {
+    if (answered) return;
+    answered = true;
+    res.writeHead(502);
+    res.end();
+  });
 }
 
 // ------------------------------------------------------------------ API access
