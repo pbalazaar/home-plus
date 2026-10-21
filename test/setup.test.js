@@ -18,6 +18,8 @@ const SCRIPT = path.join(ROOT, 'service', 'settings-key.sh'); /* where the servi
 const windows = process.platform === 'win32' && 'needs symlinks and sh'; /* a reason to skip */
 let svc, dir, app, initd, bindsFile;
 const binds = () => JSON.parse(fs.readFileSync(bindsFile, 'utf8'));
+/* a Home bind's action, or null while the file is being written (the service writes it in place, as LG Input Hook reads it) */
+const homeAction = (file = bindsFile) => { try { return JSON.parse(fs.readFileSync(file, 'utf8'))[773].action; } catch (e) { return null; } };
 const theirs = { 1: { action: 'launch', id: 'netflix' }, 2: { action: 'exec', command: 'echo hi' } };
 
 test.before(async () => {
@@ -107,7 +109,7 @@ test('setup: the keys do what they do without Home+ once it\'s gone', { skip: wi
 test('setup: a Home bind made later in LG Input Hook\'s app gets the same check at once', async () => {
   const upgraded = binds()[773];
   fs.writeFileSync(bindsFile, JSON.stringify(Object.assign(binds(), { 773: { action: 'launch', id: 'com.github.pmiraka.homeplus' } }), null, 2));
-  await until(() => binds()[773].action === 'exec', 8000, 'the Home bind to be upgraded');
+  await until(() => homeAction() === 'exec', 8000, 'the Home bind to be upgraded');
   assert.deepEqual(binds()[773], upgraded);
   assert.deepEqual({ 1: binds()[1], 2: binds()[2] }, theirs);
 });
@@ -121,7 +123,7 @@ test('setup: LG Input Hook installed after the service started still gets its Ho
   try {
     fs.mkdirSync(path.dirname(later)); /* LG Input Hook comes, and a Home bind is made in its app */
     fs.writeFileSync(later, JSON.stringify({ 773: { action: 'launch', id: 'com.github.pmiraka.homeplus' } }));
-    await until(() => JSON.parse(fs.readFileSync(later, 'utf8'))[773].action === 'exec', 8000, 'the Home bind to be upgraded');
+    await until(() => homeAction(later) === 'exec', 8000, 'the Home bind to be upgraded');
   } finally {
     await s.stop();
     fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });

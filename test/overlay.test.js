@@ -17,6 +17,7 @@ const { until } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
 const NODE = process.env.HOMEPLUS_SERVICE_NODE || process.execPath;
+const windows = process.platform === 'win32' && 'the TV\'s: file URLs of Unix paths, links and Unix modes'; /* a reason to skip */
 let child, port, token, dir, log = '';
 
 const lunaLog = () => (fs.existsSync(path.join(dir, 'luna.log')) ? fs.readFileSync(path.join(dir, 'luna.log'), 'utf8') : '')
@@ -93,7 +94,7 @@ test.after(async () => {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
 });
 
-test('overlay: the Settings key opens it over the app in front, with the controls, the API and the frames', async () => {
+test('overlay: the Settings key opens it over the app in front, with the controls, the API and the frames', { skip: windows }, async () => {
   const r = await call('POST', '/api/key', { body: { key: 'settings' } });
   assert.deepEqual(r.json, { opened: 'overlay' });
   const launch = calls('luna://com.webos.service.systemUIManager/launch').at(-1);
