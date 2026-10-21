@@ -183,6 +183,7 @@ typedef struct {
     float progress;
     int season, episode, remaining, year;
     Tex *bg_tex, *logo_tex, *title_tex, *meta_tex;
+    int texts_made; /* title_tex and meta_tex are made (either can be NULL: a name with nothing to draw) */
     int bg_state, logo_state; /* 0 idle, 1 loading, 2 ready, 3 failed */
     int tw, th, mw, mh, lw, lh;
 } RailItem;
@@ -747,7 +748,7 @@ static void parse_apps(const char *json)
 /* the big title and meta line, made only for the card on show (~0.4 MB each) */
 static void ensure_rail_texts(RailItem *it)
 {
-    if (it->title_tex) return;
+    if (it->texts_made) return; /* (not title_tex: a name that renders to nothing made them every frame) */
     /* "Season 2 · Episode 5 · 31 min left" / "Episode 5 · ..." (anime) / "Movie · 48 min left" */
     char meta[200] = "";
     if (!strcmp(it->type, "series") && it->season)
@@ -768,8 +769,11 @@ static void ensure_rail_texts(RailItem *it)
         snprintf(left, sizeof left, "%s%d min left", meta[0] ? "  \xC2\xB7  " : "", it->remaining);
         append(meta, sizeof meta, left);
     }
+    tex_free(&it->title_tex);
+    tex_free(&it->meta_tex);
     it->title_tex = text_render(S.f_bold, 66, it->name, 1100, &it->tw, &it->th);
     it->meta_tex = text_render(S.f_medium, 27, meta, 1100, &it->mw, &it->mh);
+    it->texts_made = 1;
 }
 
 /* The first of n items to show, `visible` at a time, so that item i stays in view
@@ -899,6 +903,7 @@ static void rail_fill(cJSON *arr, int src, const char *app, const char *heading,
             if (it->progress == o->progress && it->remaining == o->remaining) {
                 it->title_tex = o->title_tex, it->tw = o->tw, it->th = o->th, o->title_tex = NULL;
                 it->meta_tex = o->meta_tex, it->mw = o->mw, it->mh = o->mh, o->meta_tex = NULL;
+                it->texts_made = o->texts_made;
             }
             break;
         }
@@ -3802,6 +3807,7 @@ static int update(float dt)
             if (it->logo_tex) tex_free(&it->logo_tex), it->logo_state = 0;
             tex_free(&it->title_tex);
             tex_free(&it->meta_tex);
+            it->texts_made = 0;
         }
     } else {
         App *ca = item_app(S.shelf_cur);
