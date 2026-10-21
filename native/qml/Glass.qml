@@ -79,7 +79,7 @@ Item {
         visible: glass.pic < 1
         radius: glass.radius
         color: glass.solid ? Qt.rgba(38 / 255, 38 / 255, 44 / 255, 0.96)
-             : glass.dark ? Qt.rgba(0.11, 0.11, 0.13, 0.3) : Qt.rgba(0.22, 0.22, 0.25, 0.72)
+             : glass.dark ? Qt.rgba(0.11, 0.11, 0.13, 0.3) : Qt.rgba(0.44, 0.44, 0.48, 0.58)
     }
     ShaderEffect {
         anchors.fill: parent
