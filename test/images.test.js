@@ -1,6 +1,7 @@
 /* The image proxy (/img/<key>): pictures from Stremio's addons, Jellyfin and Plex servers and TMDB
  * come through the service, which runs as root on the TV, so it takes only so much of them: up to
- * 8 MB, from a server that keeps sending, and redirected only to another server, not the TV itself.
+ * 8 MB, from a server that keeps sending, and only from another server, not the TV itself (nor
+ * redirected to it).
  * The real service, with the mock Stremio titles' pictures on a server of the test's. */
 'use strict';
 
@@ -79,4 +80,26 @@ test('images: a server that never answers is given up on', async () => {
 test('images: a redirect to the TV itself is refused', async () => {
   assert.equal((await get(pics[3])).status, 502);
   assert.equal(art.hits.some((h) => h.path === '/x'), false, 'and not followed');
+});
+
+test('images: a picture from the TV itself is refused, not fetched', async () => {
+  /* another service, without the tests' exception for their own server on 127.0.0.1 */
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-images-tv-'));
+  fs.writeFileSync(path.join(d, 'apps.txt'), 'stremio|Stremio');
+  const s = await startService(d, { HOMEPLUS_PREVIEW_ART: art.base, HOMEPLUS_PREVIEW_ART_STRICT: '1' });
+  try {
+    const pic = (await s.call('GET', '/api/continue')).json.items.find((it) => it.id.endsWith('4')).background;
+    const before = art.hits.length;
+    const r = await new Promise((resolve) => {
+      http.get({ host: '127.0.0.1', port: s.port, path: pic, headers: { 'X-Homeplus-Token': s.token } }, (res) => {
+        res.resume();
+        res.on('end', () => resolve(res.statusCode));
+      }).on('error', () => resolve(0));
+    });
+    assert.equal(r, 404);
+    assert.equal(art.hits.length, before, 'and not asked for');
+  } finally {
+    await s.stop();
+    fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+  }
 });

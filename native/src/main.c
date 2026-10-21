@@ -838,6 +838,24 @@ static void rail_request(int src)
     net_get_json(path, TAG_STREMIO, src, 0);
 }
 
+/* Empties the carousel (its source signed out), its pictures and texts with it: a picture
+ * on show is held until something covers it, as when its title leaves. */
+static void rail_clear(void)
+{
+    for (int l = 0; l < 2; l++) {
+        Pic *p = l ? &S.pic_top : &S.pic_under;
+        if (p->kind == PIC_RAIL) pic_hold(p, p->i < S.nrail ? &S.rail[p->i].bg_tex : NULL);
+    }
+    for (int i = 0; i < S.nrail; i++) {
+        RailItem *it = &S.rail[i];
+        tex_free(&it->bg_tex); tex_free(&it->logo_tex); tex_free(&it->title_tex); tex_free(&it->meta_tex);
+    }
+    S.nrail = 0;
+    net_drop(TAG_RAIL_BG, -1, S.rail_generation);
+    net_drop(TAG_RAIL_LOGO, -1, S.rail_generation);
+    S.rail_generation++; /* pictures on the way are for titles gone */
+}
+
 /* Puts titles (a JSON array) in the Top Shelf carousel: source src's, and for
  * popular titles app's, under a heading. */
 static void rail_fill(cJSON *arr, int src, const char *app, const char *heading, const char *opens)
@@ -2587,7 +2605,7 @@ static void run_action(Action act, int arg, const char *id)
         net_post(path, "{}", 0);
         S.src_connected[arg] = 0;
         if (arg == SRC_STREMIO) S.rail_stremio = 0;
-        if (S.rail_source == arg) S.rail_source = SRC_NONE, S.nrail = 0;
+        if (S.rail_source == arg) S.rail_source = SRC_NONE, rail_clear();
         if (S.at_page == PAGE_CONFIRM) settings_page(PAGE_ACCOUNTS, S.at_parent_index);
         else settings_again();
         break;

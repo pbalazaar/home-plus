@@ -13,6 +13,7 @@ const path = require('path');
 const os = require('os');
 const https = require('https');
 const http = require('http');
+const dns = require('dns');
 const pkg = require('./package.json');
 const { requestJSON } = require('./net');
 const Service = require('webos-service');
@@ -1018,28 +1019,44 @@ function trimImages() {
   }, 10000);
 }
 
-// where a redirect may take a picture: another web server, not this TV (its own services answer on
-// 127.0.0.1); servers on the network stay allowed, as Jellyfin's and Plex's are. null: nowhere
-function redirectTo(location, from) {
+// where a picture may come from: another web server, not this TV (its own services answer on
+// 127.0.0.1); servers on the network stay allowed, as Jellyfin's and Plex's are. Checked for the
+// first URL as for every redirect, as the URLs come from addons and servers. null: nowhere
+const onTV = (host) => host === 'localhost' || host.endsWith('.localhost') || /^(127|0)\.\d+\.\d+\.\d+$/.test(host) ||
+  /^::(1|ffff:7f[0-9a-f]{2}:[0-9a-f]+|ffff:(127|0)\.\d+\.\d+\.\d+)?$/.test(host);
+/* (the tests' pictures, on a server of theirs on 127.0.0.1; HOMEPLUS_PREVIEW_ART_STRICT: not even those) */
+const PREVIEW_ART = !process.env.HOMEPLUS_PREVIEW_ART_STRICT && process.env.HOMEPLUS_PREVIEW_ART;
+function pictureURL(location, from, first) {
   let u;
   try { u = new URL(location, from); } catch (e) { return null; }
   const host = u.hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase(); /* (the URL has made 127.1 and the like 127.0.0.1) */
-  const tv = host === 'localhost' || host.endsWith('.localhost') || /^(127|0)\.\d+\.\d+\.\d+$/.test(host) || /^::(1|ffff:7f[0-9a-f]{2}:[0-9a-f]+)?$/.test(host);
-  return (u.protocol === 'http:' || u.protocol === 'https:') && !tv ? u.toString() : null;
+  const ours = first && PREVIEW_ART && u.href.startsWith(PREVIEW_ART + '/');
+  return (u.protocol === 'http:' || u.protocol === 'https:') && (ours || !onTV(host)) ? u.toString() : null;
+}
+
+// and a name that turns out to be the TV (127.0.0.1.nip.io and the like) is refused when it's looked up
+function lookupOffTV(hostname, opts, cb) {
+  dns.lookup(hostname, opts, (err, addr, family) => {
+    if (err) return cb(err);
+    const all = Array.isArray(addr) ? addr : [{ address: addr, family }];
+    if (all.some((a) => onTV(String(a.address).toLowerCase()))) return cb(Object.assign(new Error(`${hostname} is the TV itself`), { code: 'EACCES' }));
+    cb(null, addr, family);
+  });
 }
 
 function fetchRemote(url, res, depth = 0, file = '') {
-  let u;
-  try { u = new URL(url); } catch (e) { u = null; }
+  let u = depth === 0 ? pictureURL(url, undefined, true) : url;
+  if (!u) log('image: a picture from the TV itself, or not from a web server, refused');
+  try { u = u && new URL(u); } catch (e) { u = null; }
   const mod = u && u.protocol === 'https:' ? https : u && u.protocol === 'http:' ? http : null;
   if (!mod) { res.writeHead(404); return res.end(); }
   let answered = false; /* a response came: its end says how it went */
-  const req = mod.get(u, { timeout: IMAGE_TIMEOUT_MS }, (up) => {
+  const req = mod.get(u, { timeout: IMAGE_TIMEOUT_MS, lookup: lookupOffTV }, (up) => {
     answered = true;
     up.on('error', () => {}); /* (cut short: 'close' below sees to it) */
     if (up.statusCode >= 300 && up.statusCode < 400 && up.headers.location && depth < 4) {
       up.resume();
-      const next = redirectTo(up.headers.location, url);
+      const next = pictureURL(up.headers.location, url, false);
       if (next) return fetchRemote(next, res, depth + 1, file);
       log('image: a redirect to the TV itself, or not to a web server, refused');
       res.writeHead(502);
@@ -1081,7 +1098,15 @@ function writeToken() {
   const files = [path.join(__dirname, '..', '..', 'applications', NATIVE_ID, 'api-token'), process.env.HOMEPLUS_TOKEN_FILE];
   let written = 0;
   for (const f of files.filter(Boolean)) {
-    try { fs.writeFileSync(f, TOKEN, { mode: 0o644 }); written++; } catch (e) { /* not installed there, or not root yet */ }
+    /* written beside it, then renamed over it: a link put in its place is replaced, never followed (as root) */
+    const part = `${f}.${process.pid}.part`;
+    try {
+      fs.rmSync(part, { force: true });
+      const fd = fs.openSync(part, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), 0o644);
+      try { fs.writeSync(fd, TOKEN); fs.fchmodSync(fd, 0o644); } finally { fs.closeSync(fd); } /* (the launcher reads it: not root) */
+      fs.renameSync(part, f);
+      written++;
+    } catch (e) { fs.rmSync(part, { force: true }); /* not installed there, or not root yet */ }
   }
   return written > 0;
 }
@@ -1306,10 +1331,10 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/uninstall' && req.method === 'POST') {
       return sendJSON(res, 200, Object.assign({ returnValue: true }, await uninstall()));
     }
-    if (url.pathname === '/api/home') {
+    if (url.pathname === '/api/home') { /* (the config is read once the body is in: a sign-in may save it meanwhile) */
+      const b = req.method === 'POST' ? await readBody(req) : null;
       const cfg = readConfig();
-      if (req.method === 'POST') {
-        const b = await readBody(req);
+      if (b) {
         if (typeof b.settingsKey === 'boolean') setKeyBind(SETTINGS_KEY, b.settingsKey); /* the Settings key's bind */
         if (typeof b.inputKey === 'boolean') setKeyBind(INPUT_KEY, b.inputKey); /* the Input key's */
         if (b.mode !== undefined || b.asked) {
@@ -1340,18 +1365,19 @@ async function handleApi(req, res) {
       return sendJSON(res, 200, r);
     }
     if (url.pathname === '/api/layout') {
+      const l = req.method === 'POST' ? await readBody(req) : null;
       const cfg = readConfig();
-      if (req.method === 'POST') {
-        const l = await readBody(req);
+      if (l) {
         cfg.layout = { order: Array.isArray(l.order) ? l.order.map(String) : [], hidden: Array.isArray(l.hidden) ? l.hidden.map(String) : [] };
         writeConfig(cfg);
       }
       return sendJSON(res, 200, cfg.layout || { order: [], hidden: [] });
     }
     if (url.pathname === '/api/prefs') { // launcher preferences, e.g. {"sounds": false}
+      const b = req.method === 'POST' ? await readBody(req) : null;
       const cfg = readConfig();
-      if (req.method === 'POST') {
-        cfg.prefs = Object.assign({}, cfg.prefs, await readBody(req));
+      if (b) {
+        cfg.prefs = Object.assign({}, cfg.prefs, b);
         writeConfig(cfg);
       }
       return sendJSON(res, 200, cfg.prefs || {});

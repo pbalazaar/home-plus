@@ -43,6 +43,15 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
     return { Authorization: h, 'X-Emby-Authorization': h };
   }
 
+  // an answer's address: a web server on the network, not this TV (any device on the network can answer)
+  function onNetwork(address) {
+    let u;
+    try { u = new URL(String(address)); } catch (e) { return false; }
+    const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    return (u.protocol === 'http:' || u.protocol === 'https:') &&
+      !(host === 'localhost' || host.endsWith('.localhost') || /^(127|0)\./.test(host) || /^::(1|ffff:7f[0-9a-f]{2}:[0-9a-f]+)?$/.test(host));
+  }
+
   // Servers on this network answer "who is JellyfinServer?" on UDP 7359.
   function discover(ms = 2500) {
     return new Promise((resolve) => {
@@ -58,7 +67,7 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
       sock.on('message', (msg) => {
         try {
           const s = JSON.parse(String(msg));
-          if (s.Address) found.set(s.Id || s.Address, { url: String(s.Address).replace(/\/+$/, ''), name: s.Name || 'Jellyfin' });
+          if (s.Address && onNetwork(s.Address)) found.set(s.Id || s.Address, { url: String(s.Address).replace(/\/+$/, ''), name: s.Name || 'Jellyfin' });
         } catch (e) { /* not a Jellyfin answer */ }
       });
       sock.on('error', (e) => { log('jellyfin: discovery failed', e.message); done(); });
