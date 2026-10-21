@@ -1,8 +1,9 @@
 """Compares two folders of the launcher's preview shots, scene by scene: a change that should draw the same (moving
 code between files, say) should leave every scene as it was. The shots aren't exactly reproducible: the clock shows the
-minute it was taken, and a few scenes are caught mid-animation (cc-editing and cc-options wobble, move-hint lifts a tile,
-crossfade fades), which differ by up to about 0.3% of their pixels between two runs of one build. So the clock's band is
-left out, and a scene passes while fewer than 0.5% of its pixels differ visibly (by more than 16 of 255).
+minute it was taken, and a few scenes are caught mid-animation: cc-editing and cc-options wobble and move-hint lifts a
+tile, which differ by up to about 0.3% of their pixels between two runs of one build, and crossfade catches a fade from one
+page to the next at a moment that varies (up to 1.8% apart, measured). So the clock's band is left out, and a scene passes
+while fewer than 0.5% of its pixels differ visibly (by more than 16 of 255), crossfade while fewer than 3% do.
    python3 tools/native-preview/compare-screens.py <folder before> <folder after>
 """
 import sys
@@ -12,6 +13,7 @@ from PIL import Image, ImageChops, ImageDraw
 
 CLOCK = (1580, 40, 1880, 120)  # the clock capsule, top right (TOP_Y 52, BAR 56, ending at RIGHT 1872)
 LIMIT = 0.005
+LIMITS = {'crossfade': 0.03}  # a fade, caught at a moment that varies
 
 before, after = Path(sys.argv[1]), Path(sys.argv[2])
 problems, scenes = [], sorted(before.glob('native-*.png'))
@@ -30,7 +32,7 @@ for path in scenes:
     if share:
         box = diff.point(lambda v: 255 if v > 16 else 0).getbbox()
         print(f'  {name}: {share:.3%} of its pixels differ, in {box}')
-    if share >= LIMIT:
+    if share >= LIMITS.get(name, LIMIT):
         problems.append(f'{name}: {share:.2%} of its pixels differ')
 
 if problems:

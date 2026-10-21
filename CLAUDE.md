@@ -101,7 +101,8 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   those luna calls never answer, and `HOMEPLUS_PREVIEW_NO_APPS` has webOS list no apps.
   `tools/native-preview/glass-test.sh <art.jpg> <out.png>` renders a glass test card.
   `tools/native-preview/compare-screens.py <before> <after>` compares two folders of preview shots, for a change
-  that should draw the same: it leaves out the clock and allows the few scenes caught mid-animation their ~0.3%.
+  that should draw the same: it leaves out the clock, and allows the few scenes caught mid-animation the difference two
+  runs of one build show (~0.3%, and up to ~2% for `crossfade`).
 - Docker on a Mac can see a file before it's fully written: if a build reports
   "expected ... at end of input", just run it again.
 

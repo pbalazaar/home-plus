@@ -135,7 +135,8 @@ or three PRs.
   The screens aren't pixel-identical from run to run, so "identical" can't be the bar. Measured, two runs of the same
   binary: 33 of 36 scenes match outside the clock (at most a 16-level difference in a few pixels); `cc-editing`,
   `cc-options` and `move-hint` differ by up to 0.3% of their pixels, all inside the wobbling controls or the picked
-  tile, and `crossfade` can catch a fade a step apart. The clock capsule (x 1660–1802, y 50–110 on these runs) differs
+  tile, and `crossfade` can catch a fade a step apart (later measured at up to 1.8% between two renders of b9d1d99,
+  so it gets 3%). The clock capsule (x 1660–1802, y 50–110 on these runs) differs
   whenever the minute changes. So the script:
   - masks the band x 1580–1880, y 40–120;
   - counts the pixels that differ by more than 16 levels, and prints that share and its bounding box per scene;
