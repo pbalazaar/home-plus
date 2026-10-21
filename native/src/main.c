@@ -5,10 +5,8 @@
  * display refresh rate, and when nothing moves the loop sleeps.
  *
  * Data comes from the Home+ service's local API (see service/service.js). */
-#include <ctype.h>
 #include <dlfcn.h>
 #include <math.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,166 +35,8 @@ static const struct { const char *name; int icon; } CC_ICONS[] = { /* the servic
 
 static const char *const LOOK_NAME[] = { "Default", "Dark", "Clear", "Tinted" };
 
-extern State S;
-
-/* ------------------------------------------------------------------ helpers */
-
-static float approach(float *v, float target, float speed, float dt, int *moving)
-{
-    float d = target - *v;
-    if (fabsf(d) < 0.0005f) {
-        *v = target;
-        return *v;
-    }
-    *v += d * (1.0f - expf(-speed * dt));
-    *moving = 1;
-    return *v;
-}
-
-/* Spring toward target, parametrised like SwiftUI's: response is the period in
- * seconds, damping 1 settles without overshoot, below 1 bounces a little. */
-static void spring(float *x, float *v, float target, float response, float damping, float dt, int *moving)
-{
-    if (S.reduce_motion && damping < 1) damping = 1; /* Reduce Motion: settle without overshoot */
-    float k = 2 * (float)M_PI / response, c = 4 * (float)M_PI * damping / response;
-    k *= k;
-    int n = (int)ceilf(dt * 240);
-    if (n < 1) n = 1;
-    float h = dt / n;
-    for (int i = 0; i < n; i++) {
-        *v += (-k * (*x - target) - c * *v) * h;
-        *x += *v * h;
-    }
-    if (fabsf(*x - target) < 0.0005f && fabsf(*v) < 0.005f) {
-        *x = target;
-        *v = 0;
-        return;
-    }
-    *moving = 1;
-}
-
-static void tex_free(Tex **t) { r_tex_free(t); }
-
-static void log_remote(const char *fmt, ...)
-{
-    char msg[600];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(msg, sizeof msg, fmt, ap);
-    va_end(ap);
-    fprintf(stderr, "homeplus: %s\n", msg);
-    cJSON *o = cJSON_CreateObject();
-    cJSON_AddStringToObject(o, "message", msg);
-    char *body = cJSON_PrintUnformatted(o);
-    net_post("/api/log", body, 0);
-    free(body);
-    cJSON_Delete(o);
-}
-
-static void toast(const char *text, int ms)
-{
-    tex_free(&S.toast_tex);
-    S.toast_tex = text_render(S.f_medium, 26, text, 1300, &S.toast_w, &S.toast_h);
-    S.toast_until = SDL_GetTicks() + ms;
-    S.toast_t = S.toast_v = 0;
-}
-
-static int toast_on(void) { return S.toast_tex && SDL_GetTicks() < S.toast_until; }
-
-/* appends src to dst (capacity cap), cut short when full */
-static void append(char *dst, size_t cap, const char *src)
-{
-    size_t n = strlen(dst);
-    if (n + 1 < cap) snprintf(dst + n, cap - n, "%s", src);
-}
-
-static void copy_id(char *dst, const char *src)
-{
-    size_t n = strlen(src);
-    if (n >= ID_LEN) n = ID_LEN - 1;
-    memmove(dst, src, n);
-    dst[n] = 0;
-}
-
-static int parse_hex(const char *s, Uint8 out[3])
-{
-    unsigned v;
-    if (!s || s[0] != '#' || strlen(s) != 7 || sscanf(s + 1, "%6x", &v) != 1) return 0;
-    out[0] = (v >> 16) & 255;
-    out[1] = (v >> 8) & 255;
-    out[2] = v & 255;
-    return 1;
-}
-
-static const char *jstr(cJSON *o, const char *k)
-{
-    cJSON *v = cJSON_GetObjectItemCaseSensitive(o, k);
-    return cJSON_IsString(v) && v->valuestring ? v->valuestring : "";
-}
-
-static double jnum(cJSON *o, const char *k)
-{
-    cJSON *v = cJSON_GetObjectItemCaseSensitive(o, k);
-    return cJSON_IsNumber(v) ? v->valuedouble : 0;
-}
-
-static App *item_app(int item)
-{
-    if (item < 0 || item >= S.nitems || S.items[item] < 0) return NULL;
-    return &S.apps[S.items[item]];
-}
-
-/* case-insensitive substring test (SDL_strcasestr needs SDL 2.24; the TV has 2.0.14) */
-static int contains_ci(const char *hay, const char *needle)
-{
-    size_t n = strlen(needle);
-    for (; *hay; hay++) {
-        size_t i = 0;
-        while (i < n && hay[i] && tolower((unsigned char)hay[i]) == tolower((unsigned char)needle[i])) i++;
-        if (i == n) return 1;
-    }
-    return 0;
-}
-
 static const char *const SRC_ID[SRC_COUNT] = { "", "stremio", "jellyfin", "plex" };
 static const char *const SRC_NAME[SRC_COUNT] = { "", "Stremio", "Jellyfin", "Plex" };
-
-/* The media source an app's Top Shelf shows, by its id or name (store builds differ). */
-static int media_source(const App *a)
-{
-    if (!a) return SRC_NONE;
-    if (contains_ci(a->id, "stremio") || contains_ci(a->title, "stremio")) return SRC_STREMIO;
-    if (contains_ci(a->id, "jellyfin") || contains_ci(a->title, "jellyfin")) return SRC_JELLYFIN;
-    if (contains_ci(a->id, "plex") || contains_ci(a->title, "plex") || !strcmp(a->id, "cdp-30")) return SRC_PLEX;
-    return SRC_NONE;
-}
-
-/* An app's short name: LG's titles can be long ("Spotify - Music and Podcasts"),
- * so labels stop at the first " - " or ": " (tvOS shows short names too). */
-static void short_title(const App *a, char *out, size_t cap)
-{
-    snprintf(out, cap, "%s", a->title);
-    static const char *const cuts[] = { " - ", " \xE2\x80\x93 ", " \xE2\x80\x94 ", ": " };
-    for (size_t i = 0; i < sizeof cuts / sizeof *cuts; i++) {
-        char *c = strstr(out, cuts[i]);
-        if (c && c - out >= 3) *c = 0;
-    }
-}
-
-static int is_hidden(const char *id)
-{
-    for (int i = 0; i < S.nhidden; i++) if (!strcmp(S.hidden[i], id)) return 1;
-    return 0;
-}
-
-static void app_color(const App *a, Uint8 *r, Uint8 *g, Uint8 *b)
-{
-    if (a && (a->has_col || a->fullbleed)) {
-        *r = a->col[0]; *g = a->col[1]; *b = a->col[2];
-    } else {
-        *r = 70; *g = 70; *b = 82;
-    }
-}
 
 /* ------------------------------------------------------------------ items & layout */
 
@@ -388,17 +228,6 @@ static void ensure_rail_texts(RailItem *it)
     it->title_tex = text_render(S.f_bold, 66, it->name, 1100, &it->tw, &it->th);
     it->meta_tex = text_render(S.f_medium, 27, meta, 1100, &it->mw, &it->mh);
     it->texts_made = 1;
-}
-
-/* The first of n items to show, `visible` at a time, so that item i stays in view
- * with `margin` items around it: the list only scrolls when i would get closer
- * to an edge than that (or leave it). */
-static int keep_in_view(int first, int i, int visible, int n, int margin)
-{
-    if (first > i - margin) first = i - margin;
-    if (first < i + margin - (visible - 1)) first = i + margin - (visible - 1);
-    if (first > n - visible) first = n - visible;
-    return first < 0 ? 0 : first;
 }
 
 /* Shows title i in the Top Shelf carousel. */
@@ -797,12 +626,6 @@ static float sheet_head(void);
  * it out, trim to the logo and size it to a common target. Icons without a
  * solid background keep their whole picture, at one size, with round corners;
  * logo-only icons (transparent) get one graphite tile (light if the logo is dark). */
-static float smooth01(float a, float b, float x)
-{
-    float t = (x - a) / (b - a);
-    t = t < 0 ? 0 : t > 1 ? 1 : t;
-    return t * t * (3 - 2 * t);
-}
 
 /* A cover for apps without artwork: the icon stretched over a small 16:9
  * frame (over the app's colour where it's transparent), blurred into soft

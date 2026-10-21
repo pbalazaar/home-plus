@@ -3,6 +3,8 @@
 #ifndef HOMEPLUS_HOME_H
 #define HOMEPLUS_HOME_H
 
+#include <math.h>
+
 #include <SDL.h>
 
 #include "cJSON.h"
@@ -403,5 +405,66 @@ typedef struct {
     int hw, hh, sw, sh, sfw, sfh;
 } State;
 
+extern State S;
+
+static inline float approach(float *v, float target, float speed, float dt, int *moving)
+{
+    float d = target - *v;
+    if (fabsf(d) < 0.0005f) {
+        *v = target;
+        return *v;
+    }
+    *v += d * (1.0f - expf(-speed * dt));
+    *moving = 1;
+    return *v;
+}
+
+/* Spring toward target, parametrised like SwiftUI's: response is the period in
+ * seconds, damping 1 settles without overshoot, below 1 bounces a little. */
+static inline void spring(float *x, float *v, float target, float response, float damping, float dt, int *moving)
+{
+    if (S.reduce_motion && damping < 1) damping = 1; /* Reduce Motion: settle without overshoot */
+    float k = 2 * (float)M_PI / response, c = 4 * (float)M_PI * damping / response;
+    k *= k;
+    int n = (int)ceilf(dt * 240);
+    if (n < 1) n = 1;
+    float h = dt / n;
+    for (int i = 0; i < n; i++) {
+        *v += (-k * (*x - target) - c * *v) * h;
+        *x += *v * h;
+    }
+    if (fabsf(*x - target) < 0.0005f && fabsf(*v) < 0.005f) {
+        *x = target;
+        *v = 0;
+        return;
+    }
+    *moving = 1;
+}
+
+static inline void tex_free(Tex **t) { r_tex_free(t); }
+
+static inline float smooth01(float a, float b, float x)
+{
+    float t = (x - a) / (b - a);
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    return t * t * (3 - 2 * t);
+}
+
+/* util.c */
+void log_remote(const char *fmt, ...);
+void toast(const char *text, int ms);
+int toast_on(void);
+void append(char *dst, size_t cap, const char *src);
+void copy_id(char *dst, const char *src);
+int parse_hex(const char *s, Uint8 out[3]);
+const char *jstr(cJSON *o, const char *k);
+double jnum(cJSON *o, const char *k);
+App *item_app(int item);
+int contains_ci(const char *hay, const char *needle);
+int media_source(const App *a);
+void short_title(const App *a, char *out, size_t cap);
+int is_hidden(const char *id);
+void app_color(const App *a, Uint8 *r, Uint8 *g, Uint8 *b);
+int keep_in_view(int first, int i, int visible, int n, int margin);
 
 #endif
