@@ -1,6 +1,6 @@
 import QtQuick 2.4
 
-// A line of text in a room it may not fit, as Home+'s (main.c: draw_marquee) and tvOS's: what doesn't
+// A line of text in a room it may not fit, as Home+'s (draw.c: draw_marquee) and tvOS's: what doesn't
 // fit fades out at the room's edge. While it's `running` (its control has the focus) it waits 2 s, then
 // slides left to show the rest, a gap, then the start again, and waits again; the left edge fades too
 // while it's moved.

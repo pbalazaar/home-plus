@@ -2,8 +2,8 @@ import QtQuick 2.4
 import QtGraphicalEffects 1.0
 
 // The Control Center over other apps (opened by ControlCenter.qml): the controls the owner placed,
-// on Home+'s four-unit grid under its clock, drawn as Home+ draws them (main.c: draw_control_center,
-// draw_clock; the same sizes), with tvOS 26's states: what's on has a cyan glyph, a switch that's
+// on Home+'s four-unit grid under its clock, drawn as Home+ draws them (cc.c: draw_control_center;
+// draw.c: draw_clock; the same sizes), with tvOS 26's states: what's on has a cyan glyph, a switch that's
 // off sits on a pale disc. The glass is the video behind it, blurred (Glass.qml). They drop in.
 // Editing works as Home+'s: hold OK for Edit Controls; then OK picks one up and puts it down,
 // holding OK gives its sizes and Remove, the + slot adds one, Reset starts over.
@@ -15,22 +15,22 @@ FocusScope {
     property var host       // ControlCenter.qml: call()
     signal closed()
 
-    // Home+'s grid and clock (main.c: CC_U, CC_G, cc_grid_x/y, RIGHT, TOP_Y, BAR)
+    // Home+'s grid and clock (home.h: CC_U, CC_G, RIGHT, TOP_Y, BAR; cc.c: cc_grid_x/y)
     readonly property int unit: 91
     readonly property int gap: 20
     readonly property int rightEdge: 1872
     readonly property int gridX: rightEdge - 4 * unit - 3 * gap
     readonly property int gridY: 52 + 56 + 26
     readonly property int gridW: 4 * unit + 3 * gap
-    readonly property int gridRows: 7         // main.c: CC_ROWS
+    readonly property int gridRows: 7         // home.h: CC_ROWS
     readonly property color cyan: "#10e8f4"   // tvOS 26's colour for what's on
     readonly property color teal: "#0089ad"   // the same, on a focused (white) control
     readonly property color ink: "#1c1c1e"    // a focused control's glyph and text
     readonly property color white: "#f5f5f7"  // a focused control
-    readonly property color red: "#ff5a50"    // what can't be undone: its label on glass (main.c: RED_ON_GLASS),
+    readonly property color red: "#ff5a50"    // what can't be undone: its label on glass (home.h: RED_ON_GLASS),
     readonly property color redOnWhite: "#d72828" // and on a focused (white) button (RED_ON_WHITE)
 
-    // Home+'s lists, sheets and hints (main.c: CC_LIST_*, CC_DETAIL_PX; SHEET_*, PAD; HINT_PX)
+    // Home+'s lists, sheets and hints (home.h: CC_LIST_*, CC_DETAIL_PX; SHEET_*, PAD; HINT_PX)
     readonly property int listRowH: 56
     readonly property int listGap: 6
     readonly property int listHead: 66
@@ -44,7 +44,7 @@ FocusScope {
     readonly property int sheetBodyPx: 26
     readonly property int sheetButtonPx: 31
     readonly property int hintPx: 26
-    // text not on white, of 255 (main.c: TEXT_STATIC, TEXT_SECONDARY, TEXT_TERTIARY): what stays on
+    // text not on white, of 255 (home.h: TEXT_STATIC, TEXT_SECONDARY, TEXT_TERTIARY): what stays on
     // screen; values, details, sheets' words, hints; group names
     readonly property int textStatic: 218
     readonly property int textSecondary: 179
@@ -61,14 +61,14 @@ FocusScope {
 
     property int focusIndex: 0     // a control (0..n-1); while editing, the + slot (n) and Reset (n + 1)
     property int listKind: 0       // in the Control Center's place: 1 picture modes, 2 inputs, 3 the gallery
-    property bool listOnly: false  // opened by the Input key on the inputs alone: Back closes it (main.c: list_only)
+    property bool listOnly: false  // opened by the Input key on the inputs alone: Back closes it (cc.c: list_only)
     property int listIndex: 0
     property var listItems: []
     property bool closing: false
     property bool opening: true    // the first drop; controls placed later just appear
     property string problem: ""    // a control that didn't work, or one with no room, says why under the grid
 
-    // editing (main.c: cc_edit_ok, cc_move_picked, cc_long_press)
+    // editing (cc.c: cc_edit_ok, cc_move_picked, cc_long_press)
     property bool editing: false
     property int picked: -1        // the control being moved
     property int plusCol: -1       // the + slot: the first free unit after the last control
@@ -181,7 +181,7 @@ FocusScope {
     }
 
     // Places the controls in order on the four-unit grid, each in the first space it fits; the +
-    // slot takes the first free unit after the last of them (main.c: cc_pack). Row -1: no room.
+    // slot takes the first free unit after the last of them (cc.c: cc_pack). Row -1: no room.
     function relayout() {
         var used = [], last = -1, i, y, x, yy, xx;
         for (y = 0; y < gridRows; y++) used.push([0, 0, 0, 0]);
@@ -218,7 +218,7 @@ FocusScope {
 
     function focusCount() { return tiles.count + (editing ? 2 : 0); }
 
-    // where focusable thing i is (main.c: cc_rect): a control, the + slot, Reset
+    // where focusable thing i is (cc.c: cc_rect): a control, the + slot, Reset
     function rectOf(i) {
         var n = tiles.count;
         if (i >= 0 && i < n) {
@@ -265,7 +265,7 @@ FocusScope {
     }
     function idAt(i) { return i >= 0 && i < tiles.count ? tiles.get(i).cid : ""; }
 
-    // ---- what OK does (main.c: cc_activate)
+    // ---- what OK does (cc.c: cc_activate)
 
     function run(body, then) {
         problem = "";
@@ -360,7 +360,7 @@ FocusScope {
             for (var k = 0; k < sizes.length; k++)
                 items.push({ label: names[sizes[k]] || sizes[k], act: "size", arg: sizes[k], check: sizes[k] === t.size });
         if (!e || !e.pinned) items.push({ label: "Remove", act: "remove", destructive: true }); // not Settings: the only way in
-        if (!items.length) { // nothing to change about it (main.c: cc_long_press)
+        if (!items.length) { // nothing to change about it (cc.c: cc_long_press)
             var item = grid.itemAt(focusIndex);
             if (item) item.shake();
             return;
@@ -370,7 +370,7 @@ FocusScope {
     }
 
     // the picked control moves through the order; up and down, to the control in that row nearest
-    // its middle (main.c: cc_move_picked)
+    // its middle (cc.c: cc_move_picked)
     function movePicked(dx, dy) {
         var i = picked, to = i + dx;
         if (dy) {
@@ -399,7 +399,7 @@ FocusScope {
         run({ action: "layout", controls: list });
     }
 
-    // a control from the gallery, at the end in the first of its sizes that fits (main.c: cc_add)
+    // a control from the gallery, at the end in the first of its sizes that fits (cc.c: cc_add)
     function add(e) {
         var had = placed();
         var o = tileOf({ id: e.id, size: e.sizes[0], kind: e.kind, icon: e.icon, title: e.title, available: true });
@@ -425,7 +425,7 @@ FocusScope {
     }
 
     // gives control i the first of `sizes` that leaves `need` controls on the grid, it among them;
-    // false (and as it was) if none does (main.c: cc_fit)
+    // false (and as it was) if none does (cc.c: cc_fit)
     function fit(i, sizes, need) {
         var was = tiles.get(i).size;
         for (var k = 0; k < sizes.length; k++) {
@@ -471,7 +471,7 @@ FocusScope {
         }
     }
 
-    // ---- the lists (main.c: cc_list_open, cc_list_ok)
+    // ---- the lists (cc_list.c: cc_list_open, cc_list_ok)
 
     function openList(kind) {
         var items = [], i;
@@ -503,7 +503,7 @@ FocusScope {
     }
 
     // ---- the gallery: what can be added, by group, as round buttons with their names under them;
-    // wider than the grid, its right edge the grid's (main.c: cc_gallery_build; GAL_W, GAL_PAD,
+    // wider than the grid, its right edge the grid's (cc_list.c: cc_gallery_build; GAL_W, GAL_PAD,
     // GAL_HEAD, GAL_GROUP, GAL_GROUP_TOP, GAL_BTN, GAL_ROW, GAL_NAME_PX, GAL_NAME_GAP)
 
     readonly property int galW: 680
@@ -552,7 +552,7 @@ FocusScope {
     }
 
     // ---- moving: the nearest thing that way, as tvOS's focus moves: something beside it, or within
-    // 45 degrees of the way (main.c: cc_move); -1: nothing that way
+    // 45 degrees of the way (cc.c: cc_move); -1: nothing that way
 
     function nearest(count, rect, from, dx, dy) {
         var a = rect(from) || { x: gridX, y: gridY, w: 0, h: 0 }; // (on nothing on screen: from the grid's corner)
@@ -667,7 +667,7 @@ FocusScope {
     property real editDim: editing && !closing ? 0.4 : 0
     Behavior on editDim { NumberAnimation { duration: view.standard } }
 
-    // ---- the clock, as Home+'s header while its Control Center is open (main.c: draw_clock): the
+    // ---- the clock, as Home+'s header while its Control Center is open (draw.c: draw_clock): the
     // time on its own, and the Control Center's circle, grown and white. Over another app it's over
     // the picture itself, white over white or a channel's logo as often as not: both cast a soft
     // shadow (unseen over dark pictures), and the corner they're in dims where the picture is bright,
@@ -964,7 +964,7 @@ FocusScope {
                 id: flashing
                 NumberAnimation { target: flashText; property: "opacity"; to: view.textStatic / 255; duration: view.quick }
                 PauseAnimation { duration: 1200 - view.quick }
-                NumberAnimation { target: flashText; property: "opacity"; to: 0; duration: 600 } // (main.c: gone by 1.8 s)
+                NumberAnimation { target: flashText; property: "opacity"; to: 0; duration: 600 } // (cc.c: gone by 1.8 s)
             }
             function flash() { flashing.restart(); }
 
@@ -979,7 +979,7 @@ FocusScope {
         }
     }
 
-    // ---- editing: the + slot, what OK does, and Reset (main.c: draw_control_center)
+    // ---- editing: the + slot, what OK does, and Reset (cc.c: draw_control_center)
 
     Item {
         id: plus
@@ -1060,7 +1060,7 @@ FocusScope {
         styleColor: "#80000000"
     }
 
-    // ---- a list, in the Control Center's place (main.c: draw_cc_list)
+    // ---- a list, in the Control Center's place (cc_list.c: draw_cc_list)
 
     Item {
         id: list
@@ -1142,7 +1142,7 @@ FocusScope {
         }
     }
 
-    // ---- the gallery, in the Control Center's place (main.c: draw_cc_gallery)
+    // ---- the gallery, in the Control Center's place (cc_list.c: draw_cc_gallery)
 
     Item {
         id: gal
@@ -1239,7 +1239,7 @@ FocusScope {
         }
     }
 
-    // ---- a sheet, as Home+'s (main.c: draw_sheet, draw_sheet_button): in the middle, over the rest
+    // ---- a sheet, as Home+'s (sheet.c: draw_sheet, draw_sheet_button): in the middle, over the rest
     // stepped back; its title, its words a line at a time, then its buttons, each label in the middle
 
     Rectangle {
