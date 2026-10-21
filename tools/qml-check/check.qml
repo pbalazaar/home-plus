@@ -213,6 +213,14 @@ Item {
             });
             break;
         case 32:
+            relaunch(null);
+            win.item.lifeCycleStatus.launch(undefined); // a launch with nothing in it
+            expect(!win.item.view, "a launch without a payload opens nothing");
+            break;
+        case 33:
+            expect(win.item.exited, "and its window goes");
+            break;
+        case 34:
             finish();
             break;
         }

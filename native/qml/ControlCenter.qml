@@ -96,7 +96,10 @@ StarfishSystemUIWindow {
 
     Connections {
         target: root.lifeCycleStatus
-        onLaunch: root.open(payload.params || payload || {})
+        onLaunch: { // its params, from the service (or LG relaunching it with none: then there's nothing to show)
+            if (payload) root.open(payload.params || payload);
+            else root.quit();
+        }
         onClose: { // LG closes it (another app, the TV going to sleep): animated, unless it's going to sleep
             var reason = (payload && payload.reason) || ""; // (it may give none)
             if (view && reason !== "powerSuspend") view.close();
