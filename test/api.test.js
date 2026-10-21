@@ -190,6 +190,26 @@ test('api: an app can be deleted from the TV, but not Home+ itself or what roots
   assert.ok((await call('POST', '/api/remove', { body: { id: 'not.installed' } })).status >= 400);
 });
 
+test('api: a TV service that never answers doesn\'t keep a request waiting', async () => {
+  /* a second service, on a TV whose app list and network state never come (a luna call gives up
+   * after 15 s on the TV; here, after 500 ms) */
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-api-silent-'));
+  fs.writeFileSync(path.join(d, 'apps.txt'), 'netflix|Netflix');
+  const s = await startService(d, { HOMEPLUS_PREVIEW_LUNA_SILENT: 'listApps|connectionmanager', HOMEPLUS_LUNA_TIMEOUT_MS: '500' });
+  const within5s = (p) => Promise.race([p, new Promise((resolve, reject) => setTimeout(() => reject(new Error('still waiting after 5 s')), 5000))]);
+  try {
+    const apps = await within5s(s.call('GET', '/api/apps'));
+    assert.ok(apps.status >= 500, `no app list is an error, not an empty list: ${apps.status}`);
+    assert.match(apps.json.errorText, /didn't list its apps/);
+    const cc = await within5s(s.call('GET', '/api/control'));
+    assert.equal(cc.status, 200, 'the Control Center still opens, with what did answer');
+    assert.equal(cc.json.network.kind, 'none');
+  } finally {
+    await s.stop();
+    fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
 test('api: the Control Center\'s list and gallery, saved, stepped and reset', async () => {
   const st = (await call('GET', '/api/control')).json;
   assert.equal(st.controls.length, 11, 'the default list');

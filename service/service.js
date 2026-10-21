@@ -47,8 +47,21 @@ const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
 
 // ------------------------------------------------------------------ helpers
 
+// A luna call's answer. One that never comes (a stuck service, a busy bus) mustn't keep a request
+// waiting for good: after 15 s the call answers itself as the TV answers a refusal, which every
+// caller handles (tests: HOMEPLUS_LUNA_TIMEOUT_MS).
+const LUNA_TIMEOUT_MS = Number(process.env.HOMEPLUS_LUNA_TIMEOUT_MS) || 15000;
 function luna(uri, params) {
-  return new Promise((resolve) => service.call(uri, params || {}, (m) => resolve(m.payload)));
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      log('luna: no answer from', uri);
+      resolve({ returnValue: false, errorText: `no answer from ${uri}` });
+    }, LUNA_TIMEOUT_MS);
+    service.call(uri, params || {}, (m) => {
+      clearTimeout(timer);
+      resolve(m.payload);
+    });
+  });
 }
 
 function fail(msg, text) {
@@ -1115,7 +1128,8 @@ async function deleteApp(id) {
 
 async function apiApps() {
   const r = await listApps();
-  return ((r && r.apps) || [])
+  if (!r || !Array.isArray(r.apps)) throw new Error(`the TV didn't list its apps: ${(r && r.errorText) || 'no answer'}`); /* (not an empty list) */
+  return r.apps
     .filter((a) => a.visible !== false && !HIDDEN_APPS.includes(a.id) && !a.id.startsWith('com.atvlauncher.')) // and the pre-1.0 Home+ packages
     .map((a) => {
       const e = images[a.id] || {};
@@ -1392,6 +1406,8 @@ const imageServer = http.createServer(async (req, res) => {
   });
   fs.createReadStream(file).on('error', () => res.end()).pipe(res);
 });
+imageServer.headersTimeout = 10000; /* a request never sent whole doesn't keep its socket (Node 16 sets no limit) */
+imageServer.requestTimeout = 30000;
 imageServer.on('error', (e) => log('image server error', e.message));
 imageServer.listen(IMAGE_PORT, '127.0.0.1', () => log('image server listening on', IMAGE_PORT));
 
