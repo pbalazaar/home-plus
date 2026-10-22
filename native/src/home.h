@@ -80,6 +80,7 @@
 #define TEXT_TERTIARY 140              /* 55%: group names, a row's âº, Settings' values */
 #define HINT_PX 26                     /* a hint: what the remote's keys do here */
 #define HEADING_PX 27                  /* the clock, and the Top Shelf's heading as big */
+#define BLUR_DIM 110                   /* the blurred picture behind the grid and Recents, dimmed (of 255) */
 
 #define MAX_APPS 128
 #define MAX_RAIL 16
@@ -521,7 +522,7 @@ void panel(int backdrop, float x, float y, float w, float h, float radius, float
 void ensure_big(App *a);
 void draw_skeleton(float x, float y, float w, float h, float radius, float alpha);
 void draw_scrims(Uint8 alpha);
-void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop);
+void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop, float on_blur);
 void draw_marquee(Tex *t, int tw, int th, float x, float y, float room, Uint8 c, Uint8 a, Uint32 since);
 int render(float dt, const char *shot);
 

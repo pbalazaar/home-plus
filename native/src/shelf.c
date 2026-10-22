@@ -374,7 +374,7 @@ static void draw_app_bigtile(App *a, Uint8 alpha, int backdrop)
     if (leave <= 0) return;
     float tw = 520, th = tw * TILE_H / TILE_W, cc = 1 - fminf(fmaxf(S.cc.t, 0), 1); /* it steps aside for the Control Center */
     if (cc <= 0.004f) return;
-    draw_big_tile(a, RIGHT - tw, SAFE_Y + 120, tw, th, TILE_R * tw / TILE_W, (Uint8)(alpha * leave * cc), 1, backdrop);
+    draw_big_tile(a, RIGHT - tw, SAFE_Y + 120, tw, th, TILE_R * tw / TILE_W, (Uint8)(alpha * leave * cc), 1, backdrop, 0);
 }
 
 static void draw_app_text(App *a, Uint8 alpha, float dy)

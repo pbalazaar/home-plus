@@ -89,6 +89,8 @@ typedef struct {
     float focus;             /* 0..1 illumination when focused */
     float alpha;             /* 0..1 */
     Uint8 tr, tg, tb, ta;    /* tint mixed over the glass */
+    float blurred, dimmed;   /* what it sits on, as shown: blurred (0..1) and dimmed (0..1) next to the
+                                backdrop it refracts; 0, 0: the backdrop itself */
 } Glass;
 void r_glass(const Glass *g);
 

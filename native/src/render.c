@@ -204,6 +204,7 @@ static const char *FS_GLASS =
     "uniform float u_focus;\n"
     "uniform vec4 u_tint;\n"
     "uniform float u_alpha;\n"
+    "uniform vec2 u_behind;\n" /* what it sits on, as shown: how blurred, and how bright next to the backdrop */
     "vec2 to_uv(vec2 p) { return vec2(p.x / u_view.x, 1.0 - p.y / u_view.y); }\n"
     "void main() {\n"
     "    vec2 h = u_rect.zw * 0.5;\n"
@@ -224,7 +225,7 @@ static const char *FS_GLASS =
     "        vec2 sp = v_px - n * (bevel * band * 0.9 * u_lens);\n" /* sample further in: the edge magnifies */
     "        vec2 uv = to_uv(sp);\n"
     "        col = texture2D(u_soft, uv).rgb;\n"
-    "        float clear = 1.0 - max(u_legible, bevel * 0.35);\n"
+    "        float clear = (1.0 - max(u_legible, bevel * 0.35)) * (1.0 - u_behind.x);\n"
     "        if (clear > 0.0) {\n" /* clear glass: the sharp backdrop, its colours split in the bevel (faintly: Apple's are) */
     "            vec2 duv = vec2(n.x / u_view.x, -n.y / u_view.y) * (bevel * 4.0 * u_lens);\n"
     "            vec3 sharp = vec3(texture2D(u_sharp, uv + duv).r, texture2D(u_sharp, uv).g, texture2D(u_sharp, uv - duv).b);\n"
@@ -235,8 +236,10 @@ static const char *FS_GLASS =
     "    } else {\n" /* past the bevel (and the rim, at most 2.5 px in): the backdrop straight through */
     "        vec2 uv = to_uv(v_px);\n"
     "        col = texture2D(u_soft, uv).rgb;\n"
-    "        if (u_legible < 1.0) col = mix(col, texture2D(u_sharp, uv).rgb, 1.0 - u_legible);\n"
+    "        float clear = (1.0 - u_legible) * (1.0 - u_behind.x);\n"
+    "        if (clear > 0.0) col = mix(col, texture2D(u_sharp, uv).rgb, clear);\n"
     "    }\n"
+    "    col *= u_behind.y;\n"
     "    col *= 1.0 - 0.10 * bevel * u_legible;\n" /* saturated tiles pulled into the rim stay quiet */
     "    float lum = dot(col, vec3(0.299, 0.587, 0.114));\n"
     "    col *= 1.0 - 0.35 * smoothstep(0.35, 0.75, lum) * (0.5 + 0.5 * u_legible);\n"
@@ -261,7 +264,7 @@ static const char *FS_GLASS =
 typedef struct {
     GLuint id;
     GLint rect, view, uv, offset, color, radius, tex, stroke, grad, shape, blur, halfpix;
-    GLint sharp, soft, lens, legible, light, focus, tint, alpha, mono;
+    GLint sharp, soft, lens, legible, light, focus, tint, alpha, mono, behind;
 } Prog;
 
 typedef struct {
@@ -332,6 +335,7 @@ static int program(Prog *p, const char *fs)
     U(halfpix, "u_halfpix") U(sharp, "u_sharp") U(soft, "u_soft") U(lens, "u_lens")
     U(legible, "u_legible")
     U(light, "u_light") U(focus, "u_focus") U(tint, "u_tint") U(alpha, "u_alpha") U(mono, "u_mono")
+    U(behind, "u_behind")
 #undef U
     gl.UseProgram(p->id);
     gl.Uniform2f(p->view, (float)R.lw, (float)R.lh);
@@ -702,6 +706,7 @@ void r_glass(const Glass *g)
     gl.Uniform1f(R.glass.focus, g->focus);
     gl.Uniform4f(R.glass.tint, g->tr / 255.0f, g->tg / 255.0f, g->tb / 255.0f, g->ta / 255.0f);
     gl.Uniform1f(R.glass.alpha, g->alpha);
+    gl.Uniform2f(R.glass.behind, g->blurred, 1 - g->dimmed);
     quad(&R.glass, g->x, g->y, g->w, g->h);
 }
 

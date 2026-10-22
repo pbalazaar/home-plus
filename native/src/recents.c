@@ -148,7 +148,7 @@ static void draw_switcher_card(int i, float t)
     if (alpha < 0.004f || x > W || x + w < 0) return;
     Uint8 al = (Uint8)(255 * alpha);
     if (a) {
-        draw_big_tile(a, x, y, w, h, rad, al, c->s > 0.01f && !zoom, 0);
+        draw_big_tile(a, x, y, w, h, rad, al, c->s > 0.01f && !zoom, 0, t); /* on the blurred home screen */
     } else {
         r_shape(x, y, w, h, rad, 58, 58, 64, al, 0, 1, 1);
         draw_text(c->name, c->nw, c->nh, x + (w - c->nw) / 2, y + (h - c->nh) / 2, al);
@@ -160,7 +160,7 @@ void draw_switcher(void)
 {
     float t = fminf(fmaxf(S.recents.t, 0), 1);
     if (t < 0.004f) return;
-    r_backdrop_image(1, (Uint8)(255 * t), (Uint8)(110 * t)); /* the home screen behind, blurred and dimmed */
+    r_backdrop_image(1, (Uint8)(255 * t), (Uint8)(BLUR_DIM * t)); /* the home screen behind, blurred and dimmed */
     Uint8 ca = (Uint8)(255 * t);
     if (!S.recents.n && S.recents.loading) { /* placeholders where the cards go */
         for (int k = -1; k <= 1; k++) {

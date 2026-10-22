@@ -105,8 +105,10 @@ static void lift(const Uint8 *c, Uint8 *out)
  * colours; a dark tile with the logo in colour (a light icon's dark ink turned light, a white logo
  * on a coloured icon in that colour); or frosted glass with the logo in white (Clear) or, on glass
  * in a colour, in a pale tint of it (Tinted). lk: the logo's scale. 0 when there's no logo (its name or a placeholder
- * goes there). In the backdrop pass glass can't sample itself: a faint flat tile stands in. */
-static int draw_face(App *a, float x, float y, float w, float h, float rad, float lk, Uint8 alpha, float focus, int backdrop)
+ * goes there). In the backdrop pass glass can't sample itself: a faint flat tile stands in. on_blur: how far it sits
+ * on the blurred, dimmed picture (the grid's, Recents'), which its glass then shows as it is, not sharp and bright. */
+static int draw_face(App *a, float x, float y, float w, float h, float rad, float lk, Uint8 alpha, float focus, int backdrop,
+                     float on_blur)
 {
     int look = S.icon_look, glassy = look == LOOK_CLEAR || look == LOOK_TINTED;
     const Uint8 *t = TINTS[S.icon_tint].rgb;
@@ -122,7 +124,7 @@ static int draw_face(App *a, float x, float y, float w, float h, float rad, floa
         float k = 0.55f + 0.15f * f;
         Glass gl = { x, y, w, h, rad, 0.7f, 1.0f, lit ? S.light_x : -0.6f, lit ? S.light_y : -0.8f, focus, alpha / 255.0f,
                      (Uint8)(tinted ? t[0] * k : 0), (Uint8)(tinted ? t[1] * k : 0), (Uint8)(tinted ? t[2] * k : 0),
-                     (Uint8)(tinted ? 150 : 46 - 26 * f) };
+                     (Uint8)(tinted ? 150 : 46 - 26 * f), on_blur, on_blur * BLUR_DIM / 255.0f };
         glass(&gl);
     } else {
         r_shape(x, y, w, h, rad, r, g, b, alpha, 0, 1, 1);
@@ -168,11 +170,11 @@ void draw_scrims(Uint8 alpha)
 
 /* An app's tile drawn large: the Top Shelf's big tile and the App Switcher's
  * cards. Its logo grows with it (up to 3.5x); a tile without one shows its name. */
-void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop)
+void draw_big_tile(App *a, float x, float y, float w, float h, float radius, Uint8 alpha, int shadow, int backdrop, float on_blur)
 {
     float k = fminf(fminf(w / TILE_W, h / TILE_H), 3.5f);
     if (shadow) r_shadow(x, y, w, h, radius, 40, 20, 0.45f * alpha / 255);
-    if (draw_face(a, x, y, w, h, radius, k, alpha, 0, backdrop)) return;
+    if (draw_face(a, x, y, w, h, radius, k, alpha, 0, backdrop, on_blur)) return;
     ensure_big(a);
     if (!a->big) return;
     float f = fminf(fminf(1, w * 0.8f / a->bw), k / 2.5f), bw = a->bw * f, bh = a->bh * f;
@@ -248,7 +250,7 @@ static void draw_tile(int i, int backdrop)
         r_shape(x, y, w, h, rad, 70, 70, 82, 34, 0, 1, 1);
         if (!ht) ht = text_render(S.f_semi, 28, "\xE2\x80\xA2 \xE2\x80\xA2 \xE2\x80\xA2   Hidden", 0, &hw, &hh);
         draw_text(ht, hw, hh, x + (w - hw) / 2, y + (h - hh) / 2, 205);
-    } else if (draw_face(a, x, y, w, h, rad, sc, 255, k, backdrop)) { /* opaque, the icon's own colour (or a look's) */
+    } else if (draw_face(a, x, y, w, h, rad, sc, 255, k, backdrop, S.scrolled)) { /* opaque, the icon's own colour (or a look's) */
     } else if (a->icon_state == 1) { /* its icon is on its way: a placeholder */
         float bw = w * 0.46f, bh = h * 0.15f;
         draw_skeleton(x + (w - bw) / 2, y + (h - bh) / 2, bw, bh, bh / 2, 1);
@@ -288,7 +290,7 @@ static void draw_scene(int backdrop)
      * smeared it wider every frame. */
     draw_shelf_art(backdrop ? 255 : shelf_a, backdrop);
     if (S.scrolled > 0.004f && !backdrop) { /* below the dock the picture stays, blurred and dimmed, so the apps stand out */
-        r_backdrop_image(1, (Uint8)(255 * S.scrolled), (Uint8)(110 * S.scrolled));
+        r_backdrop_image(1, (Uint8)(255 * S.scrolled), (Uint8)(BLUR_DIM * S.scrolled));
     }
     /* the shelf's content leaves faster than the grid arrives, drifting up behind it */
     r_translate(0, 0.35f * S.scroll);
