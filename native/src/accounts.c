@@ -41,8 +41,7 @@ void on_media_signin(Result *r)
             } else {
                 char body[200];
                 snprintf(body, sizeof body, "Scan this with your phone, or go to %s\nand enter the code below.", jstr(pend, "url"));
-                sheet_body("Scan this with your phone, on the same network as the TV,\n"
-               "and paste your TMDB key, or Trakt\xE2\x80\x99s Client ID and Secret.");
+                sheet_body(body);
             }
             if (qr[0]) { /* room for it now; the picture follows */
                 S.qr_gen++;
