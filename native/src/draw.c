@@ -261,6 +261,8 @@ static void draw_tile(int i, int backdrop)
             r_image(a->label, x + (w - lw) / 2, y + (h - lh) / 2, lw, lh, 255, 255, 255, 230, 0);
         }
     }
+    if (a && k > 0.01f && !backdrop && (S.icon_look == LOOK_DEFAULT || S.icon_look == LOOK_DARK))
+        r_sheen(x, y, w, h, rad, S.light_x, S.light_y, k); /* focused, it catches the moving light as glass does */
     if (S.moving && focused) r_shape(x, y, w, h, rad, 255, 255, 255, 200, 2.0f, 1, 1); /* the tile you're moving */
     if (S.zone == ZONE_TOP && i == top_down_tile() && !backdrop) /* where Down from the top bar lands */
         r_shape(x, y, w, h, rad, 255, 255, 255, 128, 2.0f, 1, 1);

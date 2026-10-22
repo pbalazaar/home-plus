@@ -93,6 +93,9 @@ typedef struct {
                                 backdrop it refracts; 0, 0: the backdrop itself */
 } Glass;
 void r_glass(const Glass *g);
+/* The light glass catches (r_glass's rim glint, glow and shade, the light coming from light_x, light_y) over
+ * something opaque of that shape that isn't glass: a tile in its icon's own colours, with focus 0..1. */
+void r_sheen(float x, float y, float w, float h, float radius, float light_x, float light_y, float focus);
 
 /* Reads the screen as RGBA8, top row first; buf holds w*h*4 of the drawable. */
 int r_read_pixels(unsigned char *buf, int *w, int *h);

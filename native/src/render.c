@@ -259,6 +259,39 @@ static const char *FS_GLASS =
     "    gl_FragColor = vec4(min(col, vec3(1.0)), mask * u_alpha);\n"
     "}\n";
 
+/* The light Liquid Glass catches, for a tile that isn't glass (its icon's own colours, or dark), drawn over it
+ * while it has focus: FS_GLASS's own light, the rim's glint where it faces the light and a fainter one opposite,
+ * the glow toward the light and the bevel away from it in shade. Blended ONE, SRC_ALPHA: what's under it is
+ * shaded by the alpha and the light added, as the glass does to what it shows. */
+static const char *FS_SHEEN =
+    "uniform vec4 u_rect;\n"
+    "uniform float u_radius;\n"
+    "uniform vec2 u_light;\n"
+    "uniform float u_focus;\n"
+    "void main() {\n"
+    "    vec2 h = u_rect.zw * 0.5;\n"
+    "    vec2 p = v_px - u_rect.xy - h;\n"
+    "    float d = sd_round(p, h, u_radius);\n"
+    "    float mask = clamp(0.5 - d, 0.0, 1.0);\n"
+    "    if (mask <= 0.0) discard;\n"
+    "    float depth = -d, band = clamp(min(h.x, h.y) * 0.9, 6.0, 24.0);\n"
+    "    float bevel = 0.0, facing = 0.0, rim = 0.0;\n"
+    "    if (depth < band) {\n"
+    "        vec2 n = vec2(sd_round(p + vec2(1.0, 0.0), h, u_radius) - sd_round(p - vec2(1.0, 0.0), h, u_radius),\n"
+    "                      sd_round(p + vec2(0.0, 1.0), h, u_radius) - sd_round(p - vec2(0.0, 1.0), h, u_radius));\n"
+    "        float t = clamp(1.0 - depth / band, 0.0, 1.0);\n"
+    "        bevel = t * t;\n"
+    "        facing = dot(n / max(length(n), 0.0001), u_light);\n"
+    "        rim = 1.0 - smoothstep(0.0, 2.5, depth);\n"
+    "    }\n"
+    "    float lit = max(facing, 0.0), away = max(-facing, 0.0), back = away;\n"
+    "    lit *= lit * lit; lit *= lit; back *= back * back; back *= back;\n"
+    "    vec2 g = p / h - u_light * 0.45;\n"
+    "    float light = rim * (0.10 + 0.40 * lit + 0.15 * back) * (0.85 + 0.45 * u_focus) + u_focus * 0.12 * exp(-1.5 * dot(g, g));\n"
+    "    float shade = 1.0 - 0.16 * bevel * away, k = clamp(u_focus, 0.0, 1.0) * mask;\n"
+    "    gl_FragColor = vec4(vec3(light * shade * k), 1.0 - (1.0 - shade) * k);\n"
+    "}\n";
+
 /* ------------------------------------------------------------------ state */
 
 typedef struct {
@@ -282,7 +315,7 @@ static struct {
     float orbit_x, orbit_y; /* OLED pixel orbit, screen only */
     float tx, ty;           /* r_translate(), on every target */
     float ox, oy;       /* offset for the current target */
-    Prog tex, logo, shape, shadow, rim, down, up, glass;
+    Prog tex, logo, shape, shadow, rim, down, up, glass, sheen;
     const Prog *cur;
     GLuint quad;
     Tex white;          /* 1x1, for untextured image draws */
@@ -444,7 +477,7 @@ int r_init(SDL_Window *win, int logical_w, int logical_h)
     SDL_GL_GetDrawableSize(win, &R.dw, &R.dh);
 
     if (!program(&R.tex, FS_TEX) || !program(&R.logo, FS_LOGO) || !program(&R.shape, FS_SHAPE) || !program(&R.shadow, FS_SHADOW) || !program(&R.rim, FS_RIM) ||
-        !program(&R.down, FS_DOWN) || !program(&R.up, FS_UP) || !program(&R.glass, FS_GLASS))
+        !program(&R.down, FS_DOWN) || !program(&R.up, FS_UP) || !program(&R.glass, FS_GLASS) || !program(&R.sheen, FS_SHEEN))
         return 0;
 
     static const float unit[8] = { 0, 0, 1, 0, 0, 1, 1, 1 };
@@ -776,6 +809,20 @@ long r_gpu_result(int wait)
     GLint disjoint = 0;
     gl.GetIntegerv(GL_GPU_DISJOINT_EXT, &disjoint);
     return disjoint ? -2 : (long)(ns / 1000);
+}
+
+void r_sheen(float x, float y, float w, float h, float radius, float light_x, float light_y, float focus)
+{
+    if (focus <= 0.004f || w <= 0 || h <= 0) return;
+    float ll = sqrtf(light_x * light_x + light_y * light_y);
+    if (ll < 0.001f) { light_x = -0.6f; light_y = -0.8f; ll = 1; }
+    use(&R.sheen);
+    gl.Uniform1f(R.sheen.radius, fminf(radius, fminf(w, h) / 2));
+    gl.Uniform2f(R.sheen.light, light_x / ll, light_y / ll);
+    gl.Uniform1f(R.sheen.focus, focus);
+    gl.BlendFuncSeparate(GL_ONE, GL_SRC_ALPHA, GL_ZERO, GL_ONE);
+    quad(&R.sheen, x, y, w, h);
+    gl.BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 int r_read_pixels(unsigned char *buf, int *w, int *h)
