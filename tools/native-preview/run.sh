@@ -68,7 +68,7 @@ shot crossfade "R" 1590
 shot pointer-then-keys "MUC" 4200 "1660,850"
 service HOMEPLUS_PREVIEW_PREFS='{"reduceTransparency":true}'
 shot reduce-transparency "UODDDDRO" 4400
-# app icons: dark tiles; glass over the grid's background; Settings -> Display & OLED -> App Icons, Tinted's
+# app tiles: dark tiles; glass over the grid's background; Settings -> Display & OLED -> App Tiles, Tinted's
 # colours focused and one step on
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_PREFS='{"iconLook":"dark"}'
 shot icons-dark "" 2500

@@ -216,7 +216,7 @@ void run_action(Action act, int arg, const char *id)
     case ACT_ACCESSIBILITY:
         settings_page(PAGE_ACCESS, 0);
         break;
-    case ACT_PAGE: /* a Settings page (App Icons on the look that's on); Back returns to the row that opened it */
+    case ACT_PAGE: /* a Settings page (App Tiles on the look that's on); Back returns to the row that opened it */
         settings_page(arg, arg == PAGE_ICONS ? S.icon_look : 0);
         S.sheet.parent_index = S.at_index;
         break;

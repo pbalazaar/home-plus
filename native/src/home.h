@@ -128,7 +128,7 @@ enum { PAGE_MAIN = 1, PAGE_HOME, PAGE_DISPLAY, PAGE_CC, PAGE_ACCESS, PAGE_ACCOUN
 
 /* zones: what the remote is moving through */
 enum { ZONE_GRID, ZONE_RAIL, ZONE_TOP };
-/* how app icons look (Settings -> Display & OLED -> App Icons): their own colours; dark tiles;
+/* how app tiles look (Settings -> Display & OLED -> App Tiles): their own colours; dark tiles;
  * glass with white logos; glass in a colour */
 enum { LOOK_DEFAULT, LOOK_DARK, LOOK_CLEAR, LOOK_TINTED };
 /* Tinted's colours: Apple's system colours, as on a dark screen */
@@ -338,7 +338,7 @@ typedef struct {
     int reduce_motion, reduce_transparency; /* Settings -> Accessibility (tvOS's names) */
     int clock24, orbit_off, vivid_covers;    /* Settings: 24-hour clock, no pixel shift, brand-colour covers */
     int shelf_still;                         /* Settings: the Top Shelf doesn't turn pages by itself */
-    int icon_look;                           /* Settings: how app icons look (LOOK_*) */
+    int icon_look;                           /* Settings: how app tiles look (LOOK_*) */
     int icon_tint;                           /* ...and the colour Tinted gives them (TINTS) */
     int click_x;                             /* where the pointer last clicked (-1: the keys' OK) */
     int at_page, at_index, at_parent_index;  /* the Settings row an action came from */
@@ -426,7 +426,7 @@ static const char *const SRC_NAME[SRC_COUNT] = { "", "Stremio", "Jellyfin", "Ple
 /* what the Control Center over another app can ask Home+ to open */
 enum { OPEN_SETTINGS = 1, OPEN_RECENTS, OPEN_ACCESSIBILITY };
 
-/* Tinted's colours on their row in App Icons: swatch i's centre, the row's right end like a value's */
+/* Tinted's colours on their row in App Tiles: swatch i's centre, the row's right end like a value's */
 #define SWATCH_D 34
 
 /* ------------------------------------------------------------------ input */

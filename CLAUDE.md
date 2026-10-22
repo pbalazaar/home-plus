@@ -67,7 +67,7 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   key to screen, the slowest answer between frames, how many frames drew each backdrop); `homeplus-perf-gpu` too
   waits for the GPU after each part of a frame, which says what each costs (`perf gpu:`). A backdrop is drawn
   only when what's in it changes (`draw_backdrop()`: each draw is first noted into a fingerprint).
-  App icon looks (Settings → Display & OLED → App Icons; prefs `iconLook`, `iconTint` from `TINTS`):
+  App tile looks (Settings → Display & OLED → App Tiles; prefs `iconLook`, `iconTint` from `TINTS`):
   `draw_face()` (`draw.c`) draws every tile (dock, big tile, Recents), `FS_LOGO` the logo in one colour or for a
   dark tile. `make_logo()` (`tiles.c`) cuts a logo out of its icon's background, edge pixels unblended from it
   (a light icon's logo on a dark tile kept a rim of it); Default's sizes still come from the plain key.

@@ -71,10 +71,10 @@ void settings_page(int page, int index)
         settings_row("Pixel Shift", S.orbit_off ? "Off" : "On", ACT_ORBIT, 0, 0, 0);
         settings_row("Calm Colours", S.vivid_covers ? "Off" : "On", ACT_CALM, 0, 0, 0);
         settings_row("Top Shelf", S.shelf_still ? "Stays Still" : "Turns Pages", ACT_SHELF, 0, 0, 0);
-        settings_row("App Icons", LOOK_NAME[S.icon_look], ACT_PAGE, PAGE_ICONS, 1, 0);
+        settings_row("App Tiles", LOOK_NAME[S.icon_look], ACT_PAGE, PAGE_ICONS, 1, 0);
         break;
     case PAGE_ICONS:
-        sheet_open("App Icons");
+        sheet_open("App Tiles");
         sheet_body(S.icon_look == LOOK_TINTED ? "Left and Right on the colours pick another."
                                                : "Dark, Clear and Tinted show every app\xE2\x80\x99s logo the same way.");
         for (int l = LOOK_DEFAULT; l <= LOOK_TINTED; l++) {

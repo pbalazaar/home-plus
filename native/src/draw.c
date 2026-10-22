@@ -101,7 +101,7 @@ static void lift(const Uint8 *c, Uint8 *out)
     for (int i = 0; i < 3; i++) out[i] = (Uint8)(v[i] + (255 - v[i]) * w + 0.5f); /* blue can't get there alone */
 }
 
-/* An app's tile and logo in the look Settings picks (Display & OLED -> App Icons): the icon's own
+/* An app's tile and logo in the look Settings picks (Display & OLED -> App Tiles): the icon's own
  * colours; a dark tile with the logo in colour (a light icon's dark ink turned light, a white logo
  * on a coloured icon in that colour); or frosted glass with the logo in white (Clear) or, on glass
  * in a colour, in a pale tint of it (Tinted). lk: the logo's scale. 0 when there's no logo (its name or a placeholder
