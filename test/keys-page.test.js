@@ -92,7 +92,7 @@ test('keys: saved, the launcher hears of it, and the link stops working', async 
   const r = await fetchPage(url, { tmdbKey: ' good-key ', traktClientId: 'id<script>', traktClientSecret: 'secret' });
   assert.match(r.html, /TMDB key saved/);
   assert.match(r.html, /Trakt saved/);
-  assert.doesNotMatch(r.html, /<script>/);
+  assert.ok(!r.html.toLowerCase().includes('<script'), 'what was pasted isn\'t put in the page');
   assert.deepEqual((await waiting).json, { events: ['keys'] });
   const cfg = JSON.parse(fs.readFileSync(path.join(dir, 'config', 'config.json'), 'utf8'));
   assert.equal(cfg.tmdbKey, 'good-key');
