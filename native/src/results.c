@@ -7,11 +7,12 @@
 
 /* ------------------------------------------------------------------ results */
 
-void handle_result(Result *r)
+int handle_result(Result *r)
 {
     switch (r->tag) {
+    default:  /* (a post that wants no answer: the log) */
     case TAG_WAKE:
-        break;
+        return 0;
     case TAG_LAYOUT:
         if (r->status == 200) parse_layout(r->body);
         break;
@@ -22,7 +23,7 @@ void handle_result(Result *r)
         on_elevate(r);
         break;
     case TAG_RESTART:
-        break; /* the service exits; setup_retry wakes it and checks again */
+        return 0; /* the service exits; setup_retry wakes it and checks again */
     case TAG_UNINSTALL:
         if (r->status == 200) {
             sheet_open("Home+ Is Being Removed");
@@ -223,4 +224,5 @@ void handle_result(Result *r)
         }
         break;
     }
+    return 1;
 }

@@ -346,18 +346,19 @@ int main(int argc, char **argv)
     Uint32 shot_at = shot ? SDL_GetTicks() + (Uint32)atoi(getenv("HOMEPLUS_SCREENSHOT_MS") ? getenv("HOMEPLUS_SCREENSHOT_MS") : "2500") : 0;
     extern void homeplus_preview_input(Uint32 elapsed);
 
-    int running = 1, animating = 1, drew = 1;
+    int running = 1, animating = 1, drew = 1, answers = 0;
     Uint32 last = SDL_GetTicks(), start = last;
     while (running) {
         SDL_Event e;
         /* sleep while idle or hidden; wake on input, a queued event or what's due next */
         int got;
-        if (shot || (animating && !S.offscreen)) got = SDL_PollEvent(&e);
+        if (shot || (animating && !S.offscreen) || answers) got = SDL_PollEvent(&e);
         else if ((Sint32)(S.keys_until - SDL_GetTicks()) > 0) got = SDL_WaitEventTimeout(&e, 10);
         else got = wait_event(&e, next_wake_ms(), drew);
         drew = 0;
-        int dirty = got;
+        int dirty = 0;
         while (got) {
+            dirty |= e.type != net_event; /* (the service's answers redraw only what they change) */
             switch (e.type) {
             case SDL_QUIT: running = 0; break;
             case SDL_KEYDOWN:
@@ -441,17 +442,22 @@ int main(int argc, char **argv)
                     go_offscreen();
                 break;
             default:
-                if (e.type == net_event) {
-                    Result r;
-                    while (net_poll(&r)) {
-                        Uint64 t0 = perf_clock();
-                        handle_result(&r);
-                        perf_answer(r.tag, t0);
-                        net_result_free(&r);
-                    }
-                }
+                if (e.type == net_event) answers = 1;
             }
             got = SDL_PollEvent(&e);
+        }
+        /* the service's answers: all of them at rest; while animating 2 ms' worth a frame (a picture takes 2.5
+         * to 8.5 ms to upload on the C3, and several came at once), the rest on the next */
+        if (answers) {
+            Uint64 t0 = SDL_GetPerformanceCounter(), budget = SDL_GetPerformanceFrequency() / 500;
+            Result r;
+            while ((answers = net_poll(&r))) {
+                Uint64 t1 = perf_clock();
+                dirty |= handle_result(&r);
+                perf_answer(r.tag, t1);
+                net_result_free(&r);
+                if (animating && !shot && SDL_GetPerformanceCounter() - t0 >= budget) break;
+            }
         }
 
         Uint32 now = SDL_GetTicks();

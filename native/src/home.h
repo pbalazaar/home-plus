@@ -668,7 +668,7 @@ void come_back(void);
 int wake(int key);
 
 /* results.c */
-void handle_result(Result *r);
+int handle_result(Result *r); /* 1 when it may change what's on screen */
 
 /* perf.c */
 enum { PROBE_ART, PROBE_SCREEN, PROBE_SCENE, PROBE_BACKDROP, PROBE_OVERLAYS, PROBE_N }; /* a frame's parts */
