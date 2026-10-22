@@ -68,6 +68,7 @@ function readForm(req) {
 
 module.exports = function createKeysPage({ tmdb, trakt, log, emit }) {
   let server = null, secret = '', url = '', timer = null;
+  const sockets = new Set(); /* Node 16 (the TV's) has no closeAllConnections: a phone's kept-alive one goes too */
 
   function status() {
     return { open: !!server, url, tmdb: tmdb.status().configured, trakt: trakt.status().configured };
@@ -77,7 +78,8 @@ module.exports = function createKeysPage({ tmdb, trakt, log, emit }) {
     clearTimeout(timer);
     if (server) {
       server.close();
-      server.closeAllConnections && server.closeAllConnections();
+      for (const s of sockets) s.destroy();
+      sockets.clear();
       log('keys page closed');
     }
     server = null;
@@ -135,6 +137,10 @@ module.exports = function createKeysPage({ tmdb, trakt, log, emit }) {
       if (server) return resolve(status());
       secret = crypto.randomBytes(16).toString('hex');
       server = http.createServer((req, res) => handle(req, res).catch((e) => { log('keys page error', e.message); res.end(); }));
+      server.on('connection', (sock) => {
+        sockets.add(sock);
+        sock.on('close', () => sockets.delete(sock));
+      });
       server.on('error', (e) => { log('keys page', e.message); close(); reject(e); });
       server.listen(Number(process.env.HOMEPLUS_KEYS_PORT) || 0, '0.0.0.0', () => {
         url = `http://${host}:${server.address().port}/${secret}`;
