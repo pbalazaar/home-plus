@@ -323,6 +323,32 @@ static void order(void)
     net_drop(60, 1, 1);
 }
 
+static void drop_answered(void)
+{
+    puts("a picture answered but not yet taken is dropped too, its room among those waiting given back");
+    NetStats s, t;
+    net_stats(&t); /* (the counts from before) */
+    int decoded = 0;
+    net_get_image("/img/hd.png", 90, 0, 1, 0, 0, 0, PRIO_NOW);
+    for (int i = 0; i < 300 && !decoded; i++) { /* (decoded: it's answered at once after) */
+        SDL_Delay(10);
+        net_stats(&t);
+        decoded += t.pictures;
+    }
+    CHECK(decoded == 1, "the picture to drop wasn't decoded");
+    SDL_Delay(50);
+    int n = net_drop(90, -1, 1);
+    CHECK(n == 1, "net_drop dropped %d, not the 1 answered", n);
+    Result r;
+    CHECK(!take(90, 300, &r), "the dropped picture was still taken");
+    for (int i = 0; i < 2; i++) net_get_image("/img/hd.png", 91, i, 1, 0, 0, 0, PRIO_NOW);
+    SDL_Delay(1500); /* (none taken meanwhile: two of 8 MB fit in 16, beside nothing) */
+    net_stats(&s);
+    CHECK(s.pictures == 2, "%d of 2 decoded with none taken: the dropped one's room wasn't given back", s.pictures);
+    for (int i = 0; i < 2; i++)
+        if (take(91, 3000, &r)) net_result_free(&r);
+}
+
 static void not_pictures(void)
 {
     puts("what isn't a picture, or is half of one, gives none");
@@ -372,6 +398,7 @@ int main(int argc, char **argv)
     decode_allowance();
     waiting_allowance();
     order();
+    drop_answered();
     not_pictures();
     net_stop();
     printf(failures ? "net: %d failed\n" : "net: all passed\n", failures);

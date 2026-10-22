@@ -54,9 +54,9 @@ void net_post(const char *path, const char *body, int tag);
  * shrunk to that when decoded, since GPU memory, not the file, is what they cost. 0 = as is.
  * prio: PRIO_*. The same picture asked for again while it waits is asked for once. */
 void net_get_image(const char *path, int tag, int index, int generation, int sample, int fit_w, int fit_h, int prio);
-/* Forgets image requests: tag's for index (any index when < 0) and generation, waiting or on
- * their way (those stop downloading, and aren't decoded). Returns how many were dropped (they
- * never answer). */
+/* Forgets image requests: tag's for index (any index when < 0) and generation, waiting, on their
+ * way (those stop downloading, and aren't decoded), or answered but not yet taken. Returns how many
+ * were dropped (they never answer). */
 int net_drop(int tag, int index, int generation);
 /* Moves a picture that's still waiting ahead of the other pictures: it's wanted now. */
 void net_bump(int tag, int index, int generation);

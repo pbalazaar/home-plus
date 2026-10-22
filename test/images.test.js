@@ -107,6 +107,52 @@ test('images: a server that trickles a picture in is given up on at its deadline
   }
 });
 
+test('images: one the launcher hangs up on comes into the cache all the same; with no cache, its download stops', async () => {
+  let endless = false; /* the endless picture's server was hung up on */
+  const slow = http.createServer((req, res) => { /* /0: three bytes over 0.3 s, then done; /1: a byte every 50 ms for ever */
+    res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+    let n = 0;
+    const tick = setInterval(() => { res.write('x'); if (req.url === '/0' && ++n === 3) { clearInterval(tick); res.end(); } }, 100);
+    res.on('close', () => { clearInterval(tick); if (req.url === '/1') endless = true; });
+  });
+  await new Promise((resolve) => slow.listen(0, '127.0.0.1', resolve));
+  const hangUp = (s, p) => new Promise((resolve) => { /* the launcher asks for it, then drops it 0.1 s in */
+    const req = http.get({ host: '127.0.0.1', port: s.port, path: p, headers: { 'X-Homeplus-Token': s.token } }, (res) => {
+      res.on('data', () => {});
+      setTimeout(() => { req.destroy(); resolve(); }, 100);
+    });
+    req.on('error', () => {});
+  });
+  const env = { HOMEPLUS_PREVIEW_ART: `http://127.0.0.1:${slow.address().port}`, HOMEPLUS_FETCH_TIMEOUT_MS: '2000', HOMEPLUS_FETCH_DEADLINE_MS: '20000' };
+  const dirs = [], services = [];
+  const start = async (cache) => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-images-hangup-'));
+    dirs.push(d);
+    fs.writeFileSync(path.join(d, 'apps.txt'), 'stremio|Stremio');
+    if (!cache) { /* where the cache would go is a file: there's none */
+      fs.mkdirSync(path.join(d, 'config'));
+      fs.writeFileSync(path.join(d, 'config', 'images'), '');
+    }
+    const s = await startService(d, env);
+    services.push(s);
+    const items = (await s.call('GET', '/api/continue')).json.items;
+    return { s, d, pic: (i) => items.find((it) => it.id.endsWith(String(i))).background };
+  };
+  try {
+    const cached = await start(true);
+    await hangUp(cached.s, cached.pic(0));
+    await until(() => fs.existsSync(path.join(cached.d, 'config', 'images', cached.pic(0).slice('/img/'.length))), 3000, 'it to be kept');
+    const uncached = await start(false);
+    await hangUp(uncached.s, uncached.pic(1));
+    await until(() => endless, 2000, 'its download to stop (its deadline: 20 s)');
+  } finally {
+    for (const s of services) await s.stop();
+    slow.closeAllConnections();
+    await new Promise((resolve) => slow.close(resolve));
+    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
 test('images: a redirect to the TV itself is refused', async () => {
   assert.equal((await get(pics[3])).status, 502);
   assert.equal(art.hits.some((h) => h.path === '/x'), false, 'and not followed');

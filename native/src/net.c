@@ -757,7 +757,7 @@ int net_drop(int tag, int index, int generation)
             p = &j->next;
         }
     }
-    /* ...and on their way: the download stops (its connection shut, so the service sees it go), and what
+    /* ...on their way: the download stops (its connection shut, so the service sees it go), and what
      * came of it is never decoded nor answered (finish) */
     for (int i = 0; i < WORKERS; i++) {
         Job *j = active[i];
@@ -768,7 +768,33 @@ int net_drop(int tag, int index, int generation)
         SDL_CondBroadcast(taken); /* (one waiting for room gives up) */
         n++;
     }
+    /* ...and answered, but not yet taken (net_poll): never taken, their room among those waiting given back */
+    Done *gone = NULL;
+    for (Done **p = &done_head, *prev = NULL; *p;) {
+        Done *d = *p;
+        if (d->r.kind == JOB_IMAGE && d->r.tag == tag && (index < 0 || d->r.index == index) && d->r.generation == generation) {
+            *p = d->next;
+            if (done_tail == d) done_tail = prev;
+            if (d->r.held) {
+                waiting -= d->r.held;
+                SDL_CondBroadcast(taken);
+            }
+            d->next = gone;
+            gone = d;
+            n++;
+        } else {
+            prev = d;
+            p = &d->next;
+        }
+    }
     SDL_UnlockMutex(lock);
+    while (gone) { /* (their pixels freed outside the lock) */
+        Done *d = gone;
+        gone = d->next;
+        d->r.held = 0;
+        net_result_free(&d->r);
+        free(d);
+    }
     return n;
 }
 

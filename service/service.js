@@ -1163,6 +1163,9 @@ function fetchRemote(url, res, depth = 0, file = '', started = Date.now()) {
     up.on('data', (c) => { if ((got += c.length) > IMAGE_MAX_BYTES) up.destroy(); }); /* too big after all: not kept */
     up.on('end', () => { ended = true; });
     up.on('close', () => { if (!ended || up.complete === false) res.destroy(); }); /* cut short: so is the launcher's */
+    // The launcher hung up (it dropped the picture: the Top Shelf moved on): it still comes into the cache, there
+    // the next time it's on show; with no cache to keep it in, its download stops
+    res.on('close', () => { if (!ended && !file) up.destroy(); });
     up.pipe(res);
     if (file) keepImage(up, file);
   });
