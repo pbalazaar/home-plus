@@ -20,7 +20,7 @@
 #define STBI_MAX_DIMENSIONS 8192 /* MAX_SIDE */
 #include "stb_image.h"
 
-#define WORKERS 2
+#define WORKERS 3 /* the first never takes a picture: actions (a launch, a control) don't wait behind downloads */
 #define MAX_PATH_LEN 512
 
 /* What the launcher takes from the service: its answers are a few KB, and a picture is at most 8 MB
@@ -291,7 +291,7 @@ static void push_job(Job *j)
     j->next = *p;
     *p = j;
     if (!j->next) jobs_tail = j;
-    SDL_CondSignal(wake);
+    SDL_CondBroadcast(wake); /* (all of them: the actions' worker leaves a picture to the others) */
     SDL_UnlockMutex(lock);
 }
 
@@ -405,10 +405,10 @@ static void run_job(Job *j)
 
 static int worker(void *arg)
 {
-    (void)arg;
+    int actions = arg != NULL; /* pictures wait behind everything else in the queue: one at its head means only pictures */
     for (;;) {
         SDL_LockMutex(lock);
-        while (running && !jobs_head) SDL_CondWait(wake, lock);
+        while (running && (!jobs_head || (actions && jobs_head->kind == JOB_IMAGE))) SDL_CondWait(wake, lock);
         if (!running) {
             SDL_UnlockMutex(lock);
             return 0;
@@ -437,7 +437,7 @@ void net_start(void)
     token_lock = SDL_CreateMutex();
     load_token();
     running = 1;
-    for (int i = 0; i < WORKERS; i++) threads[i] = SDL_CreateThread(worker, "homeplus-net", NULL);
+    for (int i = 0; i < WORKERS; i++) threads[i] = SDL_CreateThread(worker, "homeplus-net", i ? NULL : (void *)1);
 }
 
 /* The service's events (the remote's Settings key while Home+ is in front): a request it answers
