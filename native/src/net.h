@@ -35,6 +35,7 @@ typedef struct {
     int sampled, fullbleed;
     unsigned char rgb[3];
     size_t held; /* (net.c: what it counts against the decoded pictures waiting) */
+    void *prep;  /* JOB_IMAGE: what its tag's net_prepare made of it, or NULL */
 } Result;
 
 /* How soon a picture is wanted: the ones on show (or about to be) first, then the ones next to
@@ -59,6 +60,10 @@ void net_get_image(const char *path, int tag, int index, int generation, int sam
 int net_drop(int tag, int index, int generation);
 /* Moves a picture that's still waiting ahead of the other pictures: it's wanted now. */
 void net_bump(int tag, int index, int generation);
+/* What a worker does with tag's pictures once they're decoded, before they're answered, so the main
+ * thread needn't: prepare(r) may set r->prep, one malloc'd block (net_result_free frees it). It must
+ * touch neither the GPU nor the launcher's state. Call before asking for those pictures. */
+void net_prepare(int tag, void (*prepare)(Result *r));
 /* Starts the service via luna-send (the HTTP server only runs while it's alive). */
 void net_wake_service(void);
 /* One luna-send call; the result's body is luna-send's output and status is 200

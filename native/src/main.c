@@ -282,6 +282,7 @@ int main(int argc, char **argv)
     snd_init();
     perf_check();
 
+    net_prepare(TAG_ICON, prepare_icon); /* icons become tiles on the workers, not between frames */
     net_start();
     S.ptr_ax = S.ptr_ay = -1;
     start_idle_wait();

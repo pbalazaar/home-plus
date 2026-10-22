@@ -346,6 +346,8 @@ static int decoding;           /* pictures being decoded now (under lock: one, t
 static NetStats stats;         /* (under lock) */
 static SDL_Thread *threads[WORKERS];
 static int running;
+static struct { int tag; void (*fn)(Result *r); } preps[4]; /* net_prepare's */
+static int npreps;
 Uint32 net_event = (Uint32)-1;
 
 static int same_picture(const Job *a, const Job *b)
@@ -590,6 +592,8 @@ static void run_job(Job *j, Result *res)
     if (image) {
         if (r.status == 200 && body && len && !SDL_AtomicGet(&j->cancel)) decode_image(j, &r, (unsigned char *)body, len);
         free(body);
+        for (int i = 0; i < npreps && r.rgba && !SDL_AtomicGet(&j->cancel); i++)
+            if (preps[i].tag == j->tag) preps[i].fn(&r); /* (outside the decoder: another picture decodes meanwhile) */
     } else {
         r.body = body;
     }
@@ -804,8 +808,15 @@ void net_result_free(Result *r)
 {
     free(r->body);
     if (r->rgba) stbi_image_free(r->rgba);
+    free(r->prep);
     r->body = NULL;
     r->rgba = NULL;
+    r->prep = NULL;
+}
+
+void net_prepare(int tag, void (*prepare)(Result *r))
+{
+    if (npreps < (int)(sizeof preps / sizeof *preps)) preps[npreps].tag = tag, preps[npreps++].fn = prepare;
 }
 
 void net_stats(NetStats *out)

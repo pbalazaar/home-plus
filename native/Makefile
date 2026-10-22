@@ -6,7 +6,7 @@
 # Compiled against vendored SDL 2.0.14 headers so the binary only uses
 # functions the TV's libSDL2 actually has.
 
-SRC := src/main.c src/util.c src/tiles.c src/draw.c src/sheet.c src/recents.c src/cc.c src/cc_list.c src/shelf.c src/apps.c src/setup.c src/accounts.c src/settings.c src/actions.c src/input.c src/idle.c src/results.c src/perf.c src/gfx.c src/render.c src/sound.c src/net.c src/luna.c src/preview.c third_party/cJSON.c
+SRC := src/main.c src/util.c src/tiles.c src/icon.c src/draw.c src/sheet.c src/recents.c src/cc.c src/cc_list.c src/shelf.c src/apps.c src/setup.c src/accounts.c src/settings.c src/actions.c src/input.c src/idle.c src/results.c src/perf.c src/gfx.c src/render.c src/sound.c src/net.c src/luna.c src/preview.c third_party/cJSON.c
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers \
           -Ithird_party -Ithird_party/SDL2 -D_REENTRANT
 
@@ -33,13 +33,18 @@ build/webos/homeplus: $(SRC) src/*.h
 	$(WEBOS_SDK)/bin/arm-webos-linux-gnueabi-strip $@
 	@rm -rf $(@D)/assets && cp -r assets $(@D)/assets
 
-test: build/host/net-test
+test: build/host/net-test build/host/icon-test
 	@python3 test/make-fixtures.py build/test
 	build/host/net-test build/test
+	build/host/icon-test
 
 build/host/net-test: test/net_test.c src/net.c src/luna.c src/*.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -Isrc -o $@ test/net_test.c src/net.c src/luna.c $(HOST_SDL) -lm -lpthread -ldl
+
+build/host/icon-test: test/icon_test.c src/icon.c src/*.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -Isrc -o $@ test/icon_test.c src/icon.c -lm
 
 clean:
 	rm -rf build

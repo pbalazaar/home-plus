@@ -101,7 +101,7 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   arm64 libSDL2 by itself). The harness's service believes it's root unless `HOMEPLUS_PREVIEW_UNROOTED`.
 - Tests (`tools/test.sh`, CI: `.github/workflows/ci.yml`): the service's unit tests and HTTP API
   tests in `test/` (Node's test runner; `node --test test/*.test.js`), the launcher's own (`native`:
-  `native/test/`, `make -C native test`: `net.c` against a stand-in service), every preview scene rendered
+  `native/test/`, `make -C native test`: `net.c` against a stand-in service, `icon.c`), every preview scene rendered
   and checked (`screens`), the .ipk built and checked (`package`: `tools/check-package.mjs` — contents,
   versions, modes, 32-bit ARM, only SDL 2.0.14 functions). Service modules read their mock URLs from env
   at load (`HOMEPLUS_TMDB`, `HOMEPLUS_PLEX_TV`, ...), so tests load them with `freshRequire`;

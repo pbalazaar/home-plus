@@ -200,16 +200,14 @@ int handle_result(Result *r)
         on_keys_status(r);
         break;
     case TAG_ICON:
-        if (r->generation == S.generation && r->index < S.napps) {
+        if (r->generation != S.generation || r->index >= S.napps) return 0; /* (an old list's) */
+        {
             App *a = &S.apps[r->index];
-            if (r->rgba) {
-                make_logo(a, r->rgba, r->w, r->h); /* already shrunk to ICON_FIT while decoding */
-                a->icon_state = 2;
-            } else {
-                a->icon_state = 3;
-            }
+            if (r->prep) icon_apply(a, r->prep); /* (worked out as it arrived: prepare_icon) */
+            else if (r->rgba) make_logo(a, r->rgba, r->w, r->h); /* already shrunk to ICON_FIT while decoding */
+            a->icon_state = r->rgba ? 2 : 3;
         }
-        break;
+        return app_shown(r->index); /* one off screen redraws nothing */
     case TAG_ART:
         if (r->generation == S.generation && r->index < S.napps) {
             App *a = &S.apps[r->index];

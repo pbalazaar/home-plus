@@ -10,7 +10,8 @@
  *   setup.c     first run                                   accounts.c signing in (Stremio, Jellyfin, Plex, Trakt)
  *   input.c     keys, the pointer, focus                    idle.c     the idle wait, OLED care, offscreen
  *   draw.c      shared drawing, the home screen             tiles.c    an icon's logo and cover
- *   util.c      small helpers                               perf.c     frame timing (off unless asked) */
+ *   util.c      small helpers                               perf.c     frame timing (off unless asked)
+ *   icon.c      an icon's tile worked out from its pixels, on a network worker (no GPU, nor S) */
 #ifndef HOMEPLUS_HOME_H
 #define HOMEPLUS_HOME_H
 
@@ -518,10 +519,27 @@ int is_hidden(const char *id);
 void app_color(const App *a, Uint8 *r, Uint8 *g, Uint8 *b);
 int keep_in_view(int first, int i, int visible, int n, int margin);
 
+/* icon.c: an icon's tile worked out from its pixels, off the main thread (a network worker does it as the
+ * icon arrives: net_prepare); one block, freed whole */
+enum { COVER_W = 160, COVER_H = 90 };
+typedef struct {
+    float ink_ref, ink_span, logo_w, logo_h, logo_r;
+    int ink_tint, fullbleed, has_cover, cw, ch;
+    Uint8 col[3];
+    unsigned char *crop; /* the logo, cut out: cw x ch RGBA */
+    float *cover;        /* the cover, blurred, before icon_cover shades it: COVER_W x COVER_H x 3 */
+} IconPrep;
+IconPrep *icon_prepare(const unsigned char *px, int w, int h);
+void icon_cover(const IconPrep *ip, int vivid, unsigned char *out);
+void cover_blur(float *f, float *scratch);
+
 /* tiles.c */
+void icon_apply(App *a, const IconPrep *ip);
 void make_logo(App *a, const unsigned char *px, int w, int h);
+void prepare_icon(Result *r);
 
 /* draw.c */
+int app_shown(int i);
 void update_clock(void);
 void draw_text(Tex *t, int w, int h, float x, float y, Uint8 a);
 void sway(float *dx, float *dy);

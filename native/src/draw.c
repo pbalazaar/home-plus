@@ -216,12 +216,31 @@ static void draw_clock(Uint8 alpha, int backdrop)
             (Uint8)(alpha * (0.85f + 0.15f * gk)), 0);
 }
 
+/* item i's tile is on screen (draw_tile draws it) */
+static int tile_on_screen(int i)
+{
+    float by = GRID_TOP + (i / COLS) * ROW_H + S.scroll;
+    return !(by > H + 40 || by + ROW_H < -40);
+}
+
+/* App i is on show, or may be (what's over the grid shows apps too; the Top Shelf, its cover or tile):
+ * something new of it redraws. */
+int app_shown(int i)
+{
+    if (S.recents.t > 0.004f || S.sheet.open || S.ghost.on || S.cc.t > 0.004f || S.moving || S.pic_a < 1) return 1;
+    const App *a = &S.apps[i];
+    if (a == item_app(S.shelf_cur) || a == item_app(S.focus)) return 1;
+    for (int k = 0; k < S.nitems; k++)
+        if (S.items[k] == i) return tile_on_screen(k);
+    return 0;
+}
+
 static void draw_tile(int i, int backdrop)
 {
     App *a = item_app(i);
     float bx = LEFT + (i % COLS) * (TILE_W + GAP_X);
     float by = GRID_TOP + (i / COLS) * ROW_H + S.scroll;
-    if (by > H + 40 || by + ROW_H < -40) return;
+    if (!tile_on_screen(i)) return;
     int focused = i == S.focus && S.zone == ZONE_GRID;
     float k = a ? a->s : S.special_s;
     float sc = 1 + (FOCUS_SCALE - 1) * k;
