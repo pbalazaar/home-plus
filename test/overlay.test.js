@@ -13,16 +13,40 @@ const net = require('net');
 const http = require('http');
 const { spawn } = require('child_process');
 const { fileURLToPath } = require('url');
-const { until } = require('./helpers');
+const { until, sleep } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
 const NODE = process.env.HOMEPLUS_SERVICE_NODE || process.execPath;
 const windows = process.platform === 'win32' && 'the TV\'s: file URLs of Unix paths, links and Unix modes'; /* a reason to skip */
 let child, port, token, dir, log = '';
 
-const lunaLog = () => (fs.existsSync(path.join(dir, 'luna.log')) ? fs.readFileSync(path.join(dir, 'luna.log'), 'utf8') : '')
+const lines = (file) => (fs.existsSync(path.join(dir, file)) ? fs.readFileSync(path.join(dir, file), 'utf8') : '')
   .split('\n').filter(Boolean).map((l) => JSON.parse(l));
+const lunaLog = () => lines('luna.log');
 const calls = (uri) => lunaLog().filter((c) => c.uri === uri);
+const SHOT = 'luna://com.webos.service.capture/executeOneShot', LAUNCH = 'luna://com.webos.service.systemUIManager/launch';
+// the service's waits here (on the TV: longer): captures start GAP ms apart at most (on the TV: a third of
+// a second); one gives no frame after GIVE_UP ms (3 s); RETRY are the waits while the video can't be
+// captured (1.5, 3, then 5 s); luna gives up on a call after LUNA_MS (15 s); PicCap starts again AGAIN_MS
+// after a close (2 s)
+const GAP = 200, GIVE_UP = 400, RETRY = [250, 500, 750], LUNA_MS = 1000, AGAIN_MS = 300;
+
+// the TV's captures asked for since `since`, in order: each one's method, file, and when it was asked
+// for and answered (the stand-in's captures.log; none: not yet, or never)
+function capturesSince(since) {
+  const ends = new Map(lines('captures.log').map((c) => [c.path, c.end]));
+  return calls(SHOT).filter((c) => c.t >= since).map((c) => ({ method: c.params.method, file: c.params.path, start: c.t, end: ends.get(c.params.path) }));
+}
+const videoSince = (since) => capturesSince(since).filter((c) => c.method === 'VIDEO');
+// none asked for before the one before it had answered (one never answered: until luna gave up on it)
+function oneAtATime(list) {
+  for (let i = 1; i < list.length; i++) {
+    const last = list[i - 1], free = last.end === undefined ? last.start + LUNA_MS : last.end;
+    assert.ok(list[i].start >= free, `a ${list[i].method} capture asked for ${list[i].start - last.start} ms after a ${last.method} one that answered after ${free - last.start} ms`);
+  }
+}
+const ask = async (after) => (await call('POST', '/api/overlay', { body: { event: 'frame', after } })).json;
+const framesFolder = () => path.dirname(fileURLToPath(calls(LAUNCH).at(-1).params.params.frame));
 
 function freePort() {
   return new Promise((resolve) => {
@@ -73,7 +97,11 @@ test.before(async () => {
       HOMEPLUS_PREVIEW_FOREGROUND: 'netflix', /* an app is in front */
       HOMEPLUS_PREVIEW_AMBIENT: '1', /* with PicCap, capturing */
       HOMEPLUS_PICCAP_PAUSED: path.join(dir, 'piccap-paused'),
-      HOMEPLUS_PICCAP_AGAIN_MS: '100' /* PicCap starts again this long after it closes (on the TV: 2 s) */
+      HOMEPLUS_PICCAP_AGAIN_MS: String(AGAIN_MS),
+      HOMEPLUS_CAPTURE_RATE: String(1000 / GAP),
+      HOMEPLUS_CAPTURE_TIMEOUT_MS: String(GIVE_UP),
+      HOMEPLUS_CAPTURE_RETRY_MS: RETRY.join(),
+      HOMEPLUS_LUNA_TIMEOUT_MS: String(LUNA_MS)
     }),
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -212,8 +240,10 @@ async function openWith(what) {
   await until(() => grabs() >= before + 3, 5000, 'the screen, then the video twice');
   return path.dirname(fileURLToPath(calls('luna://com.webos.service.systemUIManager/launch').at(-1).params.params.frame));
 }
+// closed, and once its frames' folder has gone (what the TV was taking has come), the stand-in TV's defaults
 async function close() {
   await call('POST', '/api/overlay', { body: { event: 'closed' } });
+  await until(() => fs.readdirSync(path.join(dir, 'frames')).length === 0, LUNA_MS + 3000, 'the frames to go');
   fs.rmSync(path.join(dir, 'capture.json'), { force: true });
 }
 
@@ -274,7 +304,7 @@ test('overlay: Blur Over Video pauses PicCap while it\'s open, for frames of the
 
 test('overlay: the panel asks for the next frame, and the answer comes when it\'s taken', async () => {
   try {
-    const frames = await openWith({});
+    const frames = await openWith({ VIDEO: 'moving' });
     const first = (await call('POST', '/api/overlay', { body: { event: 'frame', after: 0 } })).json;
     assert.equal(first.picture, true, 'a picture already');
     const asked = Date.now();
@@ -289,4 +319,180 @@ test('overlay: the panel asks for the next frame, and the answer comes when it\'
   } finally {
     await close();
   }
+});
+
+// ---- What it asks of the TV's capture: one at a time, so many a second at most, a picture once, less
+// often while there's none; and PicCap's pause from one opening to the next.
+
+test('overlay: one capture at a time, across a close and a quick reopen; no snapshot once the panel is asked for', async () => {
+  fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving', ms: { DISPLAY: 100, VIDEO: GAP - 20 } }));
+  const since = Date.now();
+  let asked = -1; /* the reopened panel asked for: where, in the luna log */
+  try {
+    await call('POST', '/api/key', { body: { key: 'settings' } });
+    await until(() => videoSince(since).length >= 2 && videoSince(since).at(-1).end === undefined, 3000, 'a frame of the video on its way');
+    await call('POST', '/api/overlay', { body: { event: 'closed' } });
+    const again = Date.now();
+    assert.deepEqual((await call('POST', '/api/key', { body: { key: 'settings' } })).json, { opened: 'overlay' });
+    asked = lunaLog().map((c) => c.uri).lastIndexOf(LAUNCH);
+    await until(() => videoSince(again).filter((c) => c.end).length >= 2, 3000, 'the new one\'s frames');
+  } finally {
+    await close();
+  }
+  const all = capturesSince(since);
+  assert.equal(new Set(all.map((c) => c.file)).size, all.length, 'each capture has a file of its own');
+  oneAtATime(all);
+  assert.ok(!lunaLog().slice(asked).some((c) => c.uri === SHOT && c.params.method === 'DISPLAY'),
+    'the screen isn\'t taken once the panel has been asked for (it would be of the panel)');
+});
+
+test('overlay: so many frames a second at most (three on the TV), each counted from when the last capture started', async () => {
+  fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving', ms: { VIDEO: 130 } }));
+  const since = Date.now();
+  try {
+    await call('POST', '/api/key', { body: { key: 'settings' } });
+    await until(() => videoSince(since).filter((c) => c.end).length >= 6, 5000, 'six frames of the video');
+  } finally {
+    await close();
+  }
+  const all = capturesSince(since), gaps = all.slice(1).map((c, i) => c.start - all[i].start).sort((a, b) => a - b);
+  assert.ok(gaps[0] >= GAP - 5, `none sooner than ${GAP} ms after the last one started: ${gaps}`);
+  assert.ok(gaps[gaps.length >> 1] < GAP + 65, `nor ${GAP} ms after the last one answered (130 ms on): ${gaps}`);
+});
+
+test('overlay: a frame the same as the one on show isn\'t sent again (a still screen, a paused video); a new one is', async () => {
+  const since = Date.now();
+  try {
+    const frames = await openWith({}); /* the same picture each time: the screen's, then the video's */
+    await until(() => videoSince(since).filter((c) => c.end).length >= 2, 3000, 'two frames of the video');
+    const still = await ask(0), file = fs.statSync(path.join(frames, 'frame.png')).ino;
+    assert.equal(still.picture, true);
+    await until(() => videoSince(since).filter((c) => c.end).length >= 4, 3000, 'two more');
+    assert.equal((await ask(0)).n, still.n, 'no new frame: the panel isn\'t woken for the same picture');
+    assert.equal(fs.statSync(path.join(frames, 'frame.png')).ino, file, 'nor is the frame written again');
+    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving' }));
+    const next = await ask(still.n);
+    assert.ok(next.n === still.n + 1 && next.picture, `a new picture is: ${JSON.stringify(next)}`);
+  } finally {
+    await close();
+  }
+});
+
+test('overlay: a capture that comes after it was given up on isn\'t shown, its file goes, and the next waits for it', async () => {
+  fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving', ms: { VIDEO: GIVE_UP + RETRY[0] + 150 } })); /* (later than the next try would be) */
+  const since = Date.now();
+  try {
+    await call('POST', '/api/key', { body: { key: 'settings' } });
+    const frames = framesFolder(), opened = await ask(0);
+    assert.equal(opened.picture, true, 'the screen as it opened');
+    await until(() => videoSince(since).length >= 2, 4000, 'a frame that came too late, and the next asked for');
+    assert.equal((await ask(0)).n, opened.n, 'it isn\'t shown');
+    await until(() => fs.readdirSync(frames).join() === 'frame.png', 1000, 'what came too late to be deleted');
+    oneAtATime(capturesSince(since)); /* the next was asked for once the one given up on had come */
+    // closed while the TV still takes one that was given up on: the folder goes once that has come, and stays gone
+    await until(() => Date.now() - videoSince(since).at(-1).start > GIVE_UP + 100, 2000, 'the next one given up on');
+    await call('POST', '/api/overlay', { body: { event: 'closed' } });
+    await until(() => !fs.existsSync(frames), 3000, 'its folder to go');
+    assert.ok(videoSince(since).at(-1).end, 'not before what was being taken into it had come');
+    await sleep(300);
+    assert.ok(!fs.existsSync(frames), 'nor made again');
+  } finally {
+    await close();
+  }
+});
+
+test('overlay: closed while it waits to try again, it stops at once: opened again, its frames come straight away', async () => {
+  fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'busy' }));
+  const since = Date.now();
+  try {
+    await call('POST', '/api/key', { body: { key: 'settings' } });
+    await until(() => videoSince(since).length >= 3, 4000, `three tries (then it waits ${RETRY[2]} ms)`);
+    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving' }));
+    await call('POST', '/api/overlay', { body: { event: 'closed' } });
+    const again = Date.now();
+    assert.deepEqual((await call('POST', '/api/key', { body: { key: 'settings' } })).json, { opened: 'overlay' });
+    await until(() => videoSince(again).length >= 1, 3000, 'a frame of the video for the new one');
+    const first = videoSince(again)[0].start - again;
+    assert.ok(first < GAP + 300, `the new one's first frame came ${first} ms after it opened, not after the last one's wait`);
+  } finally {
+    await close();
+  }
+});
+
+test('overlay: a frame that comes after it has closed isn\'t shown, and its folder isn\'t made again', async () => {
+  fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving', ms: { VIDEO: 300 } }));
+  const since = Date.now();
+  try {
+    await call('POST', '/api/key', { body: { key: 'settings' } });
+    const frames = framesFolder();
+    await until(() => videoSince(since).length >= 2 && videoSince(since).at(-1).end === undefined, 3000, 'a frame of the video on its way');
+    const before = await ask(0);
+    await call('POST', '/api/overlay', { body: { event: 'closed' } });
+    const closed = Date.now();
+    await until(() => !fs.existsSync(frames), 3000, 'its folder to go');
+    assert.ok(videoSince(since).at(-1).end >= closed, 'the frame on its way came after it closed');
+    assert.deepEqual(await ask(0), { returnValue: true, n: before.n + 1, picture: false }, 'only the close (no picture): the frame isn\'t shown');
+    await sleep(400);
+    assert.ok(!fs.existsSync(frames), 'nothing made it again');
+  } finally {
+    await close();
+  }
+});
+
+test('overlay: a capture the TV never answers holds the next one back only as long as luna waits for it', async () => {
+  fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'never' }));
+  const since = Date.now();
+  try {
+    await call('POST', '/api/key', { body: { key: 'settings' } });
+    await until(() => videoSince(since).length >= 1, 3000, 'a frame of the video asked for');
+    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving' }));
+    const n = (await ask(0)).n;
+    await until(async () => (await ask(0)).n > n, LUNA_MS + 3000, 'frames again');
+    const [hung, next] = videoSince(since);
+    assert.ok(next.start - hung.start >= LUNA_MS - 20, `the next one waited for it: ${next.start - hung.start} ms`);
+    assert.ok(next.start - hung.start < LUNA_MS + 500, `but no longer: ${next.start - hung.start} ms`);
+  } finally {
+    await close();
+  }
+});
+
+test('overlay: while the video can\'t be captured it\'s asked for less and less often, and a picture starts that over', async () => {
+  fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'busy' }));
+  const since = Date.now(), gaps = (list) => list.slice(1).map((c, i) => c.start - list[i].start);
+  try {
+    await call('POST', '/api/key', { body: { key: 'settings' } });
+    await until(() => videoSince(since).length >= 3, 4000, 'three tries');
+    const waits = gaps(videoSince(since));
+    for (const [i, ms] of RETRY.slice(0, 2).entries()) assert.ok(waits[i] >= ms - 5 && waits[i] < ms + 200, `waits of ${RETRY}: ${waits}`);
+    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({})); /* a picture */
+    const tries = videoSince(since).length;
+    await until(() => videoSince(since).filter((c) => c.end).length > tries, 3000, 'a picture');
+    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'busy' }));
+    const again = Date.now();
+    await until(() => videoSince(again).length >= 2, 3000, 'two more tries');
+    assert.ok(gaps(videoSince(again))[0] < RETRY[1], `the first wait again: ${gaps(videoSince(again))}`);
+  } finally {
+    await close();
+  }
+});
+
+test('overlay: Blur Over Video, closed and opened again at once: PicCap stays paused, then starts again once', async () => {
+  const piccap = (what) => calls(`luna://org.webosbrew.piccap.service/${what}`).length;
+  const stops = piccap('stop'), starts = piccap('start');
+  await call('POST', '/api/prefs', { body: { ccBlurVideo: true } });
+  try {
+    await openWith({ DISPLAY: 'piccap', VIDEO: 'black' }); /* paused, but the video still can't be captured: it waits between tries */
+    assert.equal(piccap('stop'), stops + 1, 'paused');
+    await call('POST', '/api/overlay', { body: { event: 'closed' } });
+    assert.deepEqual((await call('POST', '/api/key', { body: { key: 'settings' } })).json, { opened: 'overlay' });
+    await sleep(AGAIN_MS + 400); /* (PicCap would start again AGAIN_MS after the first one closed) */
+    assert.equal(piccap('start'), starts, 'not started again under the new one');
+    assert.equal(piccap('stop'), stops + 1, 'nor stopped again: it stayed paused');
+  } finally {
+    await close();
+    await call('POST', '/api/prefs', { body: { ccBlurVideo: false } });
+  }
+  await until(() => piccap('start') > starts, 3000, 'PicCap to start again after the last close');
+  await sleep(AGAIN_MS + 300);
+  assert.equal(piccap('start'), starts + 1, 'once');
 });

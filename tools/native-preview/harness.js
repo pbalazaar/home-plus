@@ -214,6 +214,7 @@ const DESC = {
   gameOptimization: ['on', 'off'],
   hdrDynamicToneMapping: ['on', 'off', 'HGIG']
 };
+let moved = 0; /* frames of moving video so far (capture.json, below) */
 global.__stubLuna = (uri, params) => {
   if (uri.endsWith('/getAllInputStatus')) {
     return { returnValue: true, arcDevice: true, devices: [
@@ -250,14 +251,34 @@ global.__stubLuna = (uri, params) => {
   if (/systemUIManager\/(launch|closeByAppId)$/.test(uri)) return { returnValue: true };
   if (uri === 'luna://com.webos.service.capture/executeOneShot') {
     // <assets>/capture.json, when it's there: what the TV gives for each method: "picture" (the
-    // default), "black" (video it couldn't capture), "busy" (its one video capture taken, as PicCap
-    // takes it), or "piccap": busy, or black, while the stand-in PicCap captures, a picture once it's stopped
-    let kind = 'picture';
-    try { kind = JSON.parse(fs.readFileSync(path.join(assets, 'capture.json'), 'utf8'))[params.method] || kind; } catch (e) { /* the default */ }
+    // default: the same one each time, as a still screen or a paused video), "moving" (another each
+    // time, as video), "black" (video it couldn't capture), "busy" (its one video capture taken, as
+    // PicCap takes it), "piccap": busy, or black, while the stand-in PicCap captures, a picture once
+    // it's stopped, or "never" (no answer); and "ms": {"<method>": how long it takes}. Each answer is a
+    // line in <assets>/captures.log: its file, method, kind, and when it was asked for and answered. It
+    // makes the folder it writes in if that has gone (the TV might): what Home+ deletes must stay deleted.
+    let how = {};
+    try { how = JSON.parse(fs.readFileSync(path.join(assets, 'capture.json'), 'utf8')); } catch (e) { /* the defaults */ }
+    let kind = how[params.method] || 'picture';
     if (kind === 'piccap') kind = !ambient.capture ? 'picture' : params.method === 'VIDEO' ? 'busy' : 'black';
-    if (kind === 'busy') return { returnValue: false, errorCode: 2, errorText: 'ERROR_NOT_INITIALIZED' };
-    fs.writeFileSync(params.path, png(params.width, params.height, () => (kind === 'black' ? [0, 0, 0] : [90, 120, 160])));
-    return { returnValue: true, capturedWidth: params.width, capturedHeight: params.height };
+    if (kind === 'never') return new Promise(() => {});
+    const start = Date.now(), rgb = kind === 'black' ? [0, 0, 0] : kind === 'moving' ? [100 + (moved++ * 37) % 140, 120, 160] : [90, 120, 160];
+    const answer = () => {
+      let r = { returnValue: false, errorCode: 2, errorText: 'ERROR_NOT_INITIALIZED' };
+      if (kind !== 'busy') {
+        try {
+          fs.mkdirSync(path.dirname(params.path), { recursive: true });
+          fs.writeFileSync(params.path, png(params.width, params.height, () => rgb));
+          r = { returnValue: true, capturedWidth: params.width, capturedHeight: params.height };
+        } catch (e) {
+          r = { returnValue: false, errorText: e.code || e.message };
+        }
+      }
+      fs.appendFileSync(path.join(assets, 'captures.log'), JSON.stringify({ path: params.path, method: params.method, kind, start, end: Date.now() }) + '\n');
+      return r;
+    };
+    const ms = (how.ms || {})[params.method];
+    return ms ? new Promise((done) => setTimeout(() => done(answer()), ms)) : answer();
   }
   if (process.env.HOMEPLUS_PREVIEW_AMBIENT) { /* PicCap's service */
     if (uri === 'luna://org.webosbrew.piccap.service/status') return { returnValue: true, isRunning: ambient.capture };

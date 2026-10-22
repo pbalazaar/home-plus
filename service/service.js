@@ -609,38 +609,40 @@ async function openOverlay(list = '') {
   overlayBusy = true;
   overlayAsked = Date.now();
   overlayList = list;
+  let frames = '', asked = false, opened = false, over = false; /* its frames' folder; the panel asked for; on screen; not to be */
+  const live = () => gen === overlayGen && !over && (!opened || overlayOpen); /* (not closed, nor opened again) */
   try {
     const prefs = readConfig().prefs || {}; /* the launcher's: its clock, Settings -> Control Center and Accessibility */
-    const frames = prefs.reduceTransparency ? '' : framesDir(); /* solid panels: no frames */
+    frames = prefs.reduceTransparency ? '' : framesDir(); /* solid panels: no frames */
     framePicture = false;
     // what's on screen now (DISPLAY: the app's own screen too), before the panel is drawn over it:
     // the glass's first picture, and the one it keeps over an app with no video. The TV takes it as
-    // the call starts (seen on the C3), so it isn't waited for: the panel isn't on screen yet.
-    const snapshot = frames && grab(frames, 'DISPLAY');
+    // the call starts (seen on the C3), so it isn't waited for: the panel isn't on screen yet. If the
+    // TV is still taking another (the last opening's) when the panel is asked for, there's none.
+    const snapshot = frames && grab(frames, 'DISPLAY', () => live() && !asked, live);
     const state = await control.state();
     if (gen !== overlayGen) return false;
     overlayInputs = (state.inputs || []).map((i) => i.appId);
     Object.assign(state, { clock24: !!prefs.clock24, reduceMotion: !!prefs.reduceMotion, reduceTransparency: !!prefs.reduceTransparency,
       sounds: prefs.sounds !== false });
     if (fs.existsSync('/tmp/homeplus-cc-fps')) state.debugFps = true; /* its frame rate, on screen */
+    asked = true;
     const r = await luna(SYSUI + '/launch', {
       appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
       params: { state, port: IMAGE_PORT, token: TOKEN, frame: frames && 'file://' + path.join(frames, 'frame.png'), list } /* the API: the compositor may only call LG's services over luna */
     });
-    if (!r || r.returnValue === false) {
-      if (frames) fs.rm(frames, { recursive: true, force: true }, () => {});
-      throw new Error((r && r.errorText) || "the TV didn't open it");
-    }
+    if (!r || r.returnValue === false) throw new Error((r && r.errorText) || "the TV didn't open it");
     if (gen !== overlayGen) { /* another app came to the front while it opened */
       luna(SYSUI + '/closeByAppId', { appId: OVERLAY_ID });
-      if (frames) fs.rm(frames, { recursive: true, force: true }, () => {});
       return false;
     }
-    overlayOpen = true;
-    if (frames) captureFrames(gen, frames, snapshot, !!prefs.ccBlurVideo);
+    overlayOpen = opened = true;
+    if (frames) framesLoop = framesLoop.then(() => captureFrames(gen, frames, snapshot, !!prefs.ccBlurVideo));
     return true;
   } finally {
     overlayBusy = false;
+    over = !opened;
+    if (frames && over) dropFrames(frames); /* (cancelled, refused, or a mistake) */
   }
 }
 
@@ -663,6 +665,7 @@ try { /* left by a service that stopped (only its own) */
   }
 } catch (e) { /* nothing there */ }
 const settle = (promise, ms) => Promise.race([promise, new Promise((done) => setTimeout(done, ms, null))]);
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 const PANEL = { x0: 0.75, x1: 0.98, y0: 0.04, y1: 0.93 }; /* where the panel is (ControlCenterView.qml) */
 
@@ -690,52 +693,113 @@ function nextFrame(after) {
   });
 }
 
+// The TV takes one capture at a time, whoever asks: an opening's snapshot, its frames of the video,
+// the next opening's (a call it hasn't answered may still be taking its picture). One that hasn't
+// answered in 3 s gets no frame, but the next still waits for its answer (luna gives up after 15 s),
+// and what it writes then is deleted. Each has a file of its own, in its opening's folder; a folder
+// goes once what's being taken into it has come.
+const CAPTURE_TIMEOUT_MS = Number(process.env.HOMEPLUS_CAPTURE_TIMEOUT_MS) || 3000; /* tests: less */
+let captureFree = Promise.resolve(); /* the last capture asked for has answered, or wasn't taken */
+let captureAt = 0, captureN = 0; /* when the last one started; how many there have been */
+
+// a capture into a file of its own in dir, once the TV is free, if go() still says so then: the TV's
+// answer (null: none in time), and the file
+async function capture(dir, method, go) {
+  const file = path.join(dir, `capture-${++captureN}.png`), before = captureFree;
+  let free;
+  captureFree = new Promise((done) => { free = done; });
+  await before;
+  if (!go()) {
+    free();
+    return { file, r: { returnValue: false, errorText: 'not taken' } };
+  }
+  captureAt = Date.now();
+  const answer = luna('luna://com.webos.service.capture/executeOneShot', { path: file, method, format: 'PNG', width: 160, height: 90 });
+  answer.then(free, free);
+  const r = await settle(answer, CAPTURE_TIMEOUT_MS);
+  const drop = () => fs.rm(file, { force: true }, () => {});
+  if (!r) answer.then(drop, drop); /* given up on: whatever it writes goes */
+  return { file, r };
+}
+const dropFrames = (dir) => captureFree.then(() => fs.rm(dir, { recursive: true, force: true }, () => {}));
+
 // a small picture of the screen (DISPLAY) or the video (VIDEO) into dir/frame.png, whole or not at
-// all: 'picture'; 'dark' (not kept) if it's black where the panel is; else why there's none
-async function grab(dir, method) {
-  const frame = path.join(dir, 'frame.png'), tmp = `${frame}.${method}.tmp`;
-  const r = await settle(luna('luna://com.webos.service.capture/executeOneShot',
-    { path: tmp, method, format: 'PNG', width: 160, height: 90 }), 3000); /* (it may never answer) */
-  if (!r || !r.returnValue) return (r && r.errorText) || 'no answer';
+// all, taken if go() says so once the TV is free, and kept if live() still says so when it comes:
+// 'picture'; 'same' as the one on show (not shown again: a still screen, a paused video); 'dark'
+// (not kept) if it's black where the panel is; else why there's none
+let shown = null; /* the frame on show: its folder and its bytes */
+async function grab(dir, method, go, live) {
+  let file = '';
   try {
-    if (png.brightness(fs.readFileSync(tmp), PANEL) < 24) {
-      fs.rmSync(tmp, { force: true });
-      return 'dark';
-    }
-    fs.renameSync(tmp, frame);
+    const c = await capture(dir, method, go);
+    file = c.file;
+    if (!c.r || !c.r.returnValue) return (c.r && c.r.errorText) || 'no answer';
+    if (!live()) return 'too late'; /* (it closed, or opened again, meanwhile) */
+    const bytes = fs.readFileSync(file);
+    if (shown && shown.dir === dir && bytes.equals(shown.bytes)) return 'same';
+    if (png.brightness(bytes, PANEL) < 24) return 'dark';
+    fs.renameSync(file, path.join(dir, 'frame.png'));
+    shown = { dir, bytes };
     frameChanged(true);
     return 'picture';
   } catch (e) {
-    fs.rmSync(tmp, { force: true });
     return e.message;
+  } finally {
+    if (file) fs.rmSync(file, { force: true }); /* (unless it's the frame now) */
   }
 }
 
+// One opening's frames at a time: the next one's start once the last one's have stopped (as soon as
+// it closed, or its capture on the way has come), so PicCap, paused for one, stays paused for the next
+// (ambient.js starts it again only a while after). At most three frames a second, counted from when
+// the last capture started (on the C3 one takes ~350 ms, so this seldom waits); with no picture, soon
+// again at first (the video was dark a moment, or PicCap is letting go of the capture), then less and
+// less often.
+let framesLoop = Promise.resolve();
+const CAPTURE_MS = 1000 / (Number(process.env.HOMEPLUS_CAPTURE_RATE) || 3); /* tests: more */
+const RETRY_MS = (process.env.HOMEPLUS_CAPTURE_RETRY_MS || '1500,3000,5000').split(',').map(Number); /* tests: shorter */
+
+// waits ms, or less if live() says it has closed (looked at every 100 ms)
+async function nap(ms, live) {
+  for (const end = Date.now() + ms; live() && Date.now() < end;) await sleep(Math.min(end - Date.now(), 100));
+}
+
 async function captureFrames(gen, dir, snapshot, blurVideo) {
+  const live = () => overlayOpen && gen === overlayGen;
   const until = Date.now() + 5 * 60000; /* in case it's never said to have closed */
   let video = false; /* the frame on show is the video's, not the snapshot */
   let paused = false; /* PicCap's capture, for Blur Over Video */
+  let wait = 0, none = 0, slow = 0; /* before the next try; tries in a row with no picture, and long waits after them */
   try {
-    const screen = await snapshot; /* (one capture at a time) */
-    if (blurVideo && picCapture) paused = await picCapture.pause();
-    for (let n = 0; overlayOpen && gen === overlayGen && Date.now() < until; n++) {
-      const got = await grab(dir, 'VIDEO'); /* none (no video playing): the snapshot stays */
+    const screen = await snapshot;
+    if (blurVideo && picCapture && live()) paused = await picCapture.pause();
+    for (let n = 0; ; n++) {
+      await nap(Math.max(wait, captureAt + CAPTURE_MS - Date.now()), live);
+      if (!live() || Date.now() > until) break;
+      const got = await grab(dir, 'VIDEO', live, live); /* none (no video playing): the snapshot stays */
+      if (!live()) break;
       if (!n) log('control center frames: the screen', screen, '- the video', got, paused ? '(PicCap paused)' : '');
-      if (got === 'picture') video = true;
-      else if (video) { /* the video went dark, or can't be captured now: clear glass, over what's there */
+      if (got === 'picture' || got === 'same') {
+        video = true;
+        wait = none = slow = 0;
+        continue;
+      }
+      if (video) { /* the video went dark, or can't be captured now: clear glass, over what's there */
         fs.rmSync(path.join(dir, 'frame.png'), { force: true });
+        shown = null;
         frameChanged(false);
         video = false;
       }
-      const soon = got === 'dark' || (paused && !video && n < 10); /* (PicCap lets go of the capture) */
-      await new Promise((done) => setTimeout(done, got === 'picture' ? 0 : soon ? 300 : 1500)); /* (frames back to back) */
+      none++;
+      wait = (got === 'dark' && none <= 3) || (paused && n < 10) ? 300 : RETRY_MS[Math.min(slow++, RETRY_MS.length - 1)];
     }
   } catch (e) {
     log('control center frames:', e.message);
   } finally {
     if (paused) picCapture.resume();
-    frameChanged(false); /* (the panel's waiting asks are answered) */
-    fs.rm(dir, { recursive: true, force: true }, () => {});
+    if (gen === overlayGen) frameChanged(false); /* (the panel's waiting asks are answered; a newer one's frames are its own) */
+    if (shown && shown.dir === dir) shown = null;
+    dropFrames(dir);
   }
 }
 

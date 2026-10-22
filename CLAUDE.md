@@ -46,6 +46,8 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
     Settings do); then Back arrives as key `0x1200003`. OK is `Qt.Key_Return`, a press and a release (no repeat).
   - Its glass: `com.webos.service.capture/executeOneShot` `method: VIDEO` (the video, without any graphics)
     takes ~350 ms a frame at any size, so ~3 a second; DRM'd video gives none.
+  - The service takes one capture at a time (the snapshot too, and the next opening's), 3 a second at most from
+    each start; a frame the same as the one on show isn't sent, and with no picture it tries less often (to 5 s).
   - The C3 has one video capture (the media resource `VT_CAPTURE`, `com.webos.media/getActivePipelines`
     shows who holds it), and PicCap's vtcapture keeps it while it captures (after a reboot, from boot): then
     VIDEO says `ERROR_NOT_INITIALIZED`, and DISPLAY, screenshots included, is black where the video is. The

@@ -28,6 +28,7 @@ module.exports = class Service {
     if (process.env.HOMEPLUS_PREVIEW_LUNA_SILENT && new RegExp(process.env.HOMEPLUS_PREVIEW_LUNA_SILENT).test(uri)) return;
     if (uri.endsWith('/launch')) return cb({ payload: { returnValue: true } });
     const fake = global.__stubLuna && global.__stubLuna(uri, params); // the harness's stand-in TV
+    if (fake && typeof fake.then === 'function') return void fake.then((payload) => cb({ payload })); // (later, or never)
     if (fake) return cb({ payload: fake });
     cb({ payload: { returnValue: true, apps: global.__stubApps || [] } });
   }

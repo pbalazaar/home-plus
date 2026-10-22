@@ -85,7 +85,7 @@ FocusScope {
     FontLoader { id: semi; source: "../assets/fonts/Inter-SemiBold.ttf" }
 
     // ---- the picture behind, for the glass: the service's frames of the video while this is open
-    // (see the service; the TV gives about five a second, each a fifth of a second old), loaded in
+    // (see the service: three a second at most, and only a picture that changed), loaded in
     // turn into two images, blurred hard and small so the glass carries the video's colours rather
     // than its detail (which would show the delay), the newer faded in over the older. The service
     // answers an ask for the next frame when it's taken, so each shows at once, and only new ones
