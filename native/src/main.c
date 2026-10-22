@@ -214,6 +214,44 @@ int update(float dt)
     return anim;
 }
 
+/* How far a frame moves animations on: the whole refreshes since the last frame (up to 0.1 s). With vsync
+ * each frame is on screen for whole refreshes however late the loop woke to draw it, so measured time
+ * made even motion uneven (the C3's frames came 12 to 23 ms apart at a steady 60 Hz). A refresh is the
+ * middle of the last 15 gaps between animating frames: the screen's own, which isn't always the one SDL
+ * says (after 50 Hz video the C3's screen stays at 50 Hz and SDL still says 60), or the pace frames come at.
+ * After a rest it's one: the time the loop slept isn't motion (it was 100 ms, a jump at the start of every
+ * animation). */
+static float frame_dt(int resting)
+{
+    enum { N = 15 };
+    static Uint64 last;
+    static double tick, refresh, gaps[N];
+    static int next;
+    if (!tick) {
+        SDL_DisplayMode m;
+        tick = 1.0 / (double)SDL_GetPerformanceFrequency();
+        refresh = SDL_GetCurrentDisplayMode(0, &m) == 0 && m.refresh_rate >= 24 ? 1.0 / m.refresh_rate : 1 / 60.0;
+        for (int i = 0; i < N; i++) gaps[i] = refresh;
+    }
+    Uint64 now = SDL_GetPerformanceCounter();
+    double gap = (now - last) * tick, n = 1;
+    if (!resting && last) {
+        double s[N];
+        gaps[next] = gap;
+        next = (next + 1) % N;
+        for (int i = 0; i < N; i++) { /* sorted, for the middle one: an odd long or short gap doesn't move it */
+            int j = i;
+            for (; j > 0 && s[j - 1] > gaps[i]; j--) s[j] = s[j - 1];
+            s[j] = gaps[i];
+        }
+        refresh = s[N / 2];
+        n = floor(gap / refresh + 0.5);
+    }
+    last = now;
+    double dt = refresh * (n < 1 ? 1 : n);
+    return (float)(dt > 0.1 ? 0.1 : dt);
+}
+
 /* ------------------------------------------------------------------ setup */
 
 static int load_assets(void)
@@ -483,8 +521,8 @@ int main(int argc, char **argv)
         if ((S.offscreen || (S.idle_stage == 2 && S.black >= 0.999f)) && !shot) dirty = animating = 0;
 
         if (dirty || animating || shot) {
-            float dt = (now - last) / 1000.0f;
-            if (dt > 0.1f) dt = 0.1f;
+            /* (screenshots are taken at a time: there it's the time that went by) */
+            float dt = shot ? fminf((now - last) / 1000.0f, 0.1f) : frame_dt(!animating);
             int take = shot && now >= shot_at;
             animating = render(dt, take ? shot : NULL);
             if (!animating) perf_rest();
