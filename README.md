@@ -12,7 +12,7 @@ A tvOS-style home screen for rooted LG webOS TVs, in a Liquid Glass look, with C
 
 ![Continue Watching in the Top Shelf](docs/screenshots/continue-watching.jpg)
 
-*Screenshots show a real TV's apps and Continue Watching. The Jellyfin and Plex ones use placeholder shows, and the Control Center ones placeholder apps.*
+*Screenshots show a real TV's apps and Continue Watching. The Jellyfin one uses placeholder shows.*
 
 > **Not affiliated with LG, Apple, Stremio, Trakt, Jellyfin, Plex or TMDB.** Home+ uses the TMDB API but is not endorsed or certified by TMDB. Home+ is an independent project. tvOS and Liquid Glass are Apple's names for Apple's designs; Home+ only borrows the look. It runs on **rooted** TVs and uses Stremio's, Trakt's and Plex's web APIs unofficially. Use it at your own risk.
 
@@ -122,7 +122,7 @@ Focus Stremio, Jellyfin or Plex in the top row, and the Top Shelf shows what you
 
 Sign in under **Settings → Accounts**, or hold **OK** on the app and choose **Sign In**. The TV shows a code, and a QR code where the service has one; you approve it on your phone or computer, where you're already signed in. No password is typed on the TV.
 
-![Signing in to Plex with a QR code](preview/native-signin-plex.png)
+![Signing in to Plex with a QR code](docs/screenshots/plex-signin.jpg)
 
 Pressing **OK** on a card opens the app. The LG apps can't be sent to a specific title from outside, so a notification names the title, ready to pick from the app's own Continue Watching.
 
