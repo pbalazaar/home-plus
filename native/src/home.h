@@ -625,6 +625,7 @@ void rail_clear(void);
 void parse_continue(const char *json, int src);
 void parse_featured(const char *json, App *a);
 int rail_active(void);
+int rail_ready(int i);
 int carousel_coming(const App *a);
 void shelf_load(void);
 int shelf_jump(void);

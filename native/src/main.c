@@ -71,7 +71,7 @@ int update(float dt)
                       S.idle_stage == 0;
         if (!turning) S.rail_next = 0;
         else if (!S.rail_next) S.rail_next = now + ROTATE_MS;
-        else if (now >= S.rail_next && S.rail[nx].bg_state != 1 && S.rail[nx].logo_state != 1) { /* the next is ready */
+        else if (now >= S.rail_next && rail_ready(nx)) { /* the next's pictures are in (not merely not loading: let go, they'd be waited for) */
             rail_focus(nx);
             S.rail_next = now + ROTATE_MS;
         }

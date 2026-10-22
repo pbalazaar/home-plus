@@ -301,11 +301,15 @@ static int page_ready(int item, int rail)
 {
     App *a = item_app(item);
     if (!a) return 1;
-    if (rail >= 0) {
-        const RailItem *r = &S.rail[rail];
-        return (r->bg_state >= 2 || !r->bg[0]) && (r->logo_state >= 2 || !r->logo[0]);
-    }
+    if (rail >= 0) return rail_ready(rail);
     return !carousel_coming(a) && !(a->art[0] && a->art_state < 2);
+}
+
+/* carousel title i's picture and logo are in (or failed, or it has none): it can be shown */
+int rail_ready(int i)
+{
+    const RailItem *r = &S.rail[i];
+    return (r->bg_state >= 2 || !r->bg[0]) && (r->logo_state >= 2 || !r->logo[0]);
 }
 
 /* a page's picture: its title's, else its app's artwork, else the app's glow (with its
