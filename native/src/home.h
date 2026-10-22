@@ -361,7 +361,8 @@ typedef struct {
     int idle_stage, swallow_up, offscreen, orbit_k; /* offscreen: another app is in front */
     int settle;             /* back from offscreen: the next frame moves every animation to its end */
     int wl_fd;              /* Wayland socket the idle wait sleeps on, -1 = SDL's own wait */
-    Uint32 keys_until;      /* a key went down lately: keep pumping so SDL makes its repeats */
+    Uint32 keys_until;      /* a key went down lately, or SAM's bringing Home+ back: keep pumping so SDL makes its
+                             * repeats (finishes the relaunch) */
     float dim, black;
     /* motion: the focused element sways briefly and its highlight follows a moving light */
     float sway_t;           /* seconds since focus last moved */

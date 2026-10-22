@@ -15,7 +15,8 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
 - `service/` — Node 16 webOS service `com.github.pbalazaar.homeplus.service`, elevated with Homebrew
   Channel's `elevateService` (the launcher asks; see First run). Luna methods + a local HTTP API on `127.0.0.1:47823` (see README).
   Also: Home button takeover (`watch` mode, and `redirect` = no-flash bind mount over LG home's
-  start page, approved by the owner), settings apps, recents, and Continue Watching from
+  start page, approved by the owner; and an app that quits brings Home+ at once, see Known TV quirks), settings
+  apps, recents, and Continue Watching from
   Stremio + Trakt (`service.js`, `trakt.js`), Jellyfin (`jellyfin.js`) and Plex (`plex.js`), and what's popular
   on streaming apps from TMDB (`tmdb.js`, key via `tmdbSetup`). The launcher shows each as a Top Shelf
   carousel (one title at a time, turning every 10 s unless Settings keeps it still; Up then Left/Right steps through).
@@ -184,6 +185,18 @@ appears in your own SSH command line** — it kills the session. Use:
   (if it does, `ok_down` dedupes them).
 - No-flash mode can't work on the C3: LG's home is a native app (`/usr/bin/com.webos.app.home`),
   so the service falls back to `watch` and reports `noFlashAvailable: false`.
+- When an app quits (its Exit, Back on its first screen, SAM's `closeByAppId`), SAM says `close` and `stop`
+  (`getAppLifeEvents`), the foreground goes empty ~80 ms later, the screen is black, and 1.0 s after that SAM's
+  last-app handler launches its idle app (settingsservice `general`/`lastAppHandlerPolicy` "idleApp", configd
+  `profile.idleApp` = LG's home): LG's home was in front ~120 ms before the watch's Home+ replaced it. The
+  service launches Home+ as soon as the app in front has quit and nothing's there (50 ms left for another app
+  to say it's coming); SAM then finds an app in front and launches nothing (on the C3: LG's home in none of 26
+  exits; Home+'s first frame ~0.23 s after the exit, was ~1.33 s). Not for an app sent to the background:
+  LG's compositor brings back the most recent card on a minimize (platformBack), and after a window that sets
+  `_WEBOS_LAUNCH_PREV_APP_AFTER_CLOSING` (`/usr/lib/qt5/qml/WebOSCompositor/controllers/StarfishFullscreenController.qml`).
+- Hidden, the launcher pumps SDL every 100 ms, so SAM's relaunch (the Home button) waited 0–100 ms. When SAM
+  says it's launching Home+ while another app is in front, the service sends the launcher `wake` (`/api/events`),
+  and it pumps every 10 ms for 300 ms (`keys_until`).
 - No flash on the C3 comes from lginputhook (`org.webosbrew.inputhook` 1.5.1; 1.4.0 couldn't
   inject on webOS 23). `/home/root/.config/lginputhook/keybinds.json` binds Home (773) to Home+, so
   LG's home never starts. Binding keys are the hook log's `uinput_code`, not `keyid`

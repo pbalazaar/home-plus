@@ -7,11 +7,22 @@ module.exports = class Service {
     const sub = new EventEmitter();
     const app = process.env.HOMEPLUS_PREVIEW_FOREGROUND;
     if (app && uri.endsWith('/getForegroundAppInfo')) setImmediate(() => sub.emit('response', { payload: { appId: app } }));
+    // tests: HOMEPLUS_PREVIEW_SUBSCRIPTIONS, what subscriptions say and when: {"<method>": [[ms, payload], ...]}, the
+    // ms from when the service subscribed (each is in HOMEPLUS_PREVIEW_LUNA_LOG too, as it comes)
+    const script = JSON.parse(process.env.HOMEPLUS_PREVIEW_SUBSCRIPTIONS || '{}')[uri.slice(uri.lastIndexOf('/') + 1)] || [];
+    for (const [ms, payload] of script) {
+      setTimeout(() => {
+        if (process.env.HOMEPLUS_PREVIEW_LUNA_LOG) {
+          require('fs').appendFileSync(process.env.HOMEPLUS_PREVIEW_LUNA_LOG, JSON.stringify({ uri, said: payload, t: Date.now() }) + '\n');
+        }
+        sub.emit('response', { payload });
+      }, ms);
+    }
     return sub;
   }
   call(uri, params, cb) {
     if (process.env.HOMEPLUS_PREVIEW_LUNA_LOG) { // tests: every call, one JSON line each
-      require('fs').appendFileSync(process.env.HOMEPLUS_PREVIEW_LUNA_LOG, JSON.stringify({ uri, params }) + '\n');
+      require('fs').appendFileSync(process.env.HOMEPLUS_PREVIEW_LUNA_LOG, JSON.stringify({ uri, params, t: Date.now() }) + '\n');
     }
     // tests: services that never answer, the calls to them matching this regular expression
     if (process.env.HOMEPLUS_PREVIEW_LUNA_SILENT && new RegExp(process.env.HOMEPLUS_PREVIEW_LUNA_SILENT).test(uri)) return;

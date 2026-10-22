@@ -102,6 +102,9 @@ int handle_result(Result *r)
         if (r->status != 200) toast("Couldn\xE2\x80\x99t close that app", 2500);
         break;
     case TAG_EVENTS:
+        /* SAM is bringing Home+ back (the Home button): LG's SDL finishes that as it pumps, every 100 ms while
+         * hidden, so it pumps every 10 for a moment */
+        if (r->body && strstr(r->body, "\"wake\"") && S.offscreen) S.keys_until = SDL_GetTicks() + 300;
         if (r->body && strstr(r->body, "\"controlCenter\"")) settings_key();
         if (r->body && strstr(r->body, "\"inputs\"")) input_key();
         if (r->body) { /* asked for from the Control Center over another app, which brings Home+ to the front */

@@ -874,23 +874,106 @@ async function onForeground(appId) {
   const target = homeTarget(cfg);
   if (appId === target) takeoverLanded = true;
   if (cfg.homeOverride === false) return;
-  const homeApps = Array.isArray(cfg.homeApps) && cfg.homeApps.length ? cfg.homeApps : DEFAULT_HOME_APPS;
-  if (!homeApps.includes(appId)) return;
+  if (!homeApps(cfg).includes(appId)) return;
   if (redirectTarget) return; // the no-flash page already opens Home+
+  await takeover(target, '');
+}
+
+function homeApps(cfg) {
+  return Array.isArray(cfg.homeApps) && cfg.homeApps.length ? cfg.homeApps : DEFAULT_HOME_APPS;
+}
+
+async function takeover(target, why) {
   // If the launcher never came up after a takeover moments ago, don't keep retrying.
   if (!takeoverLanded && Date.now() - lastTakeover < 3000) return;
   lastTakeover = Date.now();
   takeoverLanded = false;
   const r = await luna(APPMGR + '/launch', { id: target });
-  log('home takeover ->', target, r && r.returnValue === false ? r.errorText : 'ok');
+  log('home takeover' + why + ' ->', target, r && r.returnValue === false ? r.errorText : 'ok');
 }
+
+// ---- Back to Home+ when an app quits. With no app in front, SAM's last-app handler brings up its idle app a
+// second later (settingsservice's lastAppHandlerPolicy "idleApp": configd's profile.idleApp, LG's home), and only
+// then did the watch above replace it: LG's home showed for a moment at every exit. Home+, waiting in the
+// background, is launched as soon as the app in front has quit and nothing's there, and SAM finds it in front when
+// its second is up. Not for an app sent to the background (LG's compositor brings back the app before it), nor
+// when another app is on its way to the front (50 ms are left for one to say so), nor for Home+ itself (closed,
+// or being removed), nor while the TV isn't on.
+
+const QUIT_GRACE_MS = 50;
+const coming = new Map(); /* apps SAM is starting or bringing back to the front, id -> when */
+const quit = new Map(); /* apps that closed, id -> when */
+let emptied = { app: '', at: 0 }; /* the app that left the front with nothing after it, and when */
+let tvOn = true;
+
+function onNoForeground() {
+  const left = lastForeground;
+  if (!left) return;
+  log('foreground', left, '-> (none)');
+  lastForeground = '';
+  emptied = { app: left, at: Date.now() };
+  setTimeout(homeAfterQuit, QUIT_GRACE_MS);
+}
+
+/* (SAM says an app closed and the screen has no app, in either order) */
+function homeAfterQuit() {
+  const left = emptied.app, now = Date.now();
+  if (!left || lastForeground || now - emptied.at > 900 || !(now - (quit.get(left) || 0) < 3000)) return;
+  emptied.app = '';
+  const cfg = readConfig();
+  const target = homeTarget(cfg);
+  if (left === target || homeApps(cfg).includes(left) || cfg.homeOverride === false || redirectTarget || !tvOn) return;
+  for (const [id, at] of coming) if (id !== target && now - at < 10000) return; /* (it'll be in front) */
+  takeover(target, ` (${left} quit)`).catch((e) => log('home takeover failed', e.message));
+}
+
+function watchLife() {
+  try {
+    const sub = service.subscribe(APPMGR + '/getAppLifeEvents', { subscribe: true });
+    sub.on('response', (m) => {
+      const p = m.payload || {};
+      if (!p.appId) return;
+      if (p.event === 'close' || p.event === 'stop') {
+        quit.set(p.appId, Date.now());
+        if (p.appId === emptied.app) setTimeout(homeAfterQuit, QUIT_GRACE_MS);
+      }
+      if (p.event !== 'launch' && p.event !== 'splash') return coming.delete(p.appId);
+      coming.set(p.appId, Date.now());
+      // Home+ on its way back (the Home button, a takeover): the launcher, which only checks for that every
+      // 100 ms while hidden, hears it now
+      if (p.appId === NATIVE_ID && lastForeground !== NATIVE_ID) emit('wake');
+    });
+    sub.on('cancel', () => { log('app life subscription cancelled; retrying'); setTimeout(watchLife, 3000); });
+  } catch (e) {
+    log('app life watch failed', e.message);
+    setTimeout(watchLife, 10000);
+  }
+}
+watchLife();
+
+function watchPower() {
+  try {
+    const sub = service.subscribe('luna://com.webos.service.tvpower/power/getPowerState', { subscribe: true });
+    sub.on('response', (m) => {
+      const p = m.payload || {};
+      if (p.state) tvOn = p.state === 'Active' && !p.processing; /* (not turning off, nor its screen) */
+    });
+    sub.on('cancel', () => setTimeout(watchPower, 3000));
+  } catch (e) {
+    log('power watch failed', e.message);
+    setTimeout(watchPower, 10000);
+  }
+}
+watchPower();
 
 function watchForeground() {
   try {
     const sub = service.subscribe(APPMGR + '/getForegroundAppInfo', { subscribe: true });
     sub.on('response', (m) => {
       const p = m.payload || {};
-      onForeground(p.appId || (p.foregroundAppInfo && p.foregroundAppInfo[0] && p.foregroundAppInfo[0].appId));
+      const info = Array.isArray(p.foregroundAppInfo) ? p.foregroundAppInfo : null;
+      if (p.appId === '' || (info && !info.length)) return onNoForeground(); /* (no app in front: one may have quit) */
+      onForeground(p.appId || (info && info[0] && info[0].appId));
     });
     sub.on('cancel', () => { log('foreground subscription cancelled; retrying'); setTimeout(watchForeground, 3000); });
   } catch (e) {
