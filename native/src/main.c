@@ -429,12 +429,15 @@ int main(int argc, char **argv)
                 } else move_focus(0, e.wheel.y < 0 ? 1 : -1);
                 break;
             case SDL_APP_DIDENTERBACKGROUND:
+                perf_window(&e);
                 go_offscreen();
                 break;
             case SDL_APP_DIDENTERFOREGROUND:
+                perf_window(&e);
                 come_back();
                 break;
             case SDL_WINDOWEVENT:
+                perf_window(&e);
                 if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || e.window.event == SDL_WINDOWEVENT_SHOWN ||
                     e.window.event == SDL_WINDOWEVENT_RESTORED)
                     come_back();

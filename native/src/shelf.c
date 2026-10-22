@@ -321,6 +321,14 @@ static Pic page_pic(int item, int rail)
     return (Pic){ a->art_tex ? PIC_ART : rail == -1 ? PIC_GLOW : PIC_COVER, (int)(a - S.apps) };
 }
 
+/* 1: the Top Shelf shows the page it wants, with its own picture: nothing stands in for it; 2: and all of
+ * that picture is in (perf.c, which times a return to the front) */
+int shelf_complete(void)
+{
+    if (S.page_app != S.want_app || S.page_rail != S.want_rail || !page_ready(S.want_app, S.want_rail) || S.skel_a > 0.004f) return 0;
+    return S.pic_a >= 1 && S.page_a > 0.996f && S.page_leave < 0.004f ? 2 : 1;
+}
+
 /* The Top Shelf's next page shows once it's ready, or after PAGE_WAIT_MS; meanwhile the
  * page on show stays and its text leaves. Its picture fades in over the one on show. */
 void update_page(float dt, int *anim)

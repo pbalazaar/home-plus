@@ -598,6 +598,7 @@ void parse_continue(const char *json, int src);
 void parse_featured(const char *json, App *a);
 int rail_active(void);
 int carousel_coming(const App *a);
+int shelf_complete(void);
 void update_page(float dt, int *anim);
 void draw_shelf_art(Uint8 alpha, int backdrop);
 void draw_shelf_content(Uint8 alpha, int backdrop);
@@ -682,5 +683,7 @@ void perf_probe(int part);
 void perf_drawn(void);
 void perf_end(void);
 void perf_rest(void);
+void perf_window(const SDL_Event *e);
+void perf_back(void);
 
 #endif

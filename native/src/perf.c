@@ -7,7 +7,10 @@
  * screen. With /tmp/homeplus-perf-gpu too (or HOMEPLUS_PERF=gpu) it waits for the GPU after each part of a frame,
  * which slows it down but says what each part costs the GPU (`perf gpu:`). The slowest of the service's
  * answers handled between a run's frames is in its line too, with its tag (home.h's TAG_*), and how many
- * of its frames drew each backdrop (the rest found it unchanged). */
+ * of its frames drew each backdrop (the rest found it unchanged). Each return to the front is a line of its
+ * own (`perf: back:`): when its window events came, when come_back() ran, the first frame, and the first frames
+ * with the Top Shelf complete and settled (shelf_complete()), with the first event's time on the wall clock,
+ * which the service's log and a script on the TV read too. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,11 +40,70 @@ static struct {
 static const char *const SEEN[] = { "cc", "sheet", "recents", "scroll", "fade", "toast" };
 static const char *const PART[PROBE_N] = { "art", "screen", "scene", "backdrop", "overlays" };
 
+/* a return to the front, from its first window event: ms on the wall clock (0: not yet) */
+static struct {
+    int on, calls;
+    double event, back, first, page, settled;
+    char events[160], shown[32]; /* the events, ms after the first; what the first frame's Top Shelf showed */
+} B;
+
 static double thread_ms(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
     return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
+}
+
+static double wall_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
+}
+
+static void back_line(void)
+{
+    char first[32] = "", page[32] = "", settled[32] = "";
+    if (B.first) snprintf(first, sizeof first, "+%.0f", B.first - B.event);
+    if (B.page) snprintf(page, sizeof page, "+%.0f", B.page - B.event);
+    if (B.settled) snprintf(settled, sizeof settled, "+%.0f", B.settled - B.event);
+    log_remote("perf: back: come_back +%.0f ms (%d calls), first frame %s (%s), Top Shelf complete %s, settled %s; "
+               "events %s; first event at %.0f", B.back ? B.back - B.event : -1, B.calls, first[0] ? first : "none",
+               B.shown, page[0] ? page : "never", settled[0] ? settled : "never", B.events, B.event);
+    B.on = 0;
+}
+
+/* a window or app event: one that brings Home+ back while it's hidden starts a return */
+void perf_window(const SDL_Event *e)
+{
+    if (!P.on) return;
+    const char *name = e->type == SDL_APP_DIDENTERFOREGROUND ? "foreground" : e->type == SDL_APP_DIDENTERBACKGROUND ? "background"
+                     : e->type == SDL_APP_WILLENTERFOREGROUND ? "willforeground" : e->type == SDL_APP_WILLENTERBACKGROUND ? "willbackground"
+                     : e->type != SDL_WINDOWEVENT ? NULL : e->window.event == SDL_WINDOWEVENT_SHOWN ? "shown"
+                     : e->window.event == SDL_WINDOWEVENT_HIDDEN ? "hidden" : e->window.event == SDL_WINDOWEVENT_EXPOSED ? "exposed"
+                     : e->window.event == SDL_WINDOWEVENT_FOCUS_GAINED ? "focus" : e->window.event == SDL_WINDOWEVENT_FOCUS_LOST ? "unfocus"
+                     : e->window.event == SDL_WINDOWEVENT_RESTORED ? "restored" : e->window.event == SDL_WINDOWEVENT_MINIMIZED ? "minimized"
+                     : e->window.event == SDL_WINDOWEVENT_MAXIMIZED ? "maximized" : NULL;
+    if (!name) return;
+    double at = wall_ms() - (double)(SDL_GetTicks() - e->common.timestamp); /* (SDL stamped it with its ticks) */
+    int back = e->type == SDL_APP_DIDENTERFOREGROUND || (e->type == SDL_WINDOWEVENT && (e->window.event == SDL_WINDOWEVENT_SHOWN ||
+               e->window.event == SDL_WINDOWEVENT_FOCUS_GAINED || e->window.event == SDL_WINDOWEVENT_RESTORED));
+    if (B.on && at - B.event > 5000) back_line(); /* (one that never settled) */
+    if (!B.on && back && S.offscreen) {
+        memset(&B, 0, sizeof B);
+        B.on = 1;
+        B.event = at;
+    }
+    if (!B.on) return;
+    char one[32];
+    snprintf(one, sizeof one, "%s%s+%.0f", B.events[0] ? " " : "", name, at - B.event);
+    append(B.events, sizeof B.events, one);
+}
+
+void perf_back(void)
+{
+    if (!B.on) return;
+    if (!B.calls++) B.back = wall_ms();
 }
 
 void perf_check(void)
@@ -135,6 +197,18 @@ void perf_end(void)
         P.key_at = 0;
     }
     for (long us; P.gpu && (us = r_gpu_result(0)) != -1;) gpu_in(us);
+    if (B.on) {
+        double now = wall_ms();
+        int done = shelf_complete();
+        if (!B.first) {
+            B.first = now;
+            snprintf(B.shown, sizeof B.shown, "%s", done == 2 ? "settled" : done ? "complete, fading in" : S.skel_a > 0.004f ? "a skeleton"
+                     : S.page_app != S.want_app || S.page_rail != S.want_rail ? "the page before" : "loading");
+        }
+        if (done && !B.page) B.page = now;
+        if (done == 2 && !B.settled) B.settled = now;
+        if (B.settled || now - B.event > 5000) back_line();
+    }
 }
 
 static int by_value(const void *a, const void *b)
@@ -159,6 +233,7 @@ static void stats(float *v, int n, float out[4])
 
 void perf_rest(void)
 {
+    if (B.on && wall_ms() - B.event > 5000) back_line();
     if (!P.on || !P.n) {
         perf_check();
         return;
