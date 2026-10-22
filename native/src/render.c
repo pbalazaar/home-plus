@@ -189,7 +189,9 @@ static const char *FS_UP =
  * clear; glass that carries text or icons (u_legible) blurs evenly, since
  * blurring only the busy spots broke photos into patches, and over bright
  * content it dims (Apple's 35%), just enough to keep that content readable.
- * A thin rim catches the light. */
+ * A thin rim catches the light. Past the bevel (most of a big panel) none of
+ * the rim's work changes a pixel, so it's skipped there: the same picture for
+ * a quarter of the work, where the dock and a sheet filled the C3's GPU. */
 static const char *FS_GLASS =
     "uniform sampler2D u_sharp;\n"
     "uniform sampler2D u_soft;\n"
@@ -209,28 +211,36 @@ static const char *FS_GLASS =
     "    float d = sd_round(p, h, u_radius);\n"
     "    float mask = clamp(0.5 - d, 0.0, 1.0);\n"
     "    if (mask <= 0.0) discard;\n"
-    "    vec2 n = vec2(sd_round(p + vec2(1.0, 0.0), h, u_radius) - sd_round(p - vec2(1.0, 0.0), h, u_radius),\n"
-    "                  sd_round(p + vec2(0.0, 1.0), h, u_radius) - sd_round(p - vec2(0.0, 1.0), h, u_radius));\n"
-    "    n /= max(length(n), 0.0001);\n" /* outward normal */
     "    float depth = -d;\n"
     "    float band = clamp(min(h.x, h.y) * 0.9, 6.0, 24.0);\n" /* width of the rounded bevel: narrow, like tvOS's */
-    "    float t = clamp(1.0 - depth / band, 0.0, 1.0);\n" /* 1 at the rim, 0 past the bevel */
-    "    float bevel = t * t;\n" /* a gentle profile: the picture bends without smearing into streaks */
-    "    vec2 sp = v_px - n * (bevel * band * 0.9 * u_lens);\n" /* sample further in: the edge magnifies */
-    "    vec2 uv = to_uv(sp);\n"
-    "    vec3 col = texture2D(u_soft, uv).rgb;\n"
-    "    float clear = 1.0 - max(u_legible, bevel * 0.35);\n"
-    "    if (clear > 0.0) {\n" /* clear glass: the sharp backdrop, its colours split in the bevel (faintly: Apple's are) */
-    "        vec2 duv = vec2(n.x / u_view.x, -n.y / u_view.y) * (bevel * 4.0 * u_lens);\n"
-    "        vec3 sharp = vec3(texture2D(u_sharp, uv + duv).r, texture2D(u_sharp, uv).g, texture2D(u_sharp, uv - duv).b);\n"
-    "        col = mix(col, sharp, clear);\n"
+    "    vec3 col;\n"
+    "    float bevel = 0.0, facing = 0.0, rim = 0.0;\n"
+    "    if (depth < band) {\n"
+    "        vec2 n = vec2(sd_round(p + vec2(1.0, 0.0), h, u_radius) - sd_round(p - vec2(1.0, 0.0), h, u_radius),\n"
+    "                      sd_round(p + vec2(0.0, 1.0), h, u_radius) - sd_round(p - vec2(0.0, 1.0), h, u_radius));\n"
+    "        n /= max(length(n), 0.0001);\n" /* outward normal */
+    "        float t = clamp(1.0 - depth / band, 0.0, 1.0);\n" /* 1 at the rim, 0 past the bevel */
+    "        bevel = t * t;\n" /* a gentle profile: the picture bends without smearing into streaks */
+    "        vec2 sp = v_px - n * (bevel * band * 0.9 * u_lens);\n" /* sample further in: the edge magnifies */
+    "        vec2 uv = to_uv(sp);\n"
+    "        col = texture2D(u_soft, uv).rgb;\n"
+    "        float clear = 1.0 - max(u_legible, bevel * 0.35);\n"
+    "        if (clear > 0.0) {\n" /* clear glass: the sharp backdrop, its colours split in the bevel (faintly: Apple's are) */
+    "            vec2 duv = vec2(n.x / u_view.x, -n.y / u_view.y) * (bevel * 4.0 * u_lens);\n"
+    "            vec3 sharp = vec3(texture2D(u_sharp, uv + duv).r, texture2D(u_sharp, uv).g, texture2D(u_sharp, uv - duv).b);\n"
+    "            col = mix(col, sharp, clear);\n"
+    "        }\n"
+    "        facing = dot(n, u_light);\n"
+    "        rim = 1.0 - smoothstep(0.0, 2.5, depth);\n"
+    "    } else {\n" /* past the bevel (and the rim, at most 2.5 px in): the backdrop straight through */
+    "        vec2 uv = to_uv(v_px);\n"
+    "        col = texture2D(u_soft, uv).rgb;\n"
+    "        if (u_legible < 1.0) col = mix(col, texture2D(u_sharp, uv).rgb, 1.0 - u_legible);\n"
     "    }\n"
     "    col *= 1.0 - 0.10 * bevel * u_legible;\n" /* saturated tiles pulled into the rim stay quiet */
     "    float lum = dot(col, vec3(0.299, 0.587, 0.114));\n"
     "    col *= 1.0 - 0.35 * smoothstep(0.35, 0.75, lum) * (0.5 + 0.5 * u_legible);\n"
     "    col = mix(col, u_tint.rgb, u_tint.a);\n"
-    "    float facing = dot(n, u_light);\n"
-    "    float rim = 1.0 - smoothstep(0.0, 2.5, depth);\n"
     /* a faint rim, even all round; it only flares where it faces the light (a corner,
      * with light from a corner), with a weaker glint on the far side. No band of
      * light along the top: tvOS's dock has none. */
@@ -238,8 +248,10 @@ static const char *FS_GLASS =
     "    lit *= lit * lit; lit *= lit; back *= back * back; back *= back;\n"
     "    float spec = rim * (0.10 + 0.40 * lit + 0.15 * back);\n"
     "    col += spec * (0.85 + 0.45 * u_focus);\n"
-    "    vec2 g = p / h - u_light * 0.45;\n" /* lit from within when focused: a soft glow toward the light, with no edge */
-    "    col += u_focus * 0.12 * exp(-1.5 * dot(g, g));\n"
+    "    if (u_focus > 0.0) {\n" /* lit from within when focused: a soft glow toward the light, with no edge */
+    "        vec2 g = p / h - u_light * 0.45;\n"
+    "        col += u_focus * 0.12 * exp(-1.5 * dot(g, g));\n"
+    "    }\n"
     "    col *= 1.0 - 0.16 * bevel * max(-facing, 0.0);\n" /* the bevel away from the light falls into shade */
     "    gl_FragColor = vec4(min(col, vec3(1.0)), mask * u_alpha);\n"
     "}\n";
