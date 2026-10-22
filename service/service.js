@@ -618,7 +618,9 @@ async function openOverlay(list = '') {
     // what's on screen now (DISPLAY: the app's own screen too), before the panel is drawn over it:
     // the glass's first picture, and the one it keeps over an app with no video. The TV takes it as
     // the call starts (seen on the C3), so it isn't waited for: the panel isn't on screen yet. If the
-    // TV is still taking another (the last opening's) when the panel is asked for, there's none.
+    // TV is still taking another (the last opening's) when the panel is asked for, there's none. It
+    // isn't held back for the rate as frames are: held, it would often be none, and over an app with no
+    // video, glass with no picture while it's open; the TV takes one capture at a time, ~350 ms each.
     const snapshot = frames && grab(frames, 'DISPLAY', () => live() && !asked, live);
     const state = await control.state();
     if (gen !== overlayGen) return false;
