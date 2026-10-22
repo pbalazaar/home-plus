@@ -25,7 +25,8 @@ int homeplus_screenshot(const char *path)
 /* HOMEPLUS_KEYS: a script of remote presses, one every 150 ms from 1.5 s in.
  * L R U D = arrows, O = OK, H = hold OK (opens the sheet), B = back, . = wait.
  * Pointer: M moves it to the next point of HOMEPLUS_POINTS ("x,y x,y ...",
- * logical px), C clicks where it is. */
+ * logical px), C clicks where it is. X: another app comes in front (Home+ is
+ * hidden), Y: Home+ is back (the Home button). */
 static void pointer_event(Uint32 type, int x, int y)
 {
     SDL_Event e = { 0 };
@@ -73,6 +74,13 @@ void homeplus_preview_input(Uint32 elapsed)
     if (c == 'C') {
         pointer_event(SDL_MOUSEBUTTONDOWN, px, py);
         pointer_event(SDL_MOUSEBUTTONUP, px, py);
+        return;
+    }
+    if (c == 'X' || c == 'Y') {
+        SDL_Event e = { 0 };
+        e.type = SDL_WINDOWEVENT;
+        e.window.event = c == 'X' ? SDL_WINDOWEVENT_HIDDEN : SDL_WINDOWEVENT_SHOWN;
+        SDL_PushEvent(&e);
         return;
     }
     SDL_Keycode k = c == 'L' ? SDLK_LEFT : c == 'R' ? SDLK_RIGHT : c == 'U' ? SDLK_UP : c == 'D' ? SDLK_DOWN

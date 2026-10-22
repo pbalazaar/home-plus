@@ -136,6 +136,20 @@ static void release_images(void)
     }
 }
 
+/* Back from an app opened from Home+, the home screen starts at the top (come_back). That's made ready while the
+ * app is in front: the Top Shelf's page there is asked for and its pictures loaded, and once they're in it's
+ * the page on show (the page left lets go of its pictures), so the first frame back is the home screen as it
+ * stays. When Home+ goes, and as the service's answers come while it's hidden. */
+void ready_home(void)
+{
+    go_home();
+    if (S.focus < COLS) S.shelf_cur = S.focus;
+    S.rail_next = 0; /* (the carousel turns a whole turn after it's back) */
+    shelf_load();
+    shelf_jump();
+    release_images();
+}
+
 /* Another app is in front (LG's SDL may say so as HIDDEN, MINIMIZED or
  * DIDENTERBACKGROUND): stop drawing, release the audio and the big pictures. */
 void go_offscreen(void)
@@ -146,11 +160,13 @@ void go_offscreen(void)
     sw_reset(); /* an app opened from it is in front now */
     S.launching = 0;
     snd_suspend();
-    release_images();
+    if (S.away) ready_home();
+    else release_images();
 }
 
 void come_back(void)
 {
+    if (S.offscreen) S.settle = 1; /* the first frame back is the screen at rest: nothing catches up on screen */
     if (S.away) go_home(); /* back from another app (or the Home button): start at the top */
     S.away = 0;
     if (S.asked) open_asked(S.asked); /* ...unless the Control Center over that app asked for something */

@@ -96,6 +96,9 @@ shot signout-ask "UUODDDDRODDDDDOO" 6400
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_TMDB=1
 shot popular "" 5200
 shot popular-browse "URR" 5600
+# back from an app opened from Stremio's tile (the Home button, a moment later): at the top again, Netflix's
+# popular titles in the Top Shelf, already in on the first frame back (they're loaded while hidden)
+shot back-home "RR......O.X......Y" 4100
 # at rest, the loop sleeps (the TV's CPU and GPU are PicCap's and HyperHDR's too), also with Stremio's
 # Continue Watching turning its pages
 service HOMEPLUS_PREVIEW=1

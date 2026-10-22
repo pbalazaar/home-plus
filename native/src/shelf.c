@@ -321,6 +321,73 @@ static Pic page_pic(int item, int rail)
     return (Pic){ a->art_tex ? PIC_ART : rail == -1 ? PIC_GLOW : PIC_COVER, (int)(a - S.apps) };
 }
 
+/* What the Top Shelf needs from the service: the carousel of the app it's for, and its pictures. On screen,
+ * the selected title's first, then both of its neighbours, loaded ahead so turning or stepping through never
+ * waits; and those still on show. The rest are let go (~8 MB each on this GPU), with their requests that
+ * haven't started. While hidden, only the page it comes back to (go_offscreen), so that's in when it's back. */
+void shelf_load(void)
+{
+    int want = want_source();
+    if (want && want != SRC_FEATURED && want != S.rail_source && want != S.rail_req && S.service_ok) rail_request(want);
+    App *sa = shelf_app();
+    if (sa && !media_source(sa) && S.tmdb_configured && S.service_ok && S.feat_req < 0 &&
+        (sa->feat == 0 || (sa->feat == 2 && !rail_for(sa))))
+        featured_request(sa); /* a streaming service? (the service keeps its list) */
+    if (rail_active()) {
+        int nx = (S.rail_index + 1) % S.nrail, pv = (S.rail_index + S.nrail - 1) % S.nrail;
+        int order[3] = { S.rail_index, nx, pv }, n = S.offscreen ? 1 : 3;
+        RailItem *sel = &S.rail[S.rail_index];
+        if (sel->logo_state == 1) net_bump(TAG_RAIL_LOGO, S.rail_index, S.rail_generation); /* asked for as a neighbour */
+        if (sel->bg_state == 1) net_bump(TAG_RAIL_BG, S.rail_index, S.rail_generation);
+        for (int k = 0; k < n; k++) {
+            RailItem *it = &S.rail[order[k]];
+            if (it->bg[0] && it->bg_state == 0) {
+                it->bg_state = 1;
+                net_get_image(it->bg, TAG_RAIL_BG, order[k], S.rail_generation, 0, W, H);
+            }
+            if (it->logo[0] && it->logo_state == 0) {
+                it->logo_state = 1;
+                net_get_image(it->logo, TAG_RAIL_LOGO, order[k], S.rail_generation, 0, 640, 240);
+            }
+        }
+        if (S.offscreen) return; /* (release_images() let the rest go) */
+        for (int i = 0; i < S.nrail; i++) {
+            if (i == S.rail_index || i == nx || i == pv || i == S.page_rail || i == S.prev_rail || pic_rail(i)) continue;
+            RailItem *it = &S.rail[i];
+            if (it->bg_state == 1 && net_drop(TAG_RAIL_BG, i, S.rail_generation)) it->bg_state = 0;
+            if (it->logo_state == 1 && net_drop(TAG_RAIL_LOGO, i, S.rail_generation)) it->logo_state = 0;
+            if (it->bg_tex) tex_free(&it->bg_tex), it->bg_state = 0;
+            if (it->logo_tex) tex_free(&it->logo_tex), it->logo_state = 0;
+            tex_free(&it->title_tex);
+            tex_free(&it->meta_tex);
+            it->texts_made = 0;
+        }
+    } else {
+        App *ca = item_app(S.shelf_cur);
+        if (ca && ca->art[0] && ca->art_state == 0 && !rail_for(ca) && !carousel_coming(ca)) { /* its own page */
+            ca->art_state = 1;
+            net_get_image(ca->art, TAG_ART, S.items[S.shelf_cur], S.generation, 0, W, H);
+        }
+    }
+}
+
+/* Back from another app (ready_home()): the Top Shelf shows the page it wants at once, without the wait or
+ * the fade, once that page is ready; the page it left lets go of its picture. 1: it's on show. */
+int shelf_jump(void)
+{
+    App *a = item_app(S.shelf_cur);
+    int wi = S.shelf_cur, wr = a && rail_for(a) ? S.rail_index : -1;
+    if (!page_ready(wi, wr)) return 0;
+    Pic want = page_pic(wi, wr);
+    if (!pic_eq(want, S.pic_top)) pic_drop(&S.pic_top);
+    pic_drop(&S.pic_under);
+    S.pic_top = want, S.pic_a = 1;
+    S.want_app = S.page_app = wi, S.want_rail = S.page_rail = wr, S.want_at = SDL_GetTicks();
+    S.prev_app = -1, S.prev_rail = -2, S.prev_vis = 0;
+    S.page_step = 0, S.page_a = 1, S.page_leave = S.skel_a = 0;
+    return 1;
+}
+
 /* 1: the Top Shelf shows the page it wants, with its own picture: nothing stands in for it; 2: and all of
  * that picture is in (perf.c, which times a return to the front) */
 int shelf_complete(void)

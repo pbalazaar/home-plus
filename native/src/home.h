@@ -359,6 +359,7 @@ typedef struct {
     Uint32 last_input;
     Uint32 drawn_at;                  /* when the last frame was drawn */
     int idle_stage, swallow_up, offscreen, orbit_k; /* offscreen: another app is in front */
+    int settle;             /* back from offscreen: the next frame moves every animation to its end */
     int wl_fd;              /* Wayland socket the idle wait sleeps on, -1 = SDL's own wait */
     Uint32 keys_until;      /* a key went down lately: keep pumping so SDL makes its repeats */
     float dim, black;
@@ -598,6 +599,8 @@ void parse_continue(const char *json, int src);
 void parse_featured(const char *json, App *a);
 int rail_active(void);
 int carousel_coming(const App *a);
+void shelf_load(void);
+int shelf_jump(void);
 int shelf_complete(void);
 void update_page(float dt, int *anim);
 void draw_shelf_art(Uint8 alpha, int backdrop);
@@ -664,6 +667,7 @@ void to_logical(int *x, int *y);
 void start_idle_wait(void);
 int wait_event(SDL_Event *e, int timeout_ms, int drew);
 int next_wake_ms(void);
+void ready_home(void);
 void go_offscreen(void);
 void come_back(void);
 int wake(int key);

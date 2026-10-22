@@ -62,12 +62,6 @@ int update(float dt)
     /* the chevron shows while Up from the focused app goes into its Continue Watching */
     int chev = S.zone == ZONE_GRID && S.focus < COLS && rail_active() && !S.sheet.open && !S.recents.open && !S.moving;
     approach(&S.chevron_a, chev ? 1.0f : 0.0f, 8, dt, &anim);
-    int want = want_source();
-    if (want && want != SRC_FEATURED && want != S.rail_source && want != S.rail_req && S.service_ok) rail_request(want);
-    App *sa = shelf_app();
-    if (sa && !media_source(sa) && S.tmdb_configured && S.service_ok && S.feat_req < 0 &&
-        (sa->feat == 0 || (sa->feat == 2 && !rail_for(sa))))
-        featured_request(sa); /* a streaming service? (the service keeps its list) */
     if (rail_active()) {
         Uint32 now = SDL_GetTicks();
         int nx = (S.rail_index + 1) % S.nrail;
@@ -79,45 +73,10 @@ int update(float dt)
         else if (!S.rail_next) S.rail_next = now + ROTATE_MS;
         else if (now >= S.rail_next && S.rail[nx].bg_state != 1 && S.rail[nx].logo_state != 1) { /* the next is ready */
             rail_focus(nx);
-            nx = (S.rail_index + 1) % S.nrail;
             S.rail_next = now + ROTATE_MS;
         }
-        /* pictures: the selected title's first, then both of its neighbours, loaded ahead so
-         * turning or stepping through never waits; and those still on show. The rest are let
-         * go (~8 MB each on this GPU), with their requests that haven't started. */
-        int pv = (S.rail_index + S.nrail - 1) % S.nrail, order[3] = { S.rail_index, nx, pv };
-        RailItem *sel = &S.rail[S.rail_index];
-        if (sel->logo_state == 1) net_bump(TAG_RAIL_LOGO, S.rail_index, S.rail_generation); /* asked for as a neighbour */
-        if (sel->bg_state == 1) net_bump(TAG_RAIL_BG, S.rail_index, S.rail_generation);
-        for (int k = 0; k < 3; k++) {
-            RailItem *it = &S.rail[order[k]];
-            if (it->bg[0] && it->bg_state == 0) {
-                it->bg_state = 1;
-                net_get_image(it->bg, TAG_RAIL_BG, order[k], S.rail_generation, 0, W, H);
-            }
-            if (it->logo[0] && it->logo_state == 0) {
-                it->logo_state = 1;
-                net_get_image(it->logo, TAG_RAIL_LOGO, order[k], S.rail_generation, 0, 640, 240);
-            }
-        }
-        for (int i = 0; i < S.nrail; i++) {
-            if (i == S.rail_index || i == nx || i == pv || i == S.page_rail || i == S.prev_rail || pic_rail(i)) continue;
-            RailItem *it = &S.rail[i];
-            if (it->bg_state == 1 && net_drop(TAG_RAIL_BG, i, S.rail_generation)) it->bg_state = 0;
-            if (it->logo_state == 1 && net_drop(TAG_RAIL_LOGO, i, S.rail_generation)) it->logo_state = 0;
-            if (it->bg_tex) tex_free(&it->bg_tex), it->bg_state = 0;
-            if (it->logo_tex) tex_free(&it->logo_tex), it->logo_state = 0;
-            tex_free(&it->title_tex);
-            tex_free(&it->meta_tex);
-            it->texts_made = 0;
-        }
-    } else {
-        App *ca = item_app(S.shelf_cur);
-        if (ca && ca->art[0] && ca->art_state == 0 && !rail_for(ca) && !carousel_coming(ca)) { /* its own page */
-            ca->art_state = 1;
-            net_get_image(ca->art, TAG_ART, S.items[S.shelf_cur], S.generation, 0, W, H);
-        }
     }
+    shelf_load();
     update_page(dt, &anim);
     if (!S.reduce_motion && !S.offscreen && apps_loading()) anim = 1; /* placeholders shimmer */
     if (!S.reduce_motion && !S.offscreen) /* so do tiles while their icons load */
@@ -204,7 +163,7 @@ int update(float dt)
     if (S.reduce_motion) S.sway_t = 1.6f; /* no sway, the light stays put */
     if (S.sway_t < 1.6f) {
         S.sway_t += dt;
-        amp = 1 - S.sway_t / 1.6f;
+        amp = fmaxf(0, 1 - S.sway_t / 1.6f);
         amp *= amp;
         anim = 1;
     }
@@ -461,6 +420,7 @@ int main(int argc, char **argv)
                 net_result_free(&r);
                 if (animating && !shot && SDL_GetPerformanceCounter() - t0 >= budget) break;
             }
+            if (S.offscreen && S.away) ready_home(); /* what it comes back to may be in */
         }
 
         Uint32 now = SDL_GetTicks();
@@ -530,12 +490,14 @@ int main(int argc, char **argv)
         }
         /* woken for what a frame does (the Top Shelf turning, its next page): draw one */
         if (!dirty && !animating && next_wake_ms() == 0) dirty = 1;
-        /* nothing to draw while hidden behind another app or once the screen is black */
-        if ((S.offscreen || (S.idle_stage == 2 && S.black >= 0.999f)) && !shot) dirty = animating = 0;
+        /* nothing to draw while hidden behind another app or once the screen is black (in a screenshot's run too,
+         * which draws every frame, while hidden: the preview's X) */
+        if (S.offscreen || (S.idle_stage == 2 && S.black >= 0.999f && !shot)) dirty = animating = 0;
 
-        if (dirty || animating || shot) {
+        if (dirty || animating || (shot && !S.offscreen)) {
             /* (screenshots are taken at a time: there it's the time that went by) */
             float dt = shot ? fminf((now - last) / 1000.0f, 0.1f) : frame_dt(!animating);
+            if (S.settle) dt = 2, S.settle = 0; /* (springs and fades end well within 2 s) */
             int take = shot && now >= shot_at;
             animating = render(dt, take ? shot : NULL);
             if (!animating) { /* at rest */

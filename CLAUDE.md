@@ -69,7 +69,9 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   front is a `perf: back:` line: when its window events came, come_back(), the first frame and the first with the
   Top Shelf complete and settled, with the first event's wall-clock ms (a script on the TV can line it up with the
   Home button). A backdrop is drawn only when what's in it changes (`draw_backdrop()`: each draw is first noted
-  into a fingerprint).
+  into a fingerprint). Back from an app opened from Home+, the home screen starts at the top: `ready_home()`
+  (`idle.c`) does that as Home+ goes, loads the Top Shelf's page there while hidden and shows it in place of the
+  page left (`shelf_jump()`), and the first frame back moves every animation to its end (`S.settle`).
   App tile looks (Settings → Display & OLED → App Tiles; prefs `iconLook`, `iconTint` from `TINTS`):
   `draw_face()` (`draw.c`) draws every tile (dock, big tile, Recents), `FS_LOGO` the logo in one colour or for a
   dark tile. `make_logo()` (`tiles.c`) cuts a logo out of its icon's background, edge pixels unblended from it
