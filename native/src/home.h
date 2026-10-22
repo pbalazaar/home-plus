@@ -569,6 +569,7 @@ void cc_long_press(void);
 void cc_add(int cat);
 void cc_activate(void);
 Tex *cc_glyph(int icon, int big);
+void cc_warm(void);
 void draw_control_center(void);
 void settings_key(void);
 void input_key(void);

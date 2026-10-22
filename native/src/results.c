@@ -65,7 +65,7 @@ void handle_result(Result *r)
             S.cc.it[S.cc.ran].shake = SDL_GetTicks();
             cc_problem("The TV didn\xE2\x80\x99t do that");
             net_get_json("/api/control", TAG_CONTROL, 0, 0);
-        } else if (r->status) {
+        } else if (r->status && !r->index) { /* (not when nothing asked for it) */
             toast("The TV didn\xE2\x80\x99t do that", 3000);
         }
         S.cc.ran = -1;

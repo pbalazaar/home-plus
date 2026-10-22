@@ -505,6 +505,13 @@ Tex *cc_glyph(int icon, int big)
     return *t;
 }
 
+/* Makes the glyphs of the controls on show while nothing moves: made as they were first drawn, they held
+ * up the Control Center's first frames (74 ms on the C3, four refreshes; request_data() loads the list). */
+void cc_warm(void)
+{
+    for (int i = 0; i < S.cc.n; i++) cc_glyph(S.cc.it[i].icon, S.cc.it[i].units == 4);
+}
+
 void draw_control_center(void)
 {
     S.cc.marquee = 0;

@@ -27,6 +27,8 @@ void request_data(void)
     net_get_json("/api/home", TAG_HOME, 0, 0);
     net_events(TAG_EVENTS); /* the Settings key, through the service (once) */
     net_get_json("/api/prefs", TAG_PREFS, 0, 0);
+    /* the Control Center's controls, quietly (1), so their glyphs are made at rest (cc_warm), not as it opens */
+    if (!S.cc.n) net_get_json("/api/control", TAG_CONTROL, 1, 0);
 }
 
 void open_asked(int what)
@@ -525,7 +527,10 @@ int main(int argc, char **argv)
             float dt = shot ? fminf((now - last) / 1000.0f, 0.1f) : frame_dt(!animating);
             int take = shot && now >= shot_at;
             animating = render(dt, take ? shot : NULL);
-            if (!animating) perf_rest();
+            if (!animating) { /* at rest */
+                perf_rest();
+                cc_warm();
+            }
             drew = 1;
             S.drawn_at = now;
             if (rest_ms && now - start >= rest_ms - 10000) rest_frames++, rest_drawing_ms += SDL_GetTicks() - now;
