@@ -296,9 +296,10 @@ int main(int argc, char **argv)
     setup_check(); /* loads the data once the service is up and elevated */
 
     const char *shot = getenv("HOMEPLUS_SCREENSHOT"); /* host preview: render then save a PNG */
-    /* tests: run as on the TV for this long, then say how often the loop woke and drew in its last 10 s */
+    /* tests: run as on the TV for this long, then say how often the loop woke and drew in its last 10 s,
+     * and how much of that time went on drawing (all of it while it never stops, at any frame rate) */
     Uint32 rest_ms = getenv("HOMEPLUS_REST_REPORT_MS") ? (Uint32)atoi(getenv("HOMEPLUS_REST_REPORT_MS")) : 0;
-    unsigned rest_wakes = 0, rest_frames = 0;
+    unsigned rest_wakes = 0, rest_frames = 0, rest_drawing_ms = 0;
     Uint32 shot_at = shot ? SDL_GetTicks() + (Uint32)atoi(getenv("HOMEPLUS_SCREENSHOT_MS") ? getenv("HOMEPLUS_SCREENSHOT_MS") : "2500") : 0;
     extern void homeplus_preview_input(Uint32 elapsed);
 
@@ -410,7 +411,8 @@ int main(int argc, char **argv)
         Uint32 now = SDL_GetTicks();
         if (rest_ms && now - start >= rest_ms - 10000) rest_wakes++;
         if (rest_ms && now - start >= rest_ms) {
-            printf("at rest: %.1f wakes/s, %.1f frames/s\n", rest_wakes / 10.0, rest_frames / 10.0);
+            printf("at rest: %.1f wakes/s, %.1f frames/s, drawing %u%% of the time\n", rest_wakes / 10.0, rest_frames / 10.0,
+                   rest_drawing_ms / 100);
             fflush(stdout);
             running = 0;
         }
@@ -483,7 +485,7 @@ int main(int argc, char **argv)
             animating = render(dt, take ? shot : NULL);
             drew = 1;
             S.drawn_at = now;
-            if (rest_ms && now - start >= rest_ms - 10000) rest_frames++;
+            if (rest_ms && now - start >= rest_ms - 10000) rest_frames++, rest_drawing_ms += SDL_GetTicks() - now;
             if (take) running = 0;
         }
         last = now;

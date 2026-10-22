@@ -33,12 +33,17 @@ shot() { # name keys ms [pointer points]
   fi
   echo "saved $OUT/native-$1.png"
 }
-rest() { # name keys: run as on the TV for 32 s; in the last 10, the loop sleeps (a carousel turns once or twice)
+rest() { # name keys: run as on the TV for 32 s; in the last 10, the loop sleeps (a carousel turns once or twice): it
+         # wakes 40 times a second at most (not a busy loop), and draws three quarters of the time at most: a loop that
+         # never stops drawing draws all of it, however slowly this machine draws (a turn, on one slow CPU, under half)
   LOG=${TMPDIR:-/tmp}/homeplus-preview-rest-$1.log
   eval "$RUN env $DRIVER HOMEPLUS_REST_REPORT_MS=32000 HOMEPLUS_KEYS='$2' '$ROOT/native/build/host/homeplus'" >"$LOG" 2>&1 || true
   r=$(grep '^at rest:' "$LOG" || echo 'no report')
   wakes=$(echo "$r" | sed -n 's/^at rest: \([0-9.]*\) wakes.*/\1/p')
-  if [ -z "$wakes" ] || awk -v w="$wakes" 'BEGIN { exit !(w > 40) }'; then tail -5 "$LOG" >&2; echo "rest-$1: $r" >&2; exit 1; fi
+  drawing=$(echo "$r" | sed -n 's/.* drawing \([0-9]*\)% .*/\1/p')
+  if [ -z "$wakes" ] || [ -z "$drawing" ] || awk -v w="$wakes" -v d="$drawing" 'BEGIN { exit !(w > 40 || d > 75) }'; then
+    tail -5 "$LOG" >&2; echo "rest-$1: $r" >&2; exit 1
+  fi
   echo "rest-$1: $r"
 }
 shot home "" 2500
