@@ -121,6 +121,7 @@ if (process.env.HOMEPLUS_PREVIEW_MEDIA) {
     json(res, 404, {});
   }).listen(PORT, '127.0.0.1');
   process.env.HOMEPLUS_PLEX_TV = process.env.HOMEPLUS_PLEX_CLIENTS = process.env.HOMEPLUS_STREMIO_LINK = BASE;
+  process.env.HOMEPLUS_PREVIEW_ART = process.env.HOMEPLUS_PREVIEW_ART || BASE; // its pictures: the service refuses 127.0.0.1's otherwise
   const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
   cfg.jellyfinServer = BASE; // no LAN broadcast in here: the server's address instead
   cfg.layout = { order: ['jellyfin', 'plex', 'stremio'], hidden: [] };
@@ -168,6 +169,7 @@ if (process.env.HOMEPLUS_PREVIEW_TMDB) {
   }).listen(PORT, '127.0.0.1');
   process.env.HOMEPLUS_TMDB = `${BASE}/tmdb`;
   process.env.HOMEPLUS_TMDB_IMAGES = `${BASE}/img`;
+  process.env.HOMEPLUS_PREVIEW_ART = process.env.HOMEPLUS_PREVIEW_ART || BASE; // its pictures, as above
   const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
   cfg.tmdbKey = 'preview-key';
   cfg.tmdbRegion = 'US';
