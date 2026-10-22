@@ -13,12 +13,15 @@ test.after(() => fs.rmSync(proc, { recursive: true, force: true }));
 process.env.HOMEPLUS_PROC = proc;
 process.env.HOMEPLUS_STREMIO_GRACE_MS = '60'; /* (on the TV: 10 s) */
 
-/* a process in the stand-in /proc, with its command line as Linux writes it */
+/* processes in the stand-in /proc: pid -> its command line as Linux writes it, or [its name, command line].
+ * Its name (comm) is otherwise as Linux gives it: Node's is its title's first 15 characters */
 function processes(list) {
   for (const name of fs.readdirSync(proc)) fs.rmSync(path.join(proc, name), { recursive: true, force: true });
-  for (const [pid, cmdline] of Object.entries(list)) {
+  for (const [pid, v] of Object.entries(list)) {
+    const [comm, cmdline] = Array.isArray(v) ? v : [path.basename(v.split(/[\0 ]/)[0]).slice(0, 15), v];
     fs.mkdirSync(path.join(proc, pid));
     fs.writeFileSync(path.join(proc, pid, 'cmdline'), cmdline);
+    fs.writeFileSync(path.join(proc, pid, 'comm'), comm + '\n');
   }
 }
 
@@ -79,6 +82,14 @@ test('stremio: a server left running when the service starts is stopped, Stremio
   s.check();
   await sleep(150);
   assert.deepEqual(s.killed, [[160, 'SIGTERM']]);
+});
+
+test('stremio: its server is found by its name first (or node\'s), and only then by its command line', async () => {
+  processes({ 170: ['node', SERVER], 171: ['bash', SERVER], 172: ['io.strem.tv.ser', 'node\0/other.js\0'] });
+  const s = server([]);
+  s.check();
+  await sleep(150);
+  assert.deepEqual(s.killed, [[170, 'SIGTERM']], 'plain node with its title is it; another name, or its name with another title, isn\'t');
 });
 
 test('stremio: no server running, or no /proc, is nothing to do', async () => {

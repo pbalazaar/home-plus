@@ -17,13 +17,17 @@ const GRACE_MS = Number(process.env.HOMEPLUS_STREMIO_GRACE_MS) || 10000;
 module.exports = function createStremioServer({ luna, log, kill = process.kill }) {
   let timer = null;
 
-  /* the server's processes: Node with the service's id for its title (its command line) */
+  /* the server's processes: Node with the service's id for its title (its command line). A process's
+   * name (comm: Node sets it to the title's first 15 characters) is read first, and the command line only
+   * of one with that name, or plain node's: reading a command line can wait on its process, a name can't */
   function pids() {
     let names = [];
     try { names = fs.readdirSync(PROC); } catch (e) { return []; }
     return names.filter((name) => {
       if (!/^\d+$/.test(name)) return false;
       try {
+        const comm = fs.readFileSync(path.join(PROC, name, 'comm'), 'latin1').trim();
+        if (comm !== SERVER.slice(0, 15) && comm !== 'node') return false;
         return fs.readFileSync(path.join(PROC, name, 'cmdline'), 'latin1').split('\0')[0].trim() === SERVER;
       } catch (e) {
         return false; /* (it ended meanwhile) */
@@ -64,7 +68,8 @@ module.exports = function createStremioServer({ luna, log, kill = process.kill }
       timer = null;
       if (event === 'close' || event === 'stop') later('Stremio closed');
     },
-    /* the service has just started: a server Stremio left before (an update restarts the service) */
+    /* app life events are (again) being heard: a server Stremio left meanwhile (before the service started, an
+     * update restarting it, or the events' subscription renewed) */
     check() {
       later("Stremio isn't open");
     }

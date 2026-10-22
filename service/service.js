@@ -938,6 +938,7 @@ const stremioServer = require('./stremio-server')({ luna, log });
 function watchLife() {
   try {
     const sub = service.subscribe(APPMGR + '/getAppLifeEvents', { subscribe: true });
+    stremioServer.check(); /* (each time it's subscribed: a Stremio that closed while it wasn't is caught up) */
     sub.on('response', (m) => {
       const p = m.payload || {};
       if (!p.appId) return;
@@ -959,7 +960,6 @@ function watchLife() {
   }
 }
 watchLife();
-stremioServer.check();
 
 function watchPower() {
   try {
