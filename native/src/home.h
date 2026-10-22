@@ -91,7 +91,7 @@
 enum { TAG_APPS = 1, TAG_LAYOUT, TAG_STREMIO, TAG_MEDIA_LINK, TAG_MEDIA_STATUS, TAG_QR, TAG_ICON, TAG_ART, TAG_RAIL_LOGO, TAG_RAIL_BG, TAG_FEATURED, TAG_CONTROL, TAG_LAUNCH, TAG_WAKE,
        TAG_SYSTEM, TAG_TRAKT_LINK, TAG_TRAKT_STATUS, TAG_RUNNING, TAG_CLOSED, TAG_HOME, TAG_HOME_SET, TAG_KEY_SET,
        TAG_STATUS, TAG_ELEVATE, TAG_RESTART, TAG_UNINSTALL,
-       TAG_PREFS, TAG_EVENTS, TAG_DELETED };
+       TAG_PREFS, TAG_EVENTS, TAG_DELETED, TAG_KEYS, TAG_KEYS_STATUS };
 
 /* Media sources: each one's Continue Watching is the Top Shelf of its own app */
 enum { SRC_NONE, SRC_STREMIO, SRC_JELLYFIN, SRC_PLEX, SRC_COUNT };
@@ -126,7 +126,7 @@ typedef struct {
 
 /* Settings pages (a sheet's page; 0 = not a Settings page) */
 enum { PAGE_MAIN = 1, PAGE_HOME, PAGE_DISPLAY, PAGE_CC, PAGE_ACCESS, PAGE_ACCOUNTS, PAGE_TV, PAGE_ABOUT, PAGE_CONFIRM, PAGE_SIGNIN, PAGE_ICONS,
-       PAGE_WELCOME };
+       PAGE_WELCOME, PAGE_KEYS };
 
 /* zones: what the remote is moving through */
 enum { ZONE_GRID, ZONE_RAIL, ZONE_TOP };
@@ -185,7 +185,7 @@ enum { PIC_NONE, PIC_ART, PIC_GLOW, PIC_COVER, PIC_RAIL, PIC_HELD };
 typedef struct { int kind, i; } Pic;
 
 typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELETE, ACT_UNHIDE, ACT_UNHIDE_ALL, ACT_CANCEL,
-               ACT_LAUNCH_ID, ACT_TRAKT_LINK, ACT_TRAKT_UNLINK, ACT_MEDIA_LINK, ACT_MEDIA_UNLINK, ACT_ACCOUNT_ASK, ACT_UP, ACT_TMDB, ACT_SHELF,
+               ACT_LAUNCH_ID, ACT_TRAKT_LINK, ACT_TRAKT_UNLINK, ACT_MEDIA_LINK, ACT_MEDIA_UNLINK, ACT_ACCOUNT_ASK, ACT_UP, ACT_KEYS, ACT_SHELF,
                ACT_HOME_MODE, ACT_SOUNDS,
                ACT_SETUP_RETRY, ACT_HOME_YES, ACT_HOME_NO, ACT_WELCOME_NEXT, ACT_WELCOME_SKIP, ACT_HOME_TOGGLE, ACT_REMOVE_ASK, ACT_REMOVE,
                ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY, ACT_CC_BLUR_VIDEO,
@@ -642,6 +642,9 @@ void welcome_finish(void);
 /* accounts.c */
 void on_media_signin(Result *r);
 void on_trakt_signin(Result *r);
+void on_keys(Result *r);
+void on_keys_status(Result *r);
+void keys_close(void);
 int source_installed(int src);
 int stremio_installed(void);
 

@@ -269,6 +269,7 @@ void on_key_down(SDL_KeyboardEvent *e)
             int i = S.icon_tint + (k == SDLK_RIGHT ? 1 : -1);
             if (i >= 0 && i < NTINTS) icon_tint_set(i), snd_play(SND_TICK);
         } else if (is_back(k) && !S.sheet.locked) {
+            if (S.sheet.page == PAGE_KEYS) keys_close();
             if (S.sheet.parent) settings_page(S.sheet.parent, S.sheet.parent_index);
             else sheet_dismiss();
         }

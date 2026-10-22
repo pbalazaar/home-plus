@@ -213,12 +213,12 @@ void run_action(Action act, int arg, const char *id)
         break;
     }
     case ACT_UP:
+        if (S.at_page == PAGE_KEYS) keys_close();
         if (S.sheet.parent) settings_page(S.sheet.parent, S.sheet.parent_index);
         else sheet_dismiss();
         break;
-    case ACT_TMDB: /* the key is set over SSH */
-        toast(S.tmdb_configured ? "Streaming apps show what\xE2\x80\x99s popular on TMDB. tmdbSetup with an empty key removes it."
-                                : "Add a free TMDB key over SSH to see what\xE2\x80\x99s popular on streaming apps. See the README.", 8000);
+    case ACT_KEYS: /* TMDB's and Trakt's keys, pasted on a phone: the service opens a page for it, its link a QR code */
+        net_post("/api/keys/open", "{}", TAG_KEYS);
         settings_again();
         break;
     case ACT_ACCESSIBILITY:

@@ -107,12 +107,12 @@ void settings_page(int page, int index)
             settings_row("Stremio", S.rail_stremio ? "Signed In" : "Not Signed In",
                          S.rail_stremio ? ACT_ACCOUNT_ASK : ACT_MEDIA_LINK, SRC_STREMIO, 0, 0);
         settings_row("Trakt", S.trakt_connected ? "Connected" : S.trakt_configured ? "Not Connected" : "Not Set Up",
-                     S.trakt_connected ? ACT_ACCOUNT_ASK : ACT_TRAKT_LINK, SRC_COUNT, 0, 0); /* SRC_COUNT: Trakt */
+                     S.trakt_connected ? ACT_ACCOUNT_ASK : S.trakt_configured ? ACT_TRAKT_LINK : ACT_KEYS, SRC_COUNT, 0, 0); /* SRC_COUNT: Trakt */
         for (int src = SRC_JELLYFIN; src < SRC_COUNT; src++)
             if (S.src_connected[src] || source_installed(src))
                 settings_row(SRC_NAME[src], S.src_connected[src] ? "Connected" : "Not Connected",
                              S.src_connected[src] ? ACT_ACCOUNT_ASK : ACT_MEDIA_LINK, src, 0, 0);
-        settings_row("TMDB", S.tmdb_configured ? "Set Up" : "Not Set Up", ACT_TMDB, 0, 0, 0);
+        settings_row("TMDB", S.tmdb_configured ? "Set Up" : "Not Set Up", ACT_KEYS, 0, 0, 0);
         sheet_body("Each app\xE2\x80\x99s Continue Watching, or what\xE2\x80\x99s popular on it, shows when you focus it in the top row.");
         break;
     case PAGE_TV:

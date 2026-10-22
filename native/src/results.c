@@ -107,6 +107,7 @@ int handle_result(Result *r)
         if (r->body && strstr(r->body, "\"wake\"") && S.offscreen) S.keys_until = SDL_GetTicks() + 300;
         if (r->body && strstr(r->body, "\"controlCenter\"")) settings_key();
         if (r->body && strstr(r->body, "\"inputs\"")) input_key();
+        if (r->body && strstr(r->body, "\"keys\"")) net_get_json("/api/keys", TAG_KEYS_STATUS, 0, 0); /* pasted on a phone */
         if (r->body) { /* asked for from the Control Center over another app, which brings Home+ to the front */
             int want = strstr(r->body, "\"settings\"") ? OPEN_SETTINGS : strstr(r->body, "\"recents\"") ? OPEN_RECENTS
                      : strstr(r->body, "\"accessibility\"") ? OPEN_ACCESSIBILITY : 0;
@@ -180,6 +181,12 @@ int handle_result(Result *r)
     case TAG_TRAKT_LINK:
     case TAG_TRAKT_STATUS:
         on_trakt_signin(r);
+        break;
+    case TAG_KEYS:
+        on_keys(r);
+        break;
+    case TAG_KEYS_STATUS:
+        on_keys_status(r);
         break;
     case TAG_ICON:
         if (r->generation == S.generation && r->index < S.napps) {

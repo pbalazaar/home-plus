@@ -1272,6 +1272,8 @@ async function tvRegion() {
   return tvCountry;
 }
 const tmdb = require('./tmdb')({ readConfig, writeConfig, log, region: tvRegion });
+// TMDB's and Trakt's keys, pasted on a phone: a page on the local network while the launcher shows its QR code
+const keysPage = require('./keys')({ tmdb, trakt, log, emit });
 const ambient = require('./ambient')({ luna, log });
 const control = require('./control')({ luna, log, readConfig, writeConfig, extra: ambient }); /* the Control Center's TV controls, and ambient light (HyperHDR, PicCap) */
 const picCapture = ambient.find((c) => c.id === 'screenCapture'); /* Blur Over Video pauses it */
@@ -1443,6 +1445,17 @@ async function handleApi(req, res) {
     }
     if (url.pathname === '/api/events') return listen(req, res);
     if (url.pathname === '/api/key' && req.method === 'POST') return sendJSON(res, 200, await remoteKey(String((await readBody(req)).key || '')));
+    if (url.pathname === '/api/keys') return sendJSON(res, 200, keysPage.status());
+    if (url.pathname === '/api/keys/open' && req.method === 'POST') {
+      try { return sendJSON(res, 200, await keysPage.open()); } catch (e) { return sendJSON(res, 200, { open: false, errorText: e.message }); }
+    }
+    if (url.pathname === '/api/keys/close' && req.method === 'POST') { keysPage.close(); return sendJSON(res, 200, keysPage.status()); }
+    if (url.pathname === '/api/keys/qr') {
+      const png = keysPage.qrPng();
+      if (!png) return sendJSON(res, 404, { returnValue: false, errorText: 'the keys page isn\'t open' });
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length, 'Cache-Control': 'no-store' });
+      return res.end(png);
+    }
     if (url.pathname === '/api/trakt/status') return sendJSON(res, 200, trakt.status());
     if (url.pathname === '/api/trakt/link' && req.method === 'POST') return sendJSON(res, 200, await trakt.startDevice());
     if (url.pathname === '/api/trakt/disconnect' && req.method === 'POST') return sendJSON(res, 200, trakt.disconnect());

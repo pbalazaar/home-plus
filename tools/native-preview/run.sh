@@ -113,15 +113,16 @@ service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=signin
 shot signin-plex "UODDDDRODDDDDODDDO" 6400
 service HOMEPLUS_PREVIEW=1
 # first run: a fresh install welcomes you, then asks about the Home button, Continue Watching (Stremio's
-# signed in; Jellyfin and Plex can be) and the app tiles (Dark picked: the tiles behind change), and ends on a
-# tip or two; with LG Input Hook, about the remote's buttons too. An unelevated service with no Homebrew
-# Channel (no luna-send here) shows that screen
-service HOMEPLUS_PREVIEW_FRESH=1
+# signed in; Jellyfin and Plex can be; Trakt's and TMDB's keys are pasted on a phone, from a QR code) and the app
+# tiles (Dark picked: the tiles behind change), and ends on a tip or two; with LG Input Hook, about the remote's
+# buttons too. An unelevated service with no Homebrew Channel (no luna-send here) shows that screen
+service HOMEPLUS_PREVIEW_FRESH=1 HOMEPLUS_KEYS_HOST=192.168.1.23
 shot first-run-welcome "" 3000
 shot first-run-home "O" 3300
 shot first-run-accounts "OO" 3600
-shot first-run-tiles "OODDDODO" 4400
-shot first-run-done "OODDDODDDDO" 4600
+shot first-run-add-keys "OODDDDO" 4600
+shot first-run-tiles "OODDDDDODO" 4600
+shot first-run-done "OODDDDDODDDDO" 4900
 service HOMEPLUS_PREVIEW_FRESH=1 HOMEPLUS_INPUTHOOK_BINDS="$ASSETS/lginputhook/keybinds.json"
 shot first-run-keys "OO" 3600
 service HOMEPLUS_PREVIEW_UNROOTED=1

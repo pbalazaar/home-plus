@@ -147,16 +147,11 @@ void setup_retry_now(void)
 /* ------------------------------------------------------------------ welcome */
 
 /* The first time Home+ opens, once it's set up: a few choices, a sheet each, then a tip or two. Each can be
- * changed later in Settings. Only the steps this TV has a use for: the remote's buttons need LG Input Hook,
- * Continue Watching an app (or Trakt) to sign in to. */
+ * changed later in Settings. Only the steps this TV has a use for: the remote's buttons need LG Input Hook. */
 static int welcome_wanted(int step)
 {
     switch (step) {
     case WELCOME_KEYS: return S.settings_key_available;
-    case WELCOME_ACCOUNTS:
-        return S.rail_stremio || stremio_installed() || S.trakt_configured || S.trakt_connected ||
-               S.src_connected[SRC_JELLYFIN] || source_installed(SRC_JELLYFIN) || S.src_connected[SRC_PLEX] ||
-               source_installed(SRC_PLEX);
     default: return 1;
     }
 }
@@ -186,16 +181,18 @@ void welcome_page(int index)
         break;
     case WELCOME_ACCOUNTS: {
         sheet_open("Continue Watching");
-        sheet_body("Sign in, and what you\xE2\x80\x99re watching shows in the Top Shelf\nwhen you focus the app in the top row.");
+        sheet_body("Sign in, and what you\xE2\x80\x99re watching shows in the Top Shelf\n"
+                   "when you focus the app in the top row. With a TMDB key,\nstreaming apps show what\xE2\x80\x99s popular on them.");
         int stremio = S.rail_stremio || S.src_connected[SRC_STREMIO];
         if (stremio || stremio_installed())
             settings_row("Stremio", stremio ? "Signed In" : "Sign In", stremio ? ACT_NONE : ACT_MEDIA_LINK, SRC_STREMIO, 0, 0);
-        if (S.trakt_configured || S.trakt_connected)
-            settings_row("Trakt", S.trakt_connected ? "Connected" : "Connect", S.trakt_connected ? ACT_NONE : ACT_TRAKT_LINK, 0, 0, 0);
+        settings_row("Trakt", S.trakt_connected ? "Connected" : S.trakt_configured ? "Connect" : "Add Keys",
+                     S.trakt_connected ? ACT_NONE : S.trakt_configured ? ACT_TRAKT_LINK : ACT_KEYS, 0, 0, 0);
         for (int src = SRC_JELLYFIN; src < SRC_COUNT; src++)
             if (S.src_connected[src] || source_installed(src))
                 settings_row(SRC_NAME[src], S.src_connected[src] ? "Connected" : "Connect",
                              S.src_connected[src] ? ACT_NONE : ACT_MEDIA_LINK, src, 0, 0);
+        settings_row("TMDB", S.tmdb_configured ? "Added" : "Add Key", ACT_KEYS, 0, 0, 0);
         sheet_add("Continue", ACT_WELCOME_NEXT, 0, 0);
         break;
     }
