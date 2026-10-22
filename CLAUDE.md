@@ -98,7 +98,9 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   package: launcher, service, boot script, licence notices). Versions in `native/appinfo.json` and
   `service/package.json` must match.
 - CI (`.github/workflows/ci.yml`) builds and tests every push; pushing a `v*` tag publishes a release
-  once its build, service tests and screens have passed. The toolchain is checked against
+  once its build, service tests and launcher job (its own tests, the QML check) have passed. The
+  launcher's screens aren't rendered in CI (they took most of a run, and a slow apt mirror then put it
+  past its 15 minutes): render them with `tools/test.sh screens`. The toolchain is checked against
   `docker/toolchain.sha256` (change it with `SDK_RELEASE`); the actions are pinned to commits.
 - Desktop preview (Linux): `tools/native-preview/run.sh` → `preview/native-*.png`
   (`HOMEPLUS_PREVIEW_OUT` for another folder). On a Mac: `tools/native-preview/Dockerfile` (Debian with
@@ -107,7 +109,7 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
 - Tests (`tools/test.sh`, CI: `.github/workflows/ci.yml`): the service's unit tests and HTTP API
   tests in `test/` (Node's test runner; `node --test test/*.test.js`), the launcher's own (`native`:
   `native/test/`, `make -C native test`: `net.c` against a stand-in service, `icon.c`), every preview scene rendered
-  and checked (`screens`), the .ipk built and checked (`package`: `tools/check-package.mjs` — contents,
+  and checked (`screens`, on a desktop only), the .ipk built and checked (`package`: `tools/check-package.mjs` — contents,
   versions, modes, 32-bit ARM, only SDL 2.0.14 functions). Service modules read their mock URLs from env
   at load (`HOMEPLUS_TMDB`, `HOMEPLUS_PLEX_TV`, ...), so tests load them with `freshRequire`;
   `HOMEPLUS_CONFIG_DIR` and `HOMEPLUS_PORT` let the service run without root, on another port, and

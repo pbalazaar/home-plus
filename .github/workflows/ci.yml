@@ -1,8 +1,9 @@
 # Builds and tests every push to main and every pull request:
 # - build: the .ipk for the TV, checked, attached to the run as the "homeplus-ipk" artifact;
 # - service: the service's tests, on Linux (running the service on the TV's Node 16) and on Windows;
-# - screens: the launcher's screens, rendered on a Linux desktop and checked (attached as the
-#   "screens" artifact, to look at in a review), and the Control Center's QML, loaded and driven.
+# - launcher: the launcher's own tests (native/test/), and the Control Center's QML, loaded and driven.
+#   Its screens are rendered on a desktop instead (tools/test.sh screens): here they took most of the
+#   run, and Mesa under Xvfb isn't the TV's GPU.
 # Pushing a tag like v1.0.0 does the same, and once all of it has passed, publishes a GitHub release
 # with the package and its manifest attached.
 name: CI
@@ -96,8 +97,8 @@ jobs:
       - name: Service tests
         run: node --test test/*.test.js
 
-  screens:
-    name: Launcher screens
+  launcher:
+    name: Launcher
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -112,20 +113,12 @@ jobs:
             qmlscene qml-module-qtquick2 qml-module-qtgraphicaleffects qml-module-qtmultimedia
       - name: The launcher's own tests
         run: tools/test.sh native
-      - name: Render and check every screen
-        run: tools/test.sh screens
       - name: Load and drive the Control Center's QML
         run: tools/test.sh qml
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
-        with:
-          name: screens
-          path: build/screens/
-          if-no-files-found: ignore
 
   release:
     name: Release
-    needs: [build, service, screens]
+    needs: [build, service, launcher]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:

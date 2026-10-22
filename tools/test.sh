@@ -1,10 +1,11 @@
 #!/bin/sh
-# Runs Home+'s checks, the same ones CI runs on every pull request.
+# Runs Home+'s checks; CI runs all of them but the screens on every pull request.
 #   tools/test.sh            the service's tests: unit tests and its HTTP API (seconds; Node 18+)
 #   tools/test.sh native     the launcher's own tests (native/test/: its requests and pictures), on Linux
 #                            with the preview packages, else in Docker (seconds)
 #   tools/test.sh screens    renders every launcher screen and checks them; they land in build/screens/
-#                            (on Linux with the preview packages, else in Docker; about 2 minutes)
+#                            (on Linux with the preview packages, else in Docker; about 6 minutes). Not in
+#                            CI: run it when a change touches what the launcher draws
 #   tools/test.sh qml        loads the Control Center's QML (native/qml) and drives it, as LG's
 #                            compositor would (on Linux with the preview packages, else in Docker)
 #   tools/test.sh package    builds the .ipk for the TV and checks it (WEBOS_SDK, else Docker)
