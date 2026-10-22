@@ -73,7 +73,8 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   into a fingerprint). Back from an app opened from Home+, the home screen starts at the top: `ready_home()`
   (`idle.c`) does that as Home+ goes, loads the Top Shelf's page there while hidden and shows it in place of the
   page left (`shelf_jump()`), and the first frame back moves every animation to its end (`S.settle`). Then it
-  comes into focus over `BACK_MS` (`back_in()`, `draw.c`): the scene's blurred, dimmed backdrop over it clears.
+  comes into focus over `BACK_MS` (`back_in()`, `draw.c`): the scene's blurred, dimmed backdrop over it clears
+  (not with Reduce Motion: it's there at once).
   App tile looks (Settings → Display & OLED → App Tiles; prefs `iconLook`, `iconTint` from `TINTS`):
   `draw_face()` (`draw.c`) draws every tile (dock, big tile, Recents), `FS_LOGO` the logo in one colour or for a
   dark tile. `make_logo()` (`tiles.c`) cuts a logo out of its icon's background, edge pixels unblended from it

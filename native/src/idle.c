@@ -168,7 +168,7 @@ void come_back(void)
 {
     if (S.offscreen) { /* the first frame back is the screen at rest (nothing catches up on screen), coming into focus */
         S.settle = 1;
-        S.back_at = SDL_GetTicks() | 1;
+        S.back_at = S.reduce_motion ? 0 : SDL_GetTicks() | 1; /* (Reduce Motion: there at once, as a sheet appears in place) */
     }
     if (S.away) go_home(); /* back from another app (or the Home button): start at the top */
     S.away = 0;
