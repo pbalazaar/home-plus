@@ -89,7 +89,7 @@ int next_wake_ms(void)
     Uint32 now = SDL_GetTicks();
     Uint32 dim_ms = S.idle_dim_ms ? S.idle_dim_ms : IDLE_DIM_MS, off_ms = S.idle_off_ms ? S.idle_off_ms : IDLE_OFF_MS;
     int visible = !S.offscreen && S.idle_stage < 2;
-    Uint32 turn = visible && S.rail_next ? (S.rail_next - 2500 > now ? S.rail_next - 2500 : S.rail_next) : 0;
+    Uint32 turn = visible ? S.rail_next : 0; /* (0: it isn't turning) */
     int waiting = visible && (S.want_app != S.page_app || S.want_rail != S.page_rail); /* the Top Shelf's next page */
     Uint32 page = waiting ? S.want_at + (now - S.want_at < SKEL_MS ? SKEL_MS : PAGE_WAIT_MS) : 0;
     /* the Top Shelf turns, and shows its next page, in a frame: one due before the last frame was that
