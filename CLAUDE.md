@@ -230,6 +230,9 @@ appears in your own SSH command line** — it kills the session. Use:
   tested, cold and warm). Its files are encrypted LG Store content; don't try to work around
   that. Continue Watching opens Stremio and the service shows a system toast
   (`com.webos.notification/createToast`) naming the title.
+- Stremio's streaming server is a webOS service of its own (`io.strem.tv.server`, ~30 MB) that keeps
+  running after Stremio closes, and webOS's memory manager closes apps, not services: `stremio-server.js`
+  stops it once Stremio has been closed for 10 s (Stremio starts it again when it opens).
 - webOS runs apps nobody opened (preloaded, or started again in the background after a close), so
   `applicationManager/running` isn't Recents. The service lists only running apps that have been in
   front (`lastUsed`, kept in `/tmp/homeplus-recents.json`); closing or quitting forgets an app.

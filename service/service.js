@@ -933,12 +933,15 @@ function homeAfterQuit() {
   takeover(target, ` (${left} quit)`).catch((e) => log('home takeover failed', e.message));
 }
 
+const stremioServer = require('./stremio-server')({ luna, log });
+
 function watchLife() {
   try {
     const sub = service.subscribe(APPMGR + '/getAppLifeEvents', { subscribe: true });
     sub.on('response', (m) => {
       const p = m.payload || {};
       if (!p.appId) return;
+      stremioServer.onLife(p.appId, p.event);
       if (p.event === 'close' || p.event === 'stop') {
         quit.set(p.appId, Date.now());
         if (p.appId === emptied.app) setTimeout(homeAfterQuit, QUIT_GRACE_MS);
@@ -956,6 +959,7 @@ function watchLife() {
   }
 }
 watchLife();
+stremioServer.check();
 
 function watchPower() {
   try {
