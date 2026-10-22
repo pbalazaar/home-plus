@@ -283,7 +283,9 @@ static struct {
     const Prog *cur;
     GLuint quad;
     Tex white;          /* 1x1, for untextured image draws */
-    Target backdrop, d1, d2, d3, u2, u1;
+    Target backdrop[2], soft[2]; /* what glass refracts, and its blurred copy: the Top Shelf's picture; the scene */
+    Target d1, d2, d3, u2;       /* the blur's steps */
+    int drawing, used;           /* the backdrop being drawn; the one glass refracts */
 } R;
 
 static GLuint compile(GLenum kind, const char *src1, const char *src2)
@@ -452,15 +454,20 @@ int r_init(SDL_Window *win, int logical_w, int logical_h)
     R.white.id = new_texture(1, 1, white);
     R.white.w = R.white.h = 1;
 
-    if (!target(&R.backdrop, BD_W, BD_H) || !target(&R.d1, BD_W / 2, BD_H / 2) ||
-        !target(&R.d2, BD_W / 4, (BD_H + 3) / 4) || !target(&R.d3, BD_W / 8, (BD_H + 7) / 8) ||
-        !target(&R.u2, BD_W / 4, (BD_H + 3) / 4) || !target(&R.u1, BD_W / 2, BD_H / 2)) {
+    for (int i = 0; i < 2; i++) {
+        if (!target(&R.backdrop[i], BD_W, BD_H) || !target(&R.soft[i], BD_W / 2, BD_H / 2)) {
+            fprintf(stderr, "homeplus: render targets unavailable\n");
+            return 0;
+        }
+        bind_target(&R.backdrop[i]);
+        gl.ClearColor(0, 0, 0, 1);
+        gl.Clear(GL_COLOR_BUFFER_BIT);
+    }
+    if (!target(&R.d1, BD_W / 2, BD_H / 2) || !target(&R.d2, BD_W / 4, (BD_H + 3) / 4) ||
+        !target(&R.d3, BD_W / 8, (BD_H + 7) / 8) || !target(&R.u2, BD_W / 4, (BD_H + 3) / 4)) {
         fprintf(stderr, "homeplus: render targets unavailable\n");
         return 0;
     }
-    bind_target(&R.backdrop);
-    gl.ClearColor(0, 0, 0, 1);
-    gl.Clear(GL_COLOR_BUFFER_BIT);
     bind_target(NULL);
 
     gl.Enable(GL_BLEND);
@@ -630,17 +637,22 @@ void r_fill(Uint8 r, Uint8 g, Uint8 b, Uint8 a)
 
 /* ------------------------------------------------------------------ backdrop + glass */
 
-void r_backdrop_begin(void)
+void r_backdrop_begin(int which)
 {
-    bind_target(&R.backdrop);
+    R.drawing = which;
+    bind_target(&R.backdrop[which]);
     gl.ClearColor(0, 0, 0, 1);
     gl.Clear(GL_COLOR_BUFFER_BIT);
 }
 
-/* one full-target blur pass; FBO textures are bottom-up, hence the flipped v */
+void r_use_backdrop(int which) { R.used = which; }
+
+/* one full-target blur pass; FBO textures are bottom-up, hence the flipped v. The clear first tells a
+ * tiled GPU (the C3's Mali) it needn't load what the target held: the pass covers all of it. */
 static void blur_pass(const Prog *p, const Target *src, const Target *dst)
 {
     bind_target(dst);
+    gl.Clear(GL_COLOR_BUFFER_BIT);
     use(p);
     bind_tex(0, src->tex);
     gl.Uniform2f(p->halfpix, 0.5f / src->w, 0.5f / src->h);
@@ -651,11 +663,11 @@ static void blur_pass(const Prog *p, const Target *src, const Target *dst)
 void r_backdrop_end(void)
 {
     gl.Disable(GL_BLEND);
-    blur_pass(&R.down, &R.backdrop, &R.d1);
+    blur_pass(&R.down, &R.backdrop[R.drawing], &R.d1);
     blur_pass(&R.down, &R.d1, &R.d2);
     blur_pass(&R.down, &R.d2, &R.d3);
     blur_pass(&R.up, &R.d3, &R.u2);
-    blur_pass(&R.up, &R.u2, &R.u1);
+    blur_pass(&R.up, &R.u2, &R.soft[R.drawing]);
     gl.Enable(GL_BLEND);
     bind_target(NULL);
 }
@@ -663,7 +675,7 @@ void r_backdrop_end(void)
 void r_backdrop_image(int blurred, Uint8 alpha)
 {
     if (!alpha) return;
-    const Target *t = blurred ? &R.u1 : &R.backdrop;
+    const Target *t = blurred ? &R.soft[R.used] : &R.backdrop[R.used];
     use(&R.tex);
     bind_tex(0, t->tex);
     gl.Uniform4f(R.tex.uv, 0, 1, 1, 0); /* FBO textures are bottom-up */
@@ -677,8 +689,8 @@ void r_glass(const Glass *g)
 {
     if (g->alpha <= 0 || g->w <= 0 || g->h <= 0) return;
     use(&R.glass);
-    bind_tex(1, R.u1.tex);
-    bind_tex(0, R.backdrop.tex);
+    bind_tex(1, R.soft[R.used].tex);
+    bind_tex(0, R.backdrop[R.used].tex);
     float lx = g->light_x, ly = g->light_y, ll = sqrtf(lx * lx + ly * ly);
     if (ll < 0.001f) { lx = -0.6f; ly = -0.8f; ll = 1; }
     gl.Uniform1f(R.glass.radius, fminf(g->radius, fminf(g->w, g->h) / 2));

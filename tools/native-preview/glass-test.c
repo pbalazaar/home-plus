@@ -64,7 +64,7 @@ int main(int argc, char **argv)
     Tex *scrim_v = gradient(1, 0.0f, 0.6f), *scrim_h = gradient(0, 0.5f, 0.0f);
 
     /* what the glass refracts: the Top Shelf and the icons under the dock */
-    r_backdrop_begin();
+    r_backdrop_begin(0);
     background(art, scrim_v, scrim_h);
     r_backdrop_end();
 

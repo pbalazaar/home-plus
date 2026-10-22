@@ -393,22 +393,24 @@ int render(float dt, const char *shot)
     perf_updated();
     /* the Top Shelf picture alone: what the dock and top bar refract (the icons
      * sit on the glass), and the blurred background below the dock */
-    r_backdrop_begin();
+    r_backdrop_begin(0);
     draw_shelf_art(255, 1);
     r_backdrop_end();
     perf_probe(PROBE_ART);
-
-    r_frame_begin(8, 8, 11);
-    perf_probe(PROBE_SCREEN);
-    draw_scene(0);
-    perf_probe(PROBE_SCENE);
     if (S.sheet.open || S.ghost.on || S.toast_t > 0.01f || S.recents.t > 0.004f || S.cc.t > 0.004f) { /* overlays refract the whole scene */
-        r_backdrop_begin();
+        r_backdrop_begin(1);
         draw_scene(1);
         if (cc_dim() > 0.002f) r_fill(0, 0, 0, (Uint8)(255 * cc_dim())); /* (what the glass refracts steps back too) */
         r_backdrop_end();
         perf_probe(PROBE_BACKDROP);
     }
+
+    r_frame_begin(8, 8, 11);
+    perf_probe(PROBE_SCREEN);
+    r_use_backdrop(0);
+    draw_scene(0);
+    perf_probe(PROBE_SCENE);
+    r_use_backdrop(1);
     draw_switcher();
     draw_control_center();
     draw_ghost();

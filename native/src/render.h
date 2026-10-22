@@ -66,9 +66,14 @@ void r_rim(float x, float y, float w, float h, float radius, float width, Uint8 
 /* Plain fill over the whole target (scrims, dimming). */
 void r_fill(Uint8 r, Uint8 g, Uint8 b, Uint8 a);
 
-/* Everything drawn between these lands in the backdrop the glass refracts. */
-void r_backdrop_begin(void);
+/* Everything drawn between these lands in a backdrop glass refracts (and its blurred copy):
+ * 0 the Top Shelf's picture, what the home screen's glass refracts; 1 the whole scene, what
+ * overlays' glass refracts. Both are drawn before the screen, so it's drawn in one go: a tiled
+ * GPU stopping halfway through the screen for a backdrop stores it and loads it back. */
+void r_backdrop_begin(int which);
 void r_backdrop_end(void);
+/* The backdrop glass and r_backdrop_image use from now on. */
+void r_use_backdrop(int which);
 
 /* The backdrop itself over the whole screen (blurred: the soft copy), e.g. a
  * blurred background behind content that should stand out. */
