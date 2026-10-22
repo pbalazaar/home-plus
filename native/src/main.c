@@ -176,11 +176,13 @@ int update(float dt)
     spring(&S.toast_t, &S.toast_v, toast_on() ? 1.0f : 0.0f, 0.4f, 0.85f, dt, &anim);
 
     /* when focus lands the element sways for a moment and its highlight follows
-     * a moving light (from the pointer if it moved lately), then it settles */
+     * a moving light (from the pointer if it moved lately), then it settles. The
+     * carousel's titles count as focus only while you step through them: the Top
+     * Shelf turning by itself moves nothing */
     int layer = S.recents.open ? 2 : S.sheet.open ? 1 : 0; /* home, a sheet, the App Switcher */
     int key = layer == 2 ? 2000000 + S.recents.index * 2 + S.recents.close_all
             : layer == 1 ? 1000000 + S.sheet.index
-                         : S.zone * 100000 + S.focus * 1000 + S.top_index * 100 + S.rail_index;
+                         : S.zone * 100000 + S.focus * 1000 + S.top_index * 100 + (S.zone == ZONE_RAIL ? S.rail_index : 0);
     if (key != S.focus_key) {
         /* a tick when a key moved focus: not when a layer opens or closes, nor
          * when the pointer or a reset moves it */
