@@ -158,6 +158,14 @@ appears in your own SSH command line** — it kills the session. Use:
   `HOMEPLUS_PREVIEW_OLD=1` (the old Home+'s service answers: "Uninstall the Old Home+").
 
 ## Known TV quirks
+- Drawing on the C3 (Mali-G52 MC3, r46p0; measured with `perf.c`): the screen refreshes at 60 Hz, but after
+  50 Hz video (an IPTV channel) it stays at 50 Hz, frames 20 ms apart, and SDL still says 60. `SDL_GL_SwapWindow`
+  returns at once and the wait for a refresh is in the frame's first draw to the screen (a free buffer), so
+  the CPU's part of a frame (1.5 ms, 3.5 with an overlay) hides in "draw". The driver has
+  GL_EXT_disjoint_timer_query but times every frame at 0; the GPU's busy share is
+  `/sys/kernel/debug/mali0/dvfs_utilization` (busy and idle time so far: read it twice). GPU per frame (the
+  probe, so a little high): each half-size backdrop with its five blur passes ~4 ms, the home screen at full
+  size ~5, a sheet ~5.5. HyperHDR (with PicCap) keeps one of the three cores busy.
 - LG's SDL puts the *scancode* in `keysym.sym` (Right arrow arrives as 79); see `remote_key()`.
   LG's own codes come the same way, with `scancode=1`: Back 482 (seen), pointer show/hide 484/485
   (sent when the pointer wakes or sleeps, not real presses), Red/Green/Yellow/Blue 486–489 (from
