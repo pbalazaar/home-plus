@@ -117,10 +117,18 @@ void run_action(Action act, int arg, const char *id)
     case ACT_HOME_YES:
         set_home_mode(S.noflash_available ? "redirect" : "watch", 1);
         toast("The Home button now opens Home+", 3000);
+        if (S.at_page == PAGE_WELCOME) welcome_next();
         break;
     case ACT_HOME_NO:
         set_home_mode("off", 1);
         toast("You can turn this on later in Settings", 3000);
+        if (S.at_page == PAGE_WELCOME) welcome_next();
+        break;
+    case ACT_WELCOME_NEXT:
+        welcome_next();
+        break;
+    case ACT_WELCOME_SKIP:
+        welcome_finish();
         break;
     case ACT_SETTINGS_KEY:
         S.settings_key = !S.settings_key;

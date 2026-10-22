@@ -131,9 +131,10 @@ int handle_result(Result *r)
                 if (!strcmp(S.home_mode, "redirect") && !S.noflash_active && r->tag == TAG_HOME_SET)
                     toast("No-flash mode isn\xE2\x80\x99t available on this TV; using standard mode", 5000);
                 cJSON_Delete(o);
-                if (r->tag == TAG_KEY_SET && r->kind == JOB_JSON && S.sheet.open && S.sheet.page == PAGE_HOME) {
+                if (r->tag == TAG_KEY_SET && r->kind == JOB_JSON && S.sheet.open &&
+                    (S.sheet.page == PAGE_HOME || S.sheet.page == PAGE_WELCOME)) {
                     int index = S.sheet.index, parent_index = S.sheet.parent_index; /* the buttons as they are */
-                    settings_page(PAGE_HOME, index);
+                    settings_page(S.sheet.page, index);
                     S.sheet.parent_index = parent_index;
                 }
             }

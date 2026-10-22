@@ -60,18 +60,11 @@ void setup_set(int state)
     if (changed && !(working && S.sheet.open && S.sheet.locked && S.sheet.n == 0)) setup_screen();
 }
 
-static void ask_home_screen(void)
-{
-    sheet_open("Use Home+ as Your Home Screen?");
-    sheet_body("The Home button will open Home+ instead of LG\xE2\x80\x99s home screen.\nYou can change this any time in Settings.");
-    sheet_add("Use Home+", ACT_HOME_YES, 0, 0);
-    sheet_add("Not Now", ACT_HOME_NO, 0, 0);
-}
-
 void set_home_mode(const char *mode, int asked)
 {
-    char body[64];
-    snprintf(body, sizeof body, "{\"mode\":\"%s\"%s}", mode, asked ? ",\"asked\":true" : "");
+    char body[96];
+    snprintf(body, sizeof body, "{\"mode\":\"%s\"%s%s}", mode, asked ? ",\"asked\":true" : "",
+             S.onboarded ? "" : ",\"onboarded\":false"); /* the welcome steps' Home question: they aren't done yet */
     net_post("/api/home", body, TAG_HOME_SET);
     snprintf(S.home_mode, sizeof S.home_mode, "%s", mode);
 }
@@ -100,11 +93,16 @@ void on_status(Result *r)
     snprintf(S.svc_version, sizeof S.svc_version, "%s", jstr(o, "version"));
     S.svc_elevated = elevated;
     S.home_asked = cJSON_IsTrue(cJSON_GetObjectItem(o, "homeAsked"));
+    cJSON *ob = cJSON_GetObjectItem(o, "onboarded");
+    S.onboarded = ob ? cJSON_IsTrue(ob) : S.home_asked;
     cJSON_Delete(o);
     if (elevated) {
         setup_set(SETUP_DONE);
         request_data();
-        if (!S.home_asked) ask_home_screen();
+        if (!S.onboarded) {
+            S.welcome = WELCOME_HELLO;
+            welcome_page(0);
+        }
         return;
     }
     if (S.setup == SETUP_RESTARTING && S.setup_tries++ < 6) {
@@ -144,4 +142,96 @@ void setup_retry_now(void)
     S.setup = SETUP_CHECK;
     setup_screen();
     setup_check();
+}
+
+/* ------------------------------------------------------------------ welcome */
+
+/* The first time Home+ opens, once it's set up: a few choices, a sheet each, then a tip or two. Each can be
+ * changed later in Settings. Only the steps this TV has a use for: the remote's buttons need LG Input Hook,
+ * Continue Watching an app (or Trakt) to sign in to. */
+static int welcome_wanted(int step)
+{
+    switch (step) {
+    case WELCOME_KEYS: return S.settings_key_available;
+    case WELCOME_ACCOUNTS:
+        return S.rail_stremio || stremio_installed() || S.trakt_configured || S.trakt_connected ||
+               S.src_connected[SRC_JELLYFIN] || source_installed(SRC_JELLYFIN) || S.src_connected[SRC_PLEX] ||
+               source_installed(SRC_PLEX);
+    default: return 1;
+    }
+}
+
+/* the step on show (S.welcome), on row index: also how a choice on it shows its new value (settings_again) */
+void welcome_page(int index)
+{
+    switch (S.welcome) {
+    case WELCOME_HELLO:
+        sheet_open("Welcome to Home+");
+        sheet_body("A few quick choices to set up your TV.\nYou can change any of them later in Settings.");
+        sheet_add("Get Started", ACT_WELCOME_NEXT, 0, 0);
+        sheet_add("Skip", ACT_WELCOME_SKIP, 0, 0);
+        break;
+    case WELCOME_HOME:
+        sheet_open("Use Home+ as Your Home Screen?");
+        sheet_body("The Home button will open Home+ instead of LG\xE2\x80\x99s home screen.\nYou can change this any time in Settings.");
+        sheet_add("Use Home+", ACT_HOME_YES, 0, 0);
+        sheet_add("Not Now", ACT_HOME_NO, 0, 0);
+        break;
+    case WELCOME_KEYS:
+        sheet_open("Remote Buttons");
+        sheet_body("The Settings and Input buttons can open Home+\xE2\x80\x99s\nControl Center and inputs, over other apps too.");
+        settings_row("Settings Button", S.settings_key ? "Control Center" : "LG Quick Settings", ACT_SETTINGS_KEY, 0, 0, 0);
+        settings_row("Input Button", S.input_key ? "Home+ Inputs" : "LG Input Picker", ACT_INPUT_KEY, 0, 0, 0);
+        sheet_add("Continue", ACT_WELCOME_NEXT, 0, 0);
+        break;
+    case WELCOME_ACCOUNTS: {
+        sheet_open("Continue Watching");
+        sheet_body("Sign in, and what you\xE2\x80\x99re watching shows in the Top Shelf\nwhen you focus the app in the top row.");
+        int stremio = S.rail_stremio || S.src_connected[SRC_STREMIO];
+        if (stremio || stremio_installed())
+            settings_row("Stremio", stremio ? "Signed In" : "Sign In", stremio ? ACT_NONE : ACT_MEDIA_LINK, SRC_STREMIO, 0, 0);
+        if (S.trakt_configured || S.trakt_connected)
+            settings_row("Trakt", S.trakt_connected ? "Connected" : "Connect", S.trakt_connected ? ACT_NONE : ACT_TRAKT_LINK, 0, 0, 0);
+        for (int src = SRC_JELLYFIN; src < SRC_COUNT; src++)
+            if (S.src_connected[src] || source_installed(src))
+                settings_row(SRC_NAME[src], S.src_connected[src] ? "Connected" : "Connect",
+                             S.src_connected[src] ? ACT_NONE : ACT_MEDIA_LINK, src, 0, 0);
+        sheet_add("Continue", ACT_WELCOME_NEXT, 0, 0);
+        break;
+    }
+    case WELCOME_TILES:
+        sheet_open("App Tiles");
+        sheet_body("Pick a look for your apps: the tiles behind change as you go.");
+        for (int l = LOOK_DEFAULT; l <= LOOK_TINTED; l++) {
+            sheet_add(LOOK_NAME[l], ACT_ICON_LOOK, l, 0);
+            S.sheet.it[S.sheet.n - 1].check = S.icon_look == l;
+        }
+        sheet_add("Continue", ACT_WELCOME_NEXT, 0, 0);
+        break;
+    default:
+        S.welcome = WELCOME_DONE;
+        sheet_open("You\xE2\x80\x99re All Set");
+        sheet_body("Hold OK on an app for its options: move, hide or delete it.\n"
+                   "Press Up, then OK, for the Control Center and Settings.");
+        sheet_add("Start Using Home+", ACT_WELCOME_SKIP, 0, 0);
+    }
+    S.sheet.page = PAGE_WELCOME;
+    S.sheet.locked = 1; /* Back doesn't close it: each step has its way on */
+    S.sheet.wide = S.welcome == WELCOME_KEYS || S.welcome == WELCOME_ACCOUNTS;
+    S.sheet.index = index > 0 && index < S.sheet.n ? index : 0;
+}
+
+void welcome_next(void)
+{
+    do S.welcome++;
+    while (S.welcome < WELCOME_DONE && !welcome_wanted(S.welcome));
+    welcome_page(0);
+}
+
+/* done, or skipped: it isn't shown again */
+void welcome_finish(void)
+{
+    S.onboarded = 1;
+    net_post("/api/home", "{\"onboarded\":true}", 0);
+    sheet_dismiss();
 }

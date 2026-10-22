@@ -17,7 +17,7 @@ const COLORS = { netflix: '#E50914', prime: '#00A8E1', disney: '#113CCF', hdmi1:
 const CONFIG_DIR = process.env.HOMEPLUS_CONFIG_DIR || '/var/lib/homeplus';
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 fs.mkdirSync(CONFIG_DIR, { recursive: true });
-// HOMEPLUS_PREVIEW_FRESH: a first install (Home button question not answered yet)
+// HOMEPLUS_PREVIEW_FRESH: a first install (the welcome steps not done yet)
 fs.writeFileSync(CONFIG_FILE, JSON.stringify(
   process.env.HOMEPLUS_PREVIEW_FRESH ? { stremioAuthKey: 'preview' } : { stremioAuthKey: 'preview', homeAsked: true, homeMode: 'watch' }));
 // HOMEPLUS_PREVIEW_PREFS: launcher preferences to start with, as JSON

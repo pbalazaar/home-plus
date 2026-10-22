@@ -158,11 +158,16 @@ appears in your own SSH command line** — it kills the session. Use:
   there) and stops if Home+'s service isn't installed.
 - The Home button is left alone (`homeMode` "off") until the launcher has asked
   "Use Home+ as Your Home Screen?" once (`homeAsked` in config.json). Settings has the switch.
+- Once set up, the first open shows the welcome steps (`welcome_page()`, `setup.c`; `PAGE_WELCOME`): Welcome
+  (Get Started or Skip), the Home question, the remote's buttons (with LG Input Hook), Continue Watching sign-ins
+  (apps on the TV), App Tiles, then a tip or two. Their choices are Settings' own actions. Done or skipped, they're
+  `onboarded` in config.json (`POST /api/home {"onboarded":true}`; the Home answer sends `false` with it);
+  without the field, `homeAsked` counts, so an update from before them doesn't show them.
 - Settings → Remove Home+ (`POST /api/uninstall`): unmounts the no-flash page, deletes the boot
   script and its log, lginputhook binds that launch Home+, `/var/lib/homeplus` and the elevation files,
   then `appInstallService/dev/remove`s the package. A plain uninstall (Homebrew Channel) runs none of
   that: what's left must be harmless (the dead link, the binds' fallbacks below); `/var/lib/homeplus` stays.
-- Preview modes: `HOMEPLUS_PREVIEW_FRESH=1` (question not answered), `HOMEPLUS_PREVIEW_UNROOTED=1`
+- Preview modes: `HOMEPLUS_PREVIEW_FRESH=1` (the welcome steps), `HOMEPLUS_PREVIEW_UNROOTED=1`
   (unelevated service; with no luna-send on the host this shows the Homebrew Channel screen),
   `HOMEPLUS_PREVIEW_OLD=1` (the old Home+'s service answers: "Uninstall the Old Home+").
 

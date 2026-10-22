@@ -42,6 +42,19 @@ test('api: /api/status answers without the token (the launcher asks before it ha
   assert.equal(r.json.id, 'com.github.pbalazaar.homeplus.service', 'which service this is: the old Home+\'s answers on the same port');
 });
 
+test('api: the welcome steps: done once finished or skipped; an install that answered the Home question has had them', async () => {
+  const onboarded = async () => (await call('GET', '/api/status', { auth: false })).json.onboarded;
+  assert.equal(await onboarded(), true, 'Home+ before the welcome steps asked only about the Home button, and it was answered');
+  await call('POST', '/api/home', { body: { onboarded: false } }); /* they start (as on a fresh install) */
+  assert.equal(await onboarded(), false);
+  const r = await call('POST', '/api/home', { body: { mode: 'watch', asked: true, onboarded: false } }); /* the Home step */
+  assert.equal(r.json.mode, 'watch');
+  assert.equal(await onboarded(), false, 'answering the Home question halfway through isn\'t finishing');
+  await call('POST', '/api/home', { body: { onboarded: true } });
+  assert.equal(await onboarded(), true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'config', 'config.json'), 'utf8')).onboarded, true, 'kept in config.json');
+});
+
 test('api: everything else needs the token', async () => {
   assert.equal((await call('GET', '/api/apps', { auth: false })).status, 403);
   assert.equal((await call('GET', '/api/apps', { headers: { 'X-Homeplus-Token': 'wrong' } })).status, 403);

@@ -299,7 +299,7 @@ The launcher talks to the service over a local HTTP API on `127.0.0.1:47823`. It
 | `GET /api/system` | LG's settings apps |
 | `GET /api/running`, `POST /api/close` | Recents, and closing apps |
 | `POST /api/remove` | Deletes an app from the TV (`{"id": ...}`) |
-| `GET` / `POST /api/home` | Home button mode |
+| `GET` / `POST /api/home` | Home button mode; `onboarded` marks the welcome steps done |
 | `GET` / `POST /api/prefs` | `sounds`, `dimMinutes`, `offMinutes`, `pixelShift`, `calmColours`, `clock24`, `reduceMotion`, `reduceTransparency` |
 | `POST /api/uninstall` | Remove Home+ |
 | `GET /icon/<id>`, `/art/<id>`, `/img/<key>` | App icons, app artwork, and artwork and QR codes from the accounts |

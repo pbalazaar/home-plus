@@ -125,7 +125,8 @@ typedef struct {
 } CCItem;
 
 /* Settings pages (a sheet's page; 0 = not a Settings page) */
-enum { PAGE_MAIN = 1, PAGE_HOME, PAGE_DISPLAY, PAGE_CC, PAGE_ACCESS, PAGE_ACCOUNTS, PAGE_TV, PAGE_ABOUT, PAGE_CONFIRM, PAGE_SIGNIN, PAGE_ICONS };
+enum { PAGE_MAIN = 1, PAGE_HOME, PAGE_DISPLAY, PAGE_CC, PAGE_ACCESS, PAGE_ACCOUNTS, PAGE_TV, PAGE_ABOUT, PAGE_CONFIRM, PAGE_SIGNIN, PAGE_ICONS,
+       PAGE_WELCOME };
 
 /* zones: what the remote is moving through */
 enum { ZONE_GRID, ZONE_RAIL, ZONE_TOP };
@@ -141,6 +142,7 @@ static const struct {
               { "Indigo", { 94, 92, 230 } }, { "Purple", { 191, 90, 242 } }, { "Pink", { 255, 55, 95 } },
               { "Graphite", { 142, 142, 147 } } };
 #define NTINTS (int)(sizeof TINTS / sizeof TINTS[0])
+static const char *const LOOK_NAME[] = { "Default", "Dark", "Clear", "Tinted" };
 #define TINT_INDIGO 6
 /* the top bar: the clock capsule, with Settings in the circle at its end (Recents is
  * Back on the first app, or Red; Inputs are the remote's Input key) */
@@ -185,7 +187,7 @@ typedef struct { int kind, i; } Pic;
 typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELETE, ACT_UNHIDE, ACT_UNHIDE_ALL, ACT_CANCEL,
                ACT_LAUNCH_ID, ACT_TRAKT_LINK, ACT_TRAKT_UNLINK, ACT_MEDIA_LINK, ACT_MEDIA_UNLINK, ACT_ACCOUNT_ASK, ACT_UP, ACT_TMDB, ACT_SHELF,
                ACT_HOME_MODE, ACT_SOUNDS,
-               ACT_SETUP_RETRY, ACT_HOME_YES, ACT_HOME_NO, ACT_HOME_TOGGLE, ACT_REMOVE_ASK, ACT_REMOVE,
+               ACT_SETUP_RETRY, ACT_HOME_YES, ACT_HOME_NO, ACT_WELCOME_NEXT, ACT_WELCOME_SKIP, ACT_HOME_TOGGLE, ACT_REMOVE_ASK, ACT_REMOVE,
                ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY, ACT_CC_BLUR_VIDEO,
                ACT_PAGE, ACT_CLOCK, ACT_DIM, ACT_OFF, ACT_ORBIT, ACT_CALM, ACT_HIDDEN, ACT_SETTINGS_KEY, ACT_INPUT_KEY,
                ACT_ICON_LOOK, ACT_ICON_TINT,
@@ -195,6 +197,8 @@ typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELE
  * Channel) before Home+ can list apps. Each step that can fail has a screen. */
 enum { SETUP_CHECK, SETUP_STARTING, SETUP_ELEVATING, SETUP_RESTARTING, SETUP_NO_HBC, SETUP_DENIED,
        SETUP_FAILED, SETUP_OLD, SETUP_REMOVING, SETUP_DONE };
+/* ...then, the first time, the welcome steps (PAGE_WELCOME): a sheet each, the ones this TV has a use for */
+enum { WELCOME_HELLO, WELCOME_HOME, WELCOME_KEYS, WELCOME_ACCOUNTS, WELCOME_TILES, WELCOME_DONE, WELCOME_COUNT };
 #define HBC_ELEVATE "luna://org.webosbrew.hbchannel.service/elevateService"
 #define SHEET_BODY_LINES 5
 #define IDLE_DIM_MS (2 * 60 * 1000)  /* defaults; /api/prefs dimMinutes / offMinutes override */
@@ -336,6 +340,7 @@ typedef struct {
     int asked;          /* the Control Center over another app asked for one of OPEN_*, for when we're back */
     int service_ok, wake_tries;
     int setup, setup_tries, elevate_tries, home_asked;
+    int onboarded, welcome;  /* the welcome steps are done (/api/status), and the one on show (WELCOME_*) */
     int reduce_motion, reduce_transparency; /* Settings -> Accessibility (tvOS's names) */
     int clock24, orbit_off, vivid_covers;    /* Settings: 24-hour clock, no pixel shift, brand-colour covers */
     int shelf_still;                         /* Settings: the Top Shelf doesn't turn pages by itself */
@@ -630,6 +635,9 @@ void set_home_mode(const char *mode, int asked);
 void on_status(Result *r);
 void on_elevate(Result *r);
 void setup_retry_now(void);
+void welcome_page(int index);
+void welcome_next(void);
+void welcome_finish(void);
 
 /* accounts.c */
 void on_media_signin(Result *r);
@@ -639,6 +647,7 @@ int stremio_installed(void);
 
 /* settings.c */
 void settings_page(int page, int index);
+void settings_row(const char *label, const char *value, Action act, int arg, int chevron, int destructive);
 void settings_again(void);
 float swatch_x(float bx, float bw, int i);
 int swatch_at(float mx);

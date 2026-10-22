@@ -5,12 +5,10 @@
 
 #include "home.h"
 
-static const char *const LOOK_NAME[] = { "Default", "Dark", "Clear", "Tinted" };
-
 /* ---- Settings, like tvOS's: each row shows its current value, › opens a page,
  * and Back goes up one. */
 
-static void settings_row(const char *label, const char *value, Action act, int arg, int chevron, int destructive)
+void settings_row(const char *label, const char *value, Action act, int arg, int chevron, int destructive)
 {
     if (S.sheet.n >= MAX_SHEET) return;
     sheet_add(label, act, arg, destructive);
@@ -44,6 +42,10 @@ static int main_index(int page)
 
 void settings_page(int page, int index)
 {
+    if (page == PAGE_WELCOME) { /* the welcome steps (setup.c): their choices are Settings' own */
+        welcome_page(index);
+        return;
+    }
     char v[96], v2[32];
     int home_on = S.home_mode[0] && strcmp(S.home_mode, "off");
     switch (page) {

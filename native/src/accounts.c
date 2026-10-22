@@ -3,6 +3,13 @@
 
 #include "home.h"
 
+/* A sign-in's sheet is done: back to the welcome step it came from, or closed */
+static void signin_close(void)
+{
+    if (S.sheet.parent == PAGE_WELCOME) settings_page(PAGE_WELCOME, S.sheet.parent_index);
+    else sheet_dismiss();
+}
+
 /* Stremio, Jellyfin and Plex sign-in: the code to show, and whether it was approved */
 void on_media_signin(Result *r)
 {
@@ -16,7 +23,7 @@ void on_media_signin(Result *r)
         snprintf(msg, sizeof msg, "%s connected", SRC_NAME[src]);
         S.media_poll = 0;
         S.src_connected[src] = 1;
-        if (code_shown) sheet_dismiss();
+        if (code_shown) signin_close();
         toast(msg, 3000);
         if (want_source() == src) rail_request(src);
     } else if (cJSON_IsObject(pend)) {
@@ -43,13 +50,13 @@ void on_media_signin(Result *r)
             S.sheet_big = text_render(S.f_bold, 96, jstr(pend, "code"), 0, &S.sheet_big_w, &S.sheet_big_h);
             sheet_add("Cancel", ACT_UP, 0, 0);
             S.sheet.page = PAGE_SIGNIN;
-            if (S.at_page == PAGE_ACCOUNTS) /* Cancel goes back there; from an app's options it closes */
-                S.sheet.parent = PAGE_ACCOUNTS, S.sheet.parent_index = S.at_index;
+            if (S.at_page == PAGE_ACCOUNTS || S.at_page == PAGE_WELCOME) /* Cancel goes back there; from an app's options it closes */
+                S.sheet.parent = S.at_page, S.sheet.parent_index = S.at_index;
         }
         S.media_poll = SDL_GetTicks() + 3000;
     } else {
         S.media_poll = 0;
-        if (code_shown) sheet_dismiss();
+        if (code_shown) signin_close();
         if (err[0]) toast(err, 7000);
         else if (r->tag == TAG_MEDIA_LINK) toast("Couldn\xE2\x80\x99t start the sign-in. Try again.", 5000);
         else if (code_shown) toast("The code expired. Try again.", 5000);
@@ -71,7 +78,7 @@ void on_trakt_signin(Result *r)
     if (connected) {
         S.trakt_poll = 0;
         S.trakt_connected = 1;
-        if (S.sheet.open && S.sheet_big) sheet_dismiss();
+        if (S.sheet.open && S.sheet_big) signin_close();
         toast("Trakt connected", 3000);
         rail_request(SRC_STREMIO);
     } else if (cJSON_IsObject(pend)) {
@@ -82,7 +89,12 @@ void on_trakt_signin(Result *r)
             sheet_open(title);
             tex_free(&S.sheet_big);
             S.sheet_big = text_render(S.f_bold, 96, jstr(pend, "code"), 0, &S.sheet_big_w, &S.sheet_big_h);
-            sheet_add("Cancel", ACT_CANCEL, 0, 0);
+            if (S.at_page == PAGE_WELCOME) { /* Cancel and Back go back to the welcome step */
+                sheet_add("Cancel", ACT_UP, 0, 0);
+                S.sheet.page = PAGE_SIGNIN, S.sheet.parent = PAGE_WELCOME, S.sheet.parent_index = S.at_index;
+            } else {
+                sheet_add("Cancel", ACT_CANCEL, 0, 0);
+            }
         }
         S.trakt_poll = SDL_GetTicks() + 3000;
     } else {

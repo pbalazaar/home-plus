@@ -350,6 +350,12 @@ function homeMode(cfg) {
   return cfg.homeMode || 'watch';
 }
 
+// The launcher's welcome steps are done (or skipped). Home+ before them asked only about the Home button: answered
+// there, it counts as done, so an update doesn't welcome you again.
+function onboarded(cfg) {
+  return typeof cfg.onboarded === 'boolean' ? cfg.onboarded : !!cfg.homeAsked;
+}
+
 async function applyHomeMode() {
   if (homeMode(readConfig()) === 'redirect') {
     if (!(await mountRedirect())) log('no-flash unavailable; using watch mode');
@@ -1419,6 +1425,10 @@ async function handleApi(req, res) {
       if (b) {
         if (typeof b.settingsKey === 'boolean') setKeyBind(SETTINGS_KEY, b.settingsKey); /* the Settings key's bind */
         if (typeof b.inputKey === 'boolean') setKeyBind(INPUT_KEY, b.inputKey); /* the Input key's */
+        if (typeof b.onboarded === 'boolean') { /* the welcome steps: false while they're on, true once done or skipped */
+          cfg.onboarded = b.onboarded;
+          if (b.mode === undefined && !b.asked) writeConfig(cfg);
+        }
         if (b.mode !== undefined || b.asked) {
           if (['redirect', 'watch'].includes(b.mode)) { cfg.homeMode = b.mode; cfg.homeOverride = true; }
           if (b.mode === 'off') cfg.homeOverride = false;
@@ -1486,7 +1496,7 @@ const imageServer = http.createServer(async (req, res) => {
     return sendJSON(res, 200, {
       id: pkg.name, /* (the launcher checks it's its own: the old Home+'s, still installed, takes the same port) */
       version: pkg.version, elevated: isRoot(), token: tokenWritten,
-      bootScript: fs.existsSync(INITD), homeAsked: !!cfg.homeAsked, homeMode: homeMode(cfg)
+      bootScript: fs.existsSync(INITD), homeAsked: !!cfg.homeAsked, homeMode: homeMode(cfg), onboarded: onboarded(cfg)
     });
   }
   /* the launcher just had Homebrew Channel elevate us: exit so the next start runs as root.
