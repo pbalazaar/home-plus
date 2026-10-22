@@ -160,8 +160,7 @@ void draw_switcher(void)
 {
     float t = fminf(fmaxf(S.recents.t, 0), 1);
     if (t < 0.004f) return;
-    r_backdrop_image(1, (Uint8)(255 * t)); /* the home screen behind, blurred */
-    r_fill(0, 0, 0, (Uint8)(110 * t));
+    r_backdrop_image(1, (Uint8)(255 * t), (Uint8)(110 * t)); /* the home screen behind, blurred and dimmed */
     Uint8 ca = (Uint8)(255 * t);
     if (!S.recents.n && S.recents.loading) { /* placeholders where the cards go */
         for (int k = -1; k <= 1; k++) {

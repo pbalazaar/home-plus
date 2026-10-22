@@ -288,8 +288,7 @@ static void draw_scene(int backdrop)
      * smeared it wider every frame. */
     draw_shelf_art(backdrop ? 255 : shelf_a, backdrop);
     if (S.scrolled > 0.004f && !backdrop) { /* below the dock the picture stays, blurred and dimmed, so the apps stand out */
-        r_backdrop_image(1, (Uint8)(255 * S.scrolled));
-        r_fill(0, 0, 0, (Uint8)(110 * S.scrolled));
+        r_backdrop_image(1, (Uint8)(255 * S.scrolled), (Uint8)(110 * S.scrolled));
     }
     /* the shelf's content leaves faster than the grid arrives, drifting up behind it */
     r_translate(0, 0.35f * S.scroll);
@@ -408,7 +407,7 @@ int render(float dt, const char *shot)
     r_frame_begin(8, 8, 11);
     perf_probe(PROBE_SCREEN);
     r_use_backdrop(0);
-    draw_scene(0);
+    if (S.recents.t < 1) draw_scene(0); /* (open, Recents covers it) */
     perf_probe(PROBE_SCENE);
     r_use_backdrop(1);
     draw_switcher();

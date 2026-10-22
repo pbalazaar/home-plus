@@ -76,8 +76,9 @@ void r_backdrop_end(void);
 void r_use_backdrop(int which);
 
 /* The backdrop itself over the whole screen (blurred: the soft copy), e.g. a
- * blurred background behind content that should stand out. */
-void r_backdrop_image(int blurred, Uint8 alpha);
+ * blurred background behind content that should stand out; dim darkens it as a
+ * black fill that strong over it would. Opaque, it covers what's under it. */
+void r_backdrop_image(int blurred, Uint8 alpha, Uint8 dim);
 
 typedef struct {
     float x, y, w, h, radius;
