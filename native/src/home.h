@@ -55,6 +55,7 @@
 #define ROTATE_MS 10000                /* the Top Shelf carousel turns to its next title */
 #define PAGE_WAIT_MS 1200              /* the longest the Top Shelf waits for a page's picture */
 #define SKEL_MS 250                    /* a wait longer than this shows placeholders (a skeleton) */
+#define BACK_MS 350                    /* back from another app, the home screen comes into focus */
 #define MAX_DOTS 16                    /* its position, as dots */
 #define BAR 56                         /* the clock capsule */
 #define TOP_Y 52                       /* where tvOS 26 has it */
@@ -360,6 +361,7 @@ typedef struct {
     Uint32 drawn_at;                  /* when the last frame was drawn */
     int idle_stage, swallow_up, offscreen, orbit_k; /* offscreen: another app is in front */
     int settle;             /* back from offscreen: the next frame moves every animation to its end */
+    Uint32 back_at;         /* ...and when it came back: the home screen comes into focus from it (BACK_MS) */
     int wl_fd;              /* Wayland socket the idle wait sleeps on, -1 = SDL's own wait */
     Uint32 keys_until;      /* a key went down lately, or SAM's bringing Home+ back: keep pumping so SDL makes its
                              * repeats (finishes the relaunch) */

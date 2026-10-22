@@ -171,6 +171,7 @@ int update(float dt)
     S.light_x = bx * cosf(ang) - by * sinf(ang);
     S.light_y = bx * sinf(ang) + by * cosf(ang);
 
+    if (S.back_at && SDL_GetTicks() - S.back_at < BACK_MS) anim = 1; /* back from an app, it comes into focus */
     float dim = S.idle_stage >= 1 ? 1.0f : 0.0f, black = S.idle_stage >= 2 ? 1.0f : 0.0f;
     approach(&S.dim, dim, dim > S.dim ? 2.5f : 10.0f, dt, &anim);
     approach(&S.black, black, black > S.black ? 2.5f : 10.0f, dt, &anim);

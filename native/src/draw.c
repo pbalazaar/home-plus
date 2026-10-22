@@ -414,14 +414,29 @@ static void draw_backdrop(int which)
     r_backdrop_end();
 }
 
+/* Back from another app, the home screen comes into focus, as tvOS's does: its blurred, dimmed copy over it
+ * clears (an ease out). 1: in focus. */
+static float back_in(void)
+{
+    if (!S.back_at) return 1;
+    float t = (SDL_GetTicks() - S.back_at) / (float)BACK_MS;
+    if (t >= 1) {
+        S.back_at = 0;
+        return 1;
+    }
+    return 1 - (1 - t) * (1 - t) * (1 - t);
+}
+
 int render(float dt, const char *shot)
 {
     perf_begin(dt);
     int anim = update(dt);
     perf_updated();
+    float in = back_in();
     draw_backdrop(0);
     perf_probe(PROBE_ART);
-    if (S.sheet.open || S.ghost.on || S.toast_t > 0.01f || S.recents.t > 0.004f || S.cc.t > 0.004f) { /* overlays refract the whole scene */
+    if (S.sheet.open || S.ghost.on || S.toast_t > 0.01f || S.recents.t > 0.004f || S.cc.t > 0.004f || in < 1) {
+        /* overlays refract the whole scene (and it's what comes into focus) */
         draw_backdrop(1);
         perf_probe(PROBE_BACKDROP);
     }
@@ -437,6 +452,7 @@ int render(float dt, const char *shot)
     draw_ghost();
     draw_sheet();
     draw_toast();
+    if (in < 1) r_backdrop_image(1, (Uint8)(255 * (1 - in)), (Uint8)(BLUR_DIM * (1 - in)));
     if (S.black > 0.004f) r_fill(0, 0, 0, (Uint8)(S.black * 255)); /* OLED: idle fades to black */
     perf_probe(PROBE_OVERLAYS);
     if (shot) homeplus_screenshot(shot);

@@ -166,7 +166,10 @@ void go_offscreen(void)
 
 void come_back(void)
 {
-    if (S.offscreen) S.settle = 1; /* the first frame back is the screen at rest: nothing catches up on screen */
+    if (S.offscreen) { /* the first frame back is the screen at rest (nothing catches up on screen), coming into focus */
+        S.settle = 1;
+        S.back_at = SDL_GetTicks() | 1;
+    }
     if (S.away) go_home(); /* back from another app (or the Home button): start at the top */
     S.away = 0;
     if (S.asked) open_asked(S.asked); /* ...unless the Control Center over that app asked for something */
