@@ -158,6 +158,7 @@ void come_back(void)
     S.offscreen = 0;
     S.last_input = SDL_GetTicks();
     S.idle_stage = 0;
+    perf_check();
     if (S.setup == SETUP_DONE) request_data();
     /* only a setup that stopped on an error starts over; one in progress carries on */
     else if (S.setup == SETUP_NO_HBC || S.setup == SETUP_DENIED || S.setup == SETUP_FAILED || S.setup == SETUP_OLD) setup_retry_now();

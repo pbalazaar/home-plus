@@ -86,4 +86,17 @@ void r_glass(const Glass *g);
 /* Reads the screen as RGBA8, top row first; buf holds w*h*4 of the drawable. */
 int r_read_pixels(unsigned char *buf, int *w, int *h);
 
+/* The GPU's own time for what's drawn between r_gpu_begin and r_gpu_end (a frame), where the
+ * driver can say (GL_EXT_disjoint_timer_query: r_gpu_timer() is 1, and starts it). Frames come
+ * back in order a few frames later: r_gpu_result gives the next one's time in µs, -1 while it
+ * isn't in (wait: until it is), -2 when the GPU lost it (a disjoint: its clock changed). */
+int r_gpu_timer(void);
+void r_gpu_begin(void);
+void r_gpu_end(void);
+long r_gpu_result(int wait);
+/* GL_RENDERER (0) or GL_VERSION (1) */
+const char *r_gl_info(int what);
+/* Waits until the GPU has done everything asked of it so far. */
+void r_finish(void);
+
 #endif

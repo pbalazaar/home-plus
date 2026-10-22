@@ -61,6 +61,11 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   `src/sound.c` (synthesised focus sounds). The launcher itself is a file per feature (`src/home.h` lists them,
   with the layout, types and the one global state `S` they share): OLED idle stages and pixel orbit are in
   `main.c`'s `update()`, the wait for the next stage in `idle.c`.
+  Frame timing (`perf.c`), off unless `/tmp/homeplus-perf` exists in Home+'s jail
+  (`/var/palm/jail/com.github.pbalazaar.homeplus/tmp/`, `HOMEPLUS_PERF=1` in the preview): each run of frames is
+  then a `perf:` line in the service's log (fps, the gaps in refreshes, late frames, CPU per frame, the first dt,
+  key to screen, the slowest answer between frames); `homeplus-perf-gpu` too waits for the GPU after each part
+  of a frame, which says what each costs (`perf gpu:`).
   App icon looks (Settings → Display & OLED → App Icons; prefs `iconLook`, `iconTint` from `TINTS`):
   `draw_face()` (`draw.c`) draws every tile (dock, big tile, Recents), `FS_LOGO` the logo in one colour or for a
   dark tile. `make_logo()` (`tiles.c`) cuts a logo out of its icon's background, edge pixels unblended from it

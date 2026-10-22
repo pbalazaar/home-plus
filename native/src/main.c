@@ -278,6 +278,7 @@ int main(int argc, char **argv)
     }
     if (!load_assets()) return 1;
     snd_init();
+    perf_check();
 
     net_start();
     S.ptr_ax = S.ptr_ay = -1;
@@ -324,6 +325,7 @@ int main(int argc, char **argv)
                     break;
                 }
                 S.keys_until = SDL_GetTicks() + 600;
+                perf_key(e.key.timestamp);
                 if (wake(1)) break;
                 on_key_down(&e.key);
                 break;
@@ -400,7 +402,9 @@ int main(int argc, char **argv)
                 if (e.type == net_event) {
                     Result r;
                     while (net_poll(&r)) {
+                        Uint64 t0 = perf_clock();
                         handle_result(&r);
+                        perf_answer(r.tag, t0);
                         net_result_free(&r);
                     }
                 }
@@ -483,6 +487,7 @@ int main(int argc, char **argv)
             if (dt > 0.1f) dt = 0.1f;
             int take = shot && now >= shot_at;
             animating = render(dt, take ? shot : NULL);
+            if (!animating) perf_rest();
             drew = 1;
             S.drawn_at = now;
             if (rest_ms && now - start >= rest_ms - 10000) rest_frames++, rest_drawing_ms += SDL_GetTicks() - now;
@@ -490,6 +495,7 @@ int main(int argc, char **argv)
         }
         last = now;
     }
+    perf_rest();
     net_stop();
     r_shutdown();
     SDL_Quit();

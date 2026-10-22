@@ -10,7 +10,7 @@
  *   setup.c     first run                                   accounts.c signing in (Stremio, Jellyfin, Plex, Trakt)
  *   input.c     keys, the pointer, focus                    idle.c     the idle wait, OLED care, offscreen
  *   draw.c      shared drawing, the home screen             tiles.c    an icon's logo and cover
- *   util.c      small helpers */
+ *   util.c      small helpers                               perf.c     frame timing (off unless asked) */
 #ifndef HOMEPLUS_HOME_H
 #define HOMEPLUS_HOME_H
 
@@ -666,5 +666,18 @@ int wake(int key);
 
 /* results.c */
 void handle_result(Result *r);
+
+/* perf.c */
+enum { PROBE_ART, PROBE_SCREEN, PROBE_SCENE, PROBE_BACKDROP, PROBE_OVERLAYS, PROBE_N }; /* a frame's parts */
+void perf_check(void);
+void perf_key(Uint32 timestamp);
+Uint64 perf_clock(void);
+void perf_answer(int tag, Uint64 since);
+void perf_begin(float dt);
+void perf_updated(void);
+void perf_probe(int part);
+void perf_drawn(void);
+void perf_end(void);
+void perf_rest(void);
 
 #endif

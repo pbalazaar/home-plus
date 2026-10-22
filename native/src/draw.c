@@ -378,20 +378,26 @@ extern int homeplus_screenshot(const char *path);
 
 int render(float dt, const char *shot)
 {
+    perf_begin(dt);
     int anim = update(dt);
+    perf_updated();
     /* the Top Shelf picture alone: what the dock and top bar refract (the icons
      * sit on the glass), and the blurred background below the dock */
     r_backdrop_begin();
     draw_shelf_art(255, 1);
     r_backdrop_end();
+    perf_probe(PROBE_ART);
 
     r_frame_begin(8, 8, 11);
+    perf_probe(PROBE_SCREEN);
     draw_scene(0);
+    perf_probe(PROBE_SCENE);
     if (S.sheet.open || S.ghost.on || S.toast_t > 0.01f || S.recents.t > 0.004f || S.cc.t > 0.004f) { /* overlays refract the whole scene */
         r_backdrop_begin();
         draw_scene(1);
         if (cc_dim() > 0.002f) r_fill(0, 0, 0, (Uint8)(255 * cc_dim())); /* (what the glass refracts steps back too) */
         r_backdrop_end();
+        perf_probe(PROBE_BACKDROP);
     }
     draw_switcher();
     draw_control_center();
@@ -399,7 +405,10 @@ int render(float dt, const char *shot)
     draw_sheet();
     draw_toast();
     if (S.black > 0.004f) r_fill(0, 0, 0, (Uint8)(S.black * 255)); /* OLED: idle fades to black */
+    perf_probe(PROBE_OVERLAYS);
     if (shot) homeplus_screenshot(shot);
+    perf_drawn();
     r_present();
+    perf_end();
     return anim;
 }

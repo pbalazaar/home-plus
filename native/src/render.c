@@ -11,13 +11,16 @@
 #include "SDL_opengles2_khrplatform.h"
 #include "SDL_opengles2_gl2platform.h"
 #include "SDL_opengles2_gl2.h"
+#include "SDL_opengles2_gl2ext.h"
 
 #define GL_FUNCS(X)                                                                                         \
     X(ActiveTexture) X(AttachShader) X(BindAttribLocation) X(BindBuffer) X(BindFramebuffer) X(BindTexture)   \
     X(BlendFuncSeparate) X(BufferData) X(CheckFramebufferStatus) X(Clear) X(ClearColor) X(CompileShader)     \
     X(CreateProgram) X(CreateShader) X(DeleteShader) X(DeleteTextures) X(Disable) X(DrawArrays) X(Enable)     \
+    X(Finish)                                                                                               \
     X(EnableVertexAttribArray) X(FramebufferTexture2D) X(GenBuffers) X(GenFramebuffers) X(GenTextures)       \
-    X(GetProgramInfoLog) X(GetProgramiv) X(GetShaderInfoLog) X(GetShaderiv) X(GetUniformLocation)           \
+    X(GetIntegerv) X(GetProgramInfoLog) X(GetProgramiv) X(GetShaderInfoLog) X(GetShaderiv) X(GetString)     \
+    X(GetUniformLocation)                                                                                   \
     X(LinkProgram) X(PixelStorei) X(ReadPixels) X(ShaderSource) X(TexImage2D) X(TexParameteri) X(Uniform1f)  \
     X(Uniform1i) X(Uniform2f) X(Uniform4f) X(UseProgram) X(VertexAttribPointer) X(Viewport)
 
@@ -651,6 +654,74 @@ void r_glass(const Glass *g)
     gl.Uniform4f(R.glass.tint, g->tr / 255.0f, g->tg / 255.0f, g->tb / 255.0f, g->ta / 255.0f);
     gl.Uniform1f(R.glass.alpha, g->alpha);
     quad(&R.glass, g->x, g->y, g->w, g->h);
+}
+
+/* ------------------------------------------------------------------ GPU timing */
+
+/* GL_EXT_disjoint_timer_query: a few frames' queries in flight, read back in order */
+enum { GPU_Q = 4 };
+static struct {
+    void (GL_APIENTRYP gen)(GLsizei, GLuint *);
+    void (GL_APIENTRYP begin)(GLenum, GLuint);
+    void (GL_APIENTRYP end)(GLenum);
+    void (GL_APIENTRYP get)(GLuint, GLenum, GLuint *);
+    void (GL_APIENTRYP get64)(GLuint, GLenum, khronos_uint64_t *);
+    void (GL_APIENTRYP bits)(GLenum, GLenum, GLint *);
+    GLuint q[GPU_Q];
+    unsigned begun, read;
+    int tried, ok, active;
+} T;
+
+int r_gpu_timer(void)
+{
+    if (T.tried) return T.ok;
+    T.tried = 1;
+    const char *ext = (const char *)gl.GetString(GL_EXTENSIONS);
+    if (!ext || !strstr(ext, "GL_EXT_disjoint_timer_query")) return 0;
+    T.gen = SDL_GL_GetProcAddress("glGenQueriesEXT");
+    T.begin = SDL_GL_GetProcAddress("glBeginQueryEXT");
+    T.end = SDL_GL_GetProcAddress("glEndQueryEXT");
+    T.get = SDL_GL_GetProcAddress("glGetQueryObjectuivEXT");
+    T.get64 = SDL_GL_GetProcAddress("glGetQueryObjectui64vEXT");
+    T.bits = SDL_GL_GetProcAddress("glGetQueryivEXT");
+    if (!T.gen || !T.begin || !T.end || !T.get || !T.get64 || !T.bits) return 0;
+    GLint bits = 0;
+    T.bits(GL_TIME_ELAPSED_EXT, GL_QUERY_COUNTER_BITS_EXT, &bits); /* 0: it has the extension but can't time */
+    if (bits <= 0) return 0;
+    T.gen(GPU_Q, T.q);
+    return T.ok = 1;
+}
+
+void r_finish(void) { gl.Finish(); }
+
+const char *r_gl_info(int what) { return (const char *)gl.GetString(what ? GL_VERSION : GL_RENDERER); }
+
+void r_gpu_begin(void)
+{
+    if (!T.ok || T.active || T.begun - T.read >= GPU_Q) return; /* all of them still on the GPU: this frame goes untimed */
+    T.begin(GL_TIME_ELAPSED_EXT, T.q[T.begun % GPU_Q]);
+    T.active = 1;
+}
+
+void r_gpu_end(void)
+{
+    if (!T.active) return;
+    T.end(GL_TIME_ELAPSED_EXT);
+    T.begun++;
+    T.active = 0;
+}
+
+long r_gpu_result(int wait)
+{
+    if (T.read == T.begun) return -1;
+    GLuint q = T.q[T.read % GPU_Q], in = 0;
+    if (!wait && (T.get(q, GL_QUERY_RESULT_AVAILABLE_EXT, &in), !in)) return -1;
+    khronos_uint64_t ns = 0;
+    T.get64(q, GL_QUERY_RESULT_EXT, &ns);
+    T.read++;
+    GLint disjoint = 0;
+    gl.GetIntegerv(GL_GPU_DISJOINT_EXT, &disjoint);
+    return disjoint ? -2 : (long)(ns / 1000);
 }
 
 int r_read_pixels(unsigned char *buf, int *w, int *h)
