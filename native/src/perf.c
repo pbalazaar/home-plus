@@ -6,7 +6,8 @@
  * time where its driver says, the loop between frames), the first frame's dt, and how soon a key's work was on
  * screen. With /tmp/homeplus-perf-gpu too (or HOMEPLUS_PERF=gpu) it waits for the GPU after each part of a frame,
  * which slows it down but says what each part costs the GPU (`perf gpu:`). The slowest of the service's
- * answers handled between a run's frames is in its line too, with its tag (home.h's TAG_*). */
+ * answers handled between a run's frames is in its line too, with its tag (home.h's TAG_*), and how many
+ * of its frames drew each backdrop (the rest found it unchanged). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +27,7 @@ static struct {
     float dt0;                         /* the run's first dt, ms */
     float answer;                      /* the slowest answer handled between the run's frames, ms */
     unsigned seen;                     /* what was on screen during the run (SEEN) */
+    unsigned backdrops[2];             /* backdrops drawn before the run */
     Uint32 key_at;                     /* a key's SDL timestamp, until a frame shows its work */
     float part[PROBE_N];               /* probe: the run's ms in each part, summed */
     int parts[PROBE_N];
@@ -77,7 +79,10 @@ void perf_begin(float dt)
     if (!P.on) return;
     P.begin = SDL_GetPerformanceCounter();
     P.cpu0 = thread_ms();
-    if (!P.n) P.dt0 = dt * 1000;
+    if (!P.n) {
+        P.dt0 = dt * 1000;
+        P.backdrops[0] = r_backdrops_drawn(0), P.backdrops[1] = r_backdrops_drawn(1);
+    }
 }
 
 void perf_updated(void)
@@ -194,10 +199,11 @@ void perf_rest(void)
         log_remote("perf%s: %d frames in %.0f ms, %.1f fps, gaps %.1f median %.1f p95 %.1f max, %d late, in refreshes "
                    "<.75:%d <.9:%d ~1:%d <1.25:%d <1.5:%d <2.5:%d more:%d; ms avg/p95/max: update %.2f/%.2f/%.2f, "
                    "draw %.2f/%.2f/%.2f, swap %.2f/%.2f/%.2f, cpu %.2f/%.2f/%.2f%s, between %.2f/%.2f/%.2f; first dt "
-                   "%.0f ms%s%s [%s]",
+                   "%.0f ms%s%s; backdrops drawn %u and %u [%s]",
                    P.probe ? " (gpu probe)" : "", P.n, total, total > 0 ? (P.n - 1) * 1000 / total : 0, g[1], g[2], g[3],
                    late, hist[0], hist[1], hist[2], hist[3], hist[4], hist[5], hist[6], u[0], u[2], u[3], d[0], d[2], d[3],
-                   s[0], s[2], s[3], c[0], c[2], c[3], gpu, l[0], l[2], l[3], P.dt0, keys, answer, seen[0] ? seen : "home");
+                   s[0], s[2], s[3], c[0], c[2], c[3], gpu, l[0], l[2], l[3], P.dt0, keys, answer,
+                   r_backdrops_drawn(0) - P.backdrops[0], r_backdrops_drawn(1) - P.backdrops[1], seen[0] ? seen : "home");
         if (P.probe) {
             char line[300] = "";
             for (int i = 0; i < PROBE_N; i++) {

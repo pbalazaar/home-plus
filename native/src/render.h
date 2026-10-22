@@ -14,6 +14,7 @@
 typedef struct Tex {
     unsigned id;
     int w, h;
+    unsigned serial; /* unique for the texture's life (a freed one's memory may come back as another) */
 } Tex;
 
 /* Call before SDL_CreateWindow: asks for an OpenGL ES 2.0 context. */
@@ -72,6 +73,12 @@ void r_fill(Uint8 r, Uint8 g, Uint8 b, Uint8 a);
  * GPU stopping halfway through the screen for a backdrop stores it and loads it back. */
 void r_backdrop_begin(int which);
 void r_backdrop_end(void);
+/* What's drawn between these is only noted, not drawn: r_backdrop_unchanged says whether it's what
+ * backdrop `which` holds already, so drawing it (and its blur, most of what a frame costs the C3's
+ * GPU) can be skipped. When it isn't, the backdrop is to be drawn now (it's taken as holding it). */
+void r_backdrop_note(void);
+int r_backdrop_unchanged(int which);
+unsigned r_backdrops_drawn(int which); /* how often each has been drawn */
 /* The backdrop glass and r_backdrop_image use from now on. */
 void r_use_backdrop(int which);
 

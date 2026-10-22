@@ -64,8 +64,9 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   Frame timing (`perf.c`), off unless `/tmp/homeplus-perf` exists in Home+'s jail
   (`/var/palm/jail/com.github.pbalazaar.homeplus/tmp/`, `HOMEPLUS_PERF=1` in the preview): each run of frames is
   then a `perf:` line in the service's log (fps, the gaps in refreshes, late frames, CPU per frame, the first dt,
-  key to screen, the slowest answer between frames); `homeplus-perf-gpu` too waits for the GPU after each part
-  of a frame, which says what each costs (`perf gpu:`).
+  key to screen, the slowest answer between frames, how many frames drew each backdrop); `homeplus-perf-gpu` too
+  waits for the GPU after each part of a frame, which says what each costs (`perf gpu:`). A backdrop is drawn
+  only when what's in it changes (`draw_backdrop()`: each draw is first noted into a fingerprint).
   App icon looks (Settings → Display & OLED → App Icons; prefs `iconLook`, `iconTint` from `TINTS`):
   `draw_face()` (`draw.c`) draws every tile (dock, big tile, Recents), `FS_LOGO` the logo in one colour or for a
   dark tile. `make_logo()` (`tiles.c`) cuts a logo out of its icon's background, edge pixels unblended from it
@@ -164,8 +165,8 @@ appears in your own SSH command line** — it kills the session. Use:
   the CPU's part of a frame (1.5 ms, 3.5 with an overlay) hides in "draw". The driver has
   GL_EXT_disjoint_timer_query but times every frame at 0; the GPU's busy share is
   `/sys/kernel/debug/mali0/dvfs_utilization` (busy and idle time so far: read it twice). GPU per frame (the
-  probe, so a little high): each half-size backdrop with its five blur passes ~4 ms, the home screen at full
-  size ~5, a sheet ~5.5. HyperHDR (with PicCap) keeps one of the three cores busy.
+  probe, so a little high): each half-size backdrop with its five blur passes ~4 ms when it's drawn, the home
+  screen at full size ~5, a sheet ~5.5. HyperHDR (with PicCap) keeps one of the three cores busy.
 - LG's SDL puts the *scancode* in `keysym.sym` (Right arrow arrives as 79); see `remote_key()`.
   LG's own codes come the same way, with `scancode=1`: Back 482 (seen), pointer show/hide 484/485
   (sent when the pointer wakes or sleeps, not real presses), Red/Green/Yellow/Blue 486–489 (from

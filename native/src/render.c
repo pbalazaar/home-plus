@@ -322,7 +322,34 @@ static struct {
     Target backdrop[2], soft[2]; /* what glass refracts, and its blurred copy: the Top Shelf's picture; the scene */
     Target d1, d2, d3, u2;       /* the blur's steps */
     int drawing, used;           /* the backdrop being drawn; the one glass refracts */
+    Uint64 print[2];             /* each backdrop's fingerprint: what was drawn into it */
+    int held[2];                 /* (it holds what its fingerprint says) */
+    unsigned drawn[2], serial;   /* how often each was drawn; the last texture's serial */
 } R;
+
+/* Noting what would be drawn instead of drawing it (r_backdrop_note): each draw's kind, texture,
+ * numbers and where it's moved go into a fingerprint of the picture (FNV-1a). */
+static struct {
+    int on;
+    Uint64 h;
+} H;
+
+static void note(const void *p, size_t n)
+{
+    const unsigned char *b = p;
+    for (size_t i = 0; i < n; i++) H.h = (H.h ^ b[i]) * 1099511628211ULL;
+}
+
+static int noting(unsigned kind, const Tex *t, const float *v, int n)
+{
+    if (!H.on) return 0;
+    unsigned id[2] = { kind, t ? t->serial : 0 };
+    float at[2] = { R.tx, R.ty };
+    note(id, sizeof id);
+    note(at, sizeof at);
+    note(v, (size_t)n * sizeof *v);
+    return 1;
+}
 
 static GLuint compile(GLenum kind, const char *src1, const char *src2)
 {
@@ -550,6 +577,7 @@ Tex *r_tex(const unsigned char *rgba, int w, int h)
     t->id = new_texture(w, h, rgba);
     t->w = w;
     t->h = h;
+    t->serial = ++R.serial;
     return t;
 }
 
@@ -567,6 +595,7 @@ static void image_uv(const Tex *t, float x, float y, float w, float h, float u0,
                      Uint8 r, Uint8 g, Uint8 b, Uint8 a, float radius)
 {
     if (!t || !a || w <= 0 || h <= 0) return;
+    if (noting(1, t, (float[]){ x, y, w, h, u0, v0, u1, v1, r, g, b, a, radius }, 13)) return;
     use(&R.tex);
     bind_tex(0, t->id);
     gl.Uniform4f(R.tex.uv, u0, v0, u1, v1);
@@ -588,6 +617,7 @@ void r_image_part(const Tex *t, float x, float y, float w, float h, float u0, fl
 void r_logo(const Tex *t, float x, float y, float w, float h, float radius, const LogoLook *l, Uint8 a)
 {
     if (!t || !a || w <= 0 || h <= 0) return;
+    if (noting(2, t, (float[]){ x, y, w, h, radius, l->mono, l->ref, l->span, l->faint, l->ink, l->r, l->g, l->b, a }, 14)) return;
     use(&R.logo);
     bind_tex(0, t->id);
     gl.Uniform4f(R.logo.color, l->r / 255.0f, l->g / 255.0f, l->b / 255.0f, l->mono ? 1 : l->ink);
@@ -610,6 +640,7 @@ void r_shape(float x, float y, float w, float h, float radius, Uint8 r, Uint8 g,
              float stroke, float top_a, float bottom_a)
 {
     if (!a || w <= 0 || h <= 0) return;
+    if (noting(3, NULL, (float[]){ x, y, w, h, radius, r, g, b, a, stroke, top_a, bottom_a }, 12)) return;
     use(&R.shape);
     gl.Uniform4f(R.shape.color, r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
     gl.Uniform1f(R.shape.radius, fminf(radius, fminf(w, h) / 2));
@@ -621,6 +652,7 @@ void r_shape(float x, float y, float w, float h, float radius, Uint8 r, Uint8 g,
 static void shadow(float x, float y, float w, float h, float radius, float blur, float dy, float alpha, int under)
 {
     if (alpha <= 0 || w <= 0 || h <= 0) return;
+    if (noting(4, NULL, (float[]){ x, y, w, h, radius, blur, dy, alpha, under }, 9)) return;
     use(&R.shadow);
     radius = fminf(radius, fminf(w, h) / 2);
     gl.Uniform4f(R.shadow.color, 0, 0, 0, alpha);
@@ -655,6 +687,7 @@ void r_shadow_under(float x, float y, float w, float h, float radius, float blur
 void r_rim(float x, float y, float w, float h, float radius, float width, Uint8 a, float light_x, float light_y)
 {
     if (!a || w <= 0 || h <= 0) return;
+    if (noting(5, NULL, (float[]){ x, y, w, h, radius, width, a, light_x, light_y }, 9)) return;
     float ll = sqrtf(light_x * light_x + light_y * light_y);
     if (ll < 0.001f) { light_x = -0.6f; light_y = -0.8f; ll = 1; }
     use(&R.rim);
@@ -674,9 +707,27 @@ void r_fill(Uint8 r, Uint8 g, Uint8 b, Uint8 a)
 
 /* ------------------------------------------------------------------ backdrop + glass */
 
+void r_backdrop_note(void)
+{
+    H.on = 1;
+    H.h = 1469598103934665603ULL;
+}
+
+int r_backdrop_unchanged(int which)
+{
+    H.on = 0;
+    if (R.held[which] && R.print[which] == H.h) return 1;
+    R.print[which] = H.h;
+    R.held[which] = 1;
+    return 0;
+}
+
+unsigned r_backdrops_drawn(int which) { return R.drawn[which]; }
+
 void r_backdrop_begin(int which)
 {
     R.drawing = which;
+    R.drawn[which]++;
     bind_target(&R.backdrop[which]);
     gl.ClearColor(0, 0, 0, 1);
     gl.Clear(GL_COLOR_BUFFER_BIT);
@@ -712,6 +763,7 @@ void r_backdrop_end(void)
 void r_backdrop_image(int blurred, Uint8 alpha, Uint8 dim)
 {
     if (!alpha) return;
+    if (noting(6, NULL, (float[]){ blurred, alpha, dim, R.used }, 4)) return;
     const Target *t = blurred ? &R.soft[R.used] : &R.backdrop[R.used];
     float k = alpha == 255 ? 1 - dim / 255.0f : 1; /* over nothing: dimmed as it's drawn, no fill over the screen */
     use(&R.tex);
@@ -727,6 +779,9 @@ void r_backdrop_image(int blurred, Uint8 alpha, Uint8 dim)
 void r_glass(const Glass *g)
 {
     if (g->alpha <= 0 || g->w <= 0 || g->h <= 0) return;
+    if (noting(7, NULL, (float[]){ g->x, g->y, g->w, g->h, g->radius, g->legible, g->lens, g->light_x, g->light_y, g->focus,
+                                   g->alpha, g->tr, g->tg, g->tb, g->ta, g->blurred, g->dimmed, R.used }, 18))
+        return;
     use(&R.glass);
     bind_tex(1, R.soft[R.used].tex);
     bind_tex(0, R.backdrop[R.used].tex);
@@ -814,6 +869,7 @@ long r_gpu_result(int wait)
 void r_sheen(float x, float y, float w, float h, float radius, float light_x, float light_y, float focus)
 {
     if (focus <= 0.004f || w <= 0 || h <= 0) return;
+    if (noting(8, NULL, (float[]){ x, y, w, h, radius, light_x, light_y, focus }, 8)) return;
     float ll = sqrtf(light_x * light_x + light_y * light_y);
     if (ll < 0.001f) { light_x = -0.6f; light_y = -0.8f; ll = 1; }
     use(&R.sheen);

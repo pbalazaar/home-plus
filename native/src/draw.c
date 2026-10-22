@@ -389,22 +389,40 @@ static void draw_toast(void)
 
 extern int homeplus_screenshot(const char *path);
 
+/* What a backdrop holds: 0 the Top Shelf picture alone, what the dock and top bar refract (the icons
+ * sit on the glass), and the blurred background below the dock; 1 the whole scene, what overlays refract */
+static void backdrop_content(int which)
+{
+    if (which == 0) {
+        draw_shelf_art(255, 1);
+        return;
+    }
+    draw_scene(1);
+    if (cc_dim() > 0.002f) r_fill(0, 0, 0, (Uint8)(255 * cc_dim())); /* (what the glass refracts steps back too) */
+}
+
+/* A backdrop is drawn (and blurred) only when what it holds would change: noted first, drawn if the
+ * fingerprint differs. A sheet, Recents or the Control Center moving over a still scene, or the grid
+ * under a picture that stays, no longer redraws and blurs both backdrops every frame. */
+static void draw_backdrop(int which)
+{
+    r_backdrop_note();
+    backdrop_content(which);
+    if (r_backdrop_unchanged(which)) return;
+    r_backdrop_begin(which);
+    backdrop_content(which);
+    r_backdrop_end();
+}
+
 int render(float dt, const char *shot)
 {
     perf_begin(dt);
     int anim = update(dt);
     perf_updated();
-    /* the Top Shelf picture alone: what the dock and top bar refract (the icons
-     * sit on the glass), and the blurred background below the dock */
-    r_backdrop_begin(0);
-    draw_shelf_art(255, 1);
-    r_backdrop_end();
+    draw_backdrop(0);
     perf_probe(PROBE_ART);
     if (S.sheet.open || S.ghost.on || S.toast_t > 0.01f || S.recents.t > 0.004f || S.cc.t > 0.004f) { /* overlays refract the whole scene */
-        r_backdrop_begin(1);
-        draw_scene(1);
-        if (cc_dim() > 0.002f) r_fill(0, 0, 0, (Uint8)(255 * cc_dim())); /* (what the glass refracts steps back too) */
-        r_backdrop_end();
+        draw_backdrop(1);
         perf_probe(PROBE_BACKDROP);
     }
 
