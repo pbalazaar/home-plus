@@ -190,7 +190,9 @@ int update(float dt)
          * when the pointer or a reset moves it */
         if (S.tick_armed && layer == S.focus_key / 1000000) snd_play(SND_TICK);
         S.focus_key = key;
-        S.sway_t = 0;
+        /* only focus landing on the home screen sways it: moving through a sheet or Recents swayed the tile
+         * under them, and redrew and blurred the scene behind them for 1.6 s a move */
+        if (!layer) S.sway_t = 0;
     }
     S.tick_armed = 0;
     float bx = -0.6f, by = -0.8f;
