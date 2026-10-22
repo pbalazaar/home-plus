@@ -41,7 +41,8 @@ void on_media_signin(Result *r)
             } else {
                 char body[200];
                 snprintf(body, sizeof body, "Scan this with your phone, or go to %s\nand enter the code below.", jstr(pend, "url"));
-                sheet_body(body);
+                sheet_body("Scan this with your phone, on the same network as the TV,\n"
+               "and paste your TMDB key, or Trakt\xE2\x80\x99s Client ID and Secret.");
             }
             if (qr[0]) { /* room for it now; the picture follows */
                 S.qr_gen++;
@@ -115,7 +116,8 @@ int source_installed(int src)
 
 int stremio_installed(void) { return source_installed(SRC_STREMIO); }
 
-/* TMDB's and Trakt's keys: the service's page for them is open, on the local network. Its link, as a QR code:
+/* TMDB's and Trakt's keys: the service's page for them is open, on the local network. Its link, as a QR code
+ * (only: the address itself is long and unreadable):
  * the phone pastes them there, and the service says when they're in (the "keys" event). */
 void on_keys(Result *r)
 {
@@ -128,14 +130,11 @@ void on_keys(Result *r)
         cJSON_Delete(o);
         return;
     }
-    char body[300];
-    snprintf(body, sizeof body, "Scan this with your phone, on the same network as the TV,\n"
-             "and paste your TMDB key, or Trakt\xE2\x80\x99s Client ID and Secret.\n"
-             "Or open this address in a browser:\n%s", jstr(o, "url"));
     cJSON_Delete(o);
     int parent = S.at_page == PAGE_ACCOUNTS || S.at_page == PAGE_WELCOME ? S.at_page : 0, parent_index = S.at_index;
     sheet_open("Add Keys on Your Phone");
-    sheet_body(body);
+    sheet_body("Scan this with your phone, on the same network as the TV,\n"
+               "and paste your TMDB key, or Trakt\xE2\x80\x99s Client ID and Secret.");
     S.qr_gen++;
     S.sheet_qr_s = 360;
     net_get_image("/api/keys/qr", TAG_QR, 0, S.qr_gen, 0, 0, 0);
