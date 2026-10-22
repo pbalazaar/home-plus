@@ -69,7 +69,10 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   waits for the GPU after each part of a frame, which says what each costs (`perf gpu:`). Each return to the
   front is a `perf: back:` line: when its window events came, come_back(), the first frame and the first with the
   Top Shelf complete and settled, with the first event's wall-clock ms (a script on the TV can line it up with the
-  Home button). A backdrop is drawn only when what's in it changes (`draw_backdrop()`: each draw is first noted
+  Home button). `perf: pictures:` says what pictures cost since the last rest (`net.c`: one decoded at a time within
+  64 MB, at most 16 MB of them waiting to be taken), and `perf: memory` what textures and render targets hold
+  as Home+ hides, and after 30 s hidden, when it lets go of the render targets (`hidden_idle()`; the first frame back
+  makes them again). A backdrop is drawn only when what's in it changes (`draw_backdrop()`: each draw is first noted
   into a fingerprint). Back from an app opened from Home+, the home screen starts at the top: `ready_home()`
   (`idle.c`) does that as Home+ goes, loads the Top Shelf's page there while hidden and shows it in place of the
   page left (`shelf_jump()`), and the first frame back moves every animation to its end (`S.settle`). Then it

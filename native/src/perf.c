@@ -8,7 +8,8 @@
  * which slows it down but says what each part costs the GPU (`perf gpu:`). The slowest of the service's
  * answers handled between a run's frames is in its line too, with its tag (home.h's TAG_*), and how many
  * of its frames drew each backdrop (the rest found it unchanged); what pictures cost since the last rest is
- * a line of its own (`perf: pictures:`, net.c's counts). Each return to the front is a line of its
+ * a line of its own (`perf: pictures:`, net.c's counts), and so is what the GPU holds for it as it hides and
+ * when, hidden a while, it lets go of its render targets (`perf: memory`). Each return to the front is a line of its
  * own (`perf: back:`): when its window events came, when come_back() ran, the first frame, and the first frames
  * with the Top Shelf complete and settled (shelf_complete()), with the first event's time on the wall clock,
  * which the service's log and a script on the TV read too. */
@@ -234,6 +235,16 @@ static void stats(float *v, int n, float out[4])
     out[1] = v[n / 2];
     out[2] = v[(n * 95) / 100 < n - 1 ? (n * 95) / 100 : n - 1];
     out[3] = v[n - 1];
+}
+
+/* what the launcher holds on the GPU, when it hides and when it lets go of its render targets */
+void perf_memory(const char *when)
+{
+    if (!P.on) return;
+    int n;
+    size_t tex = r_texture_bytes(&n);
+    log_remote("perf: memory (%s): %d textures, %.1f MB; render targets %.1f MB (4 bytes a pixel: the driver adds its own)",
+               when, n, tex / 1048576.0, r_target_bytes() / 1048576.0);
 }
 
 /* what pictures cost since the last rest (net.c): a line of its own when any came, or were dropped */

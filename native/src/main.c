@@ -434,6 +434,7 @@ int main(int argc, char **argv)
             running = 0;
         }
         snd_idle();
+        hidden_idle(now);
         if (S.ok_down && !S.ok_long && now - S.ok_down >= LONG_PRESS_MS) {
             S.ok_long = 1;
             if (!S.sheet.open && !S.recents.open && !S.moving && S.zone == 0) {

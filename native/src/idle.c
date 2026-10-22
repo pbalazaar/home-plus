@@ -1,6 +1,7 @@
 /* Home+ native: idle: sleeping until something happens, OLED care (dim, then black), and going offscreen. */
 #include <fcntl.h>
 #include <poll.h>
+#include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -156,12 +157,30 @@ void go_offscreen(void)
 {
     if (S.offscreen) return;
     S.offscreen = 1;
+    S.hidden_at = SDL_GetTicks();
     S.keys_until = 0;
     sw_reset(); /* an app opened from it is in front now */
     S.launching = 0;
     snd_suspend();
-    if (S.away) ready_home();
-    else release_images();
+    if (S.away) {
+        ready_home();
+    } else {
+        release_images();
+        shelf_load(); /* (hidden, it lets go of the pictures beside the page it comes back to, even on their way) */
+    }
+    perf_memory("hidden");
+}
+
+/* Hidden for a while, not an app just opened and closed again: the render targets go too (~6 MB, what glass
+ * refracts and its blur), and the first frame back makes them again as it draws its backdrops. */
+#define TARGETS_KEPT_MS 30000
+
+void hidden_idle(Uint32 now)
+{
+    static Uint32 kept; /* (the preview's scene of it: HOMEPLUS_TARGETS_KEPT_MS) */
+    if (!kept) kept = getenv("HOMEPLUS_TARGETS_KEPT_MS") ? (Uint32)atoi(getenv("HOMEPLUS_TARGETS_KEPT_MS")) : TARGETS_KEPT_MS;
+    if (!S.offscreen || now - S.hidden_at < kept) return;
+    if (r_targets_release()) perf_memory("hidden a while, render targets let go");
 }
 
 void come_back(void)

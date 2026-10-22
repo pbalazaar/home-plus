@@ -27,6 +27,12 @@ for name in scenes:
         card = img.convert('L').crop((820, 360, 1100, 640)).histogram()
         if sum(card[:80]) / sum(card) < 0.2:
             problems.append(f'{name}: the QR code has no dark modules')
+    if name == 'back-later' and (out / 'native-back-home.png').exists():
+        # its render targets let go while it was away, and made again for the first frame back: the home
+        # screen draws as it does after a moment away (back-home)
+        diff = ImageChops.difference(img, Image.open(out / 'native-back-home.png').convert('RGB')).convert('L').histogram()
+        if sum(diff[17:]) / sum(diff) >= 0.005:
+            problems.append(f'{name}: not as back-home is ({sum(diff[17:]) / sum(diff):.2%} of its pixels differ)')
     if name == 'home':
         home = img
     elif home is not None:

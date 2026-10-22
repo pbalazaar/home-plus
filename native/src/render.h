@@ -34,6 +34,10 @@ void r_translate(float dx, float dy);
 /* RGBA8, straight alpha. */
 Tex *r_tex(const unsigned char *rgba, int w, int h);
 void r_tex_free(Tex **t);
+/* What the textures and the render targets hold (4 bytes a pixel; the driver adds its own), and how
+ * many textures there are. */
+size_t r_texture_bytes(int *count);
+size_t r_target_bytes(void);
 
 /* Textured quad tinted by rgba; radius > 0 rounds its corners. */
 void r_image(const Tex *t, float x, float y, float w, float h, Uint8 r, Uint8 g, Uint8 b, Uint8 a, float radius);
@@ -81,6 +85,10 @@ int r_backdrop_unchanged(int which);
 unsigned r_backdrops_drawn(int which); /* how often each has been drawn */
 /* The backdrop glass and r_backdrop_image use from now on. */
 void r_use_backdrop(int which);
+/* Lets go of the render targets (the backdrops, their blurred copies and the blur's steps) while
+ * nothing is drawn; the next r_backdrop_begin makes them again, and both backdrops are drawn anew.
+ * Returns the bytes let go (0: they were already). */
+size_t r_targets_release(void);
 
 /* The backdrop itself over the whole screen (blurred: the soft copy), e.g. a
  * blurred background behind content that should stand out; dim darkens it as a

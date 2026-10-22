@@ -323,8 +323,9 @@ static Pic page_pic(int item, int rail)
 
 /* What the Top Shelf needs from the service: the carousel of the app it's for, and its pictures. On screen,
  * the selected title's first, then both of its neighbours, loaded ahead so turning or stepping through never
- * waits; and those still on show. The rest are let go (~8 MB each on this GPU), with their requests that
- * haven't started. While hidden, only the page it comes back to (go_offscreen), so that's in when it's back. */
+ * waits; and those still on show. The rest are let go (~8 MB each on this GPU), with their requests, waiting
+ * or on their way. While hidden, only the page it comes back to (go_offscreen), so that's in when it's back:
+ * its neighbours go too. */
 void shelf_load(void)
 {
     int want = want_source();
@@ -351,9 +352,9 @@ void shelf_load(void)
                 net_get_image(it->logo, TAG_RAIL_LOGO, order[k], S.rail_generation, 0, 640, 240, prio);
             }
         }
-        if (S.offscreen) return; /* (release_images() let the rest go) */
         for (int i = 0; i < S.nrail; i++) {
-            if (i == S.rail_index || i == nx || i == pv || i == S.page_rail || i == S.prev_rail || pic_rail(i)) continue;
+            int near = !S.offscreen && (i == nx || i == pv);
+            if (i == S.rail_index || near || i == S.page_rail || i == S.prev_rail || pic_rail(i)) continue;
             RailItem *it = &S.rail[i];
             if (it->bg_state == 1 && net_drop(TAG_RAIL_BG, i, S.rail_generation)) it->bg_state = 0;
             if (it->logo_state == 1 && net_drop(TAG_RAIL_LOGO, i, S.rail_generation)) it->logo_state = 0;

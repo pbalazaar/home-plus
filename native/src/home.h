@@ -366,6 +366,7 @@ typedef struct {
     Uint32 last_input;
     Uint32 drawn_at;                  /* when the last frame was drawn */
     int idle_stage, swallow_up, offscreen, orbit_k; /* offscreen: another app is in front */
+    Uint32 hidden_at;       /* when it went offscreen */
     int settle;             /* back from offscreen: the next frame moves every animation to its end */
     Uint32 back_at;         /* ...and when it came back: the home screen comes into focus from it (BACK_MS) */
     int wl_fd;              /* Wayland socket the idle wait sleeps on, -1 = SDL's own wait */
@@ -704,6 +705,7 @@ int next_wake_ms(void);
 void ready_home(void);
 void go_offscreen(void);
 void come_back(void);
+void hidden_idle(Uint32 now);
 int wake(int key);
 
 /* results.c */
@@ -723,5 +725,6 @@ void perf_end(void);
 void perf_rest(void);
 void perf_window(const SDL_Event *e);
 void perf_back(void);
+void perf_memory(const char *when);
 
 #endif

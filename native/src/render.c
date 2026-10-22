@@ -16,7 +16,8 @@
 #define GL_FUNCS(X)                                                                                         \
     X(ActiveTexture) X(AttachShader) X(BindAttribLocation) X(BindBuffer) X(BindFramebuffer) X(BindTexture)   \
     X(BlendFuncSeparate) X(BufferData) X(CheckFramebufferStatus) X(Clear) X(ClearColor) X(CompileShader)     \
-    X(CreateProgram) X(CreateShader) X(DeleteShader) X(DeleteTextures) X(Disable) X(DrawArrays) X(Enable)     \
+    X(CreateProgram) X(CreateShader) X(DeleteFramebuffers) X(DeleteShader) X(DeleteTextures) X(Disable)       \
+    X(DrawArrays) X(Enable)                                                                                 \
     X(Finish)                                                                                               \
     X(EnableVertexAttribArray) X(FramebufferTexture2D) X(GenBuffers) X(GenFramebuffers) X(GenTextures)       \
     X(GetIntegerv) X(GetProgramInfoLog) X(GetProgramiv) X(GetShaderInfoLog) X(GetShaderiv) X(GetString)     \
@@ -321,6 +322,9 @@ static struct {
     Tex white;          /* 1x1, for untextured image draws */
     Target backdrop[2], soft[2]; /* what glass refracts, and its blurred copy: the Top Shelf's picture; the scene */
     Target d1, d2, d3, u2;       /* the blur's steps */
+    int targets;                 /* they're made (r_targets_release lets them go) */
+    size_t tex_bytes;            /* what the textures hold (r_tex), and how many there are */
+    int textures;
     int drawing, used;           /* the backdrop being drawn; the one glass refracts */
     Uint64 print[2];             /* each backdrop's fingerprint: what was drawn into it */
     int held[2];                 /* (it holds what its fingerprint says) */
@@ -447,6 +451,49 @@ static int target(Target *t, int w, int h)
     return ok;
 }
 
+/* every render target, for making them and letting them go */
+static Target *const ALL_TARGETS[] = { &R.backdrop[0], &R.backdrop[1], &R.soft[0], &R.soft[1], &R.d1, &R.d2, &R.d3, &R.u2 };
+enum { NTARGETS = sizeof ALL_TARGETS / sizeof *ALL_TARGETS };
+
+static void drop_targets(void)
+{
+    gl.BindFramebuffer(GL_FRAMEBUFFER, 0);
+    for (int i = 0; i < NTARGETS; i++) {
+        Target *t = ALL_TARGETS[i];
+        if (t->fbo) gl.DeleteFramebuffers(1, &t->fbo);
+        if (t->tex) gl.DeleteTextures(1, &t->tex);
+        t->fbo = t->tex = 0;
+    }
+    R.targets = 0;
+    R.held[0] = R.held[1] = 0; /* (what they held is gone: both are drawn anew) */
+}
+
+static void bind_target(const Target *t);
+
+/* the backdrops (cleared to black: until drawn, glass shows black through them) and the blur's steps */
+static int make_targets(void)
+{
+    int ok = 1;
+    for (int i = 0; i < 2; i++) {
+        if (!target(&R.backdrop[i], BD_W, BD_H) || !target(&R.soft[i], BD_W / 2, BD_H / 2)) ok = 0;
+        else {
+            bind_target(&R.backdrop[i]);
+            gl.ClearColor(0, 0, 0, 1);
+            gl.Clear(GL_COLOR_BUFFER_BIT);
+        }
+    }
+    ok = ok && target(&R.d1, BD_W / 2, BD_H / 2) && target(&R.d2, BD_W / 4, (BD_H + 3) / 4) &&
+         target(&R.d3, BD_W / 8, (BD_H + 7) / 8) && target(&R.u2, BD_W / 4, (BD_H + 3) / 4);
+    bind_target(NULL);
+    if (!ok) {
+        fprintf(stderr, "homeplus: render targets unavailable\n");
+        drop_targets();
+        return 0;
+    }
+    R.targets = 1;
+    return 1;
+}
+
 static void bind_target(const Target *t)
 {
     if (t) {
@@ -518,21 +565,7 @@ int r_init(SDL_Window *win, int logical_w, int logical_h)
     R.white.id = new_texture(1, 1, white);
     R.white.w = R.white.h = 1;
 
-    for (int i = 0; i < 2; i++) {
-        if (!target(&R.backdrop[i], BD_W, BD_H) || !target(&R.soft[i], BD_W / 2, BD_H / 2)) {
-            fprintf(stderr, "homeplus: render targets unavailable\n");
-            return 0;
-        }
-        bind_target(&R.backdrop[i]);
-        gl.ClearColor(0, 0, 0, 1);
-        gl.Clear(GL_COLOR_BUFFER_BIT);
-    }
-    if (!target(&R.d1, BD_W / 2, BD_H / 2) || !target(&R.d2, BD_W / 4, (BD_H + 3) / 4) ||
-        !target(&R.d3, BD_W / 8, (BD_H + 7) / 8) || !target(&R.u2, BD_W / 4, (BD_H + 3) / 4)) {
-        fprintf(stderr, "homeplus: render targets unavailable\n");
-        return 0;
-    }
-    bind_target(NULL);
+    if (!make_targets()) return 0;
 
     gl.Enable(GL_BLEND);
     gl.BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
@@ -578,6 +611,8 @@ Tex *r_tex(const unsigned char *rgba, int w, int h)
     t->w = w;
     t->h = h;
     t->serial = ++R.serial;
+    R.tex_bytes += (size_t)w * h * 4;
+    R.textures++;
     return t;
 }
 
@@ -585,8 +620,30 @@ void r_tex_free(Tex **t)
 {
     if (!*t) return;
     gl.DeleteTextures(1, &(*t)->id);
+    R.tex_bytes -= (size_t)(*t)->w * (*t)->h * 4;
+    R.textures--;
     free(*t);
     *t = NULL;
+}
+
+size_t r_texture_bytes(int *count)
+{
+    if (count) *count = R.textures;
+    return R.tex_bytes;
+}
+
+size_t r_target_bytes(void)
+{
+    size_t n = 0;
+    for (int i = 0; R.targets && i < NTARGETS; i++) n += (size_t)ALL_TARGETS[i]->w * ALL_TARGETS[i]->h * 4;
+    return n;
+}
+
+size_t r_targets_release(void)
+{
+    size_t n = r_target_bytes();
+    if (R.targets) drop_targets();
+    return n;
 }
 
 /* ------------------------------------------------------------------ drawing */
@@ -726,6 +783,7 @@ unsigned r_backdrops_drawn(int which) { return R.drawn[which]; }
 
 void r_backdrop_begin(int which)
 {
+    if (!R.targets) make_targets(); /* (let go while hidden: made again for the first frame back) */
     R.drawing = which;
     R.drawn[which]++;
     bind_target(&R.backdrop[which]);
