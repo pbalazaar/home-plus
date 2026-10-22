@@ -103,7 +103,7 @@ if (process.env.HOMEPLUS_PREVIEW_MEDIA) {
     if (p === '/Shows/NextUp') return json(res, 200, { Items: JF.slice(2) });
     if (/^\/Items\/[^/]+\/Images\//.test(p)) return image(res, `show${pick(p)}.jpg`, 'image/jpeg');
     // Plex: plex.tv, clients.plex.tv and the server, all here
-    if (p === '/api/v2/pins' && req.method === 'POST') return json(res, 201, { id: 7, code: 'QGVR', qr: `${BASE}/qr.png`, expiresIn: 900 });
+    if (p === '/api/v2/pins' && req.method === 'POST') return json(res, 201, { id: 7, code: 'QGVR', qr: `${BASE}/qr-plex.png`, expiresIn: 900 });
     if (p === '/api/v2/pins/7') return json(res, 200, { authToken: ++polls.plex >= 2 ? 'plex-token' : null });
     if (p === '/api/v2/resources') {
       return json(res, 200, [{ name: 'Media Server', provides: 'server', owned: true, accessToken: 'plex-srv', connections: [{ uri: BASE, local: true }] }]);
@@ -118,6 +118,7 @@ if (process.env.HOMEPLUS_PREVIEW_MEDIA) {
     }
     if (p === '/api/v2/read') return json(res, 200, ++polls.stremio >= 2 ? { result: { authKey: 'preview' } } : { error: { code: 101, message: 'pending' } });
     if (p === '/qr.png') return image(res, 'qr.png', 'image/png');
+    if (p === '/qr-plex.png') return image(res, 'qr-plex.png', 'image/png');
     json(res, 404, {});
   }).listen(PORT, '127.0.0.1');
   process.env.HOMEPLUS_PLEX_TV = process.env.HOMEPLUS_PLEX_CLIENTS = process.env.HOMEPLUS_STREMIO_LINK = BASE;

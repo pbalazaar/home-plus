@@ -45,6 +45,8 @@ for fx, fy in ((0, 0), (N - 7, 0), (0, N - 7)):  # finder patterns
     d.rectangle([(fx + 1) * C, (fy + 1) * C, (fx + 6) * C - 1, (fy + 6) * C - 1], fill=255)
     d.rectangle([(fx + 2) * C, (fy + 2) * C, (fx + 5) * C - 1, (fy + 5) * C - 1], fill=0)
 qr.save(f"{out}/qr.png")
+# plex.tv's is white on transparency instead (for a dark page): the same picture, as Plex sends it
+Image.merge("LA", (Image.new("L", qr.size, 255), qr.point(lambda v: 255 - v))).save(f"{out}/qr-plex.png")
 # Title logos, as TMDB serves them: white lettering on transparency
 logo_font = ImageFont.truetype(sys.argv[2], 92)
 for i, name in enumerate(["NORTHERN LIGHTS", "THE LONG ORBIT", "PAPER MOON"]):

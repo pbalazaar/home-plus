@@ -22,6 +22,11 @@ for name in scenes:
         continue
     if ImageStat.Stat(img.convert('L')).stddev[0] < 8:
         problems.append(f'{name}: blank')
+    if name == 'signin-plex':
+        # the QR code's middle, on its white card: dark modules (Plex sends white ones on transparency)
+        card = img.convert('L').crop((820, 360, 1100, 640)).histogram()
+        if sum(card[:80]) / sum(card) < 0.2:
+            problems.append(f'{name}: the QR code has no dark modules')
     if name == 'home':
         home = img
     elif home is not None:

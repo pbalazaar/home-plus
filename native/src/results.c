@@ -7,6 +7,17 @@
 
 /* ------------------------------------------------------------------ results */
 
+/* A sign-in's QR code goes on a white card, like a printed one. Plex's is white on transparency
+ * (for a dark page), so on the card its modules vanished: a code with see-through parts is ink,
+ * drawn black. An opaque one is printed already, dark on light. */
+static void qr_ink(unsigned char *px, int w, int h)
+{
+    size_t n = (size_t)w * h, clear = 0;
+    for (size_t i = 0; i < n; i++) clear += px[i * 4 + 3] < 128;
+    if (clear < n / 4) return;
+    for (size_t i = 0; i < n; i++) px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = 0;
+}
+
 int handle_result(Result *r)
 {
     switch (r->tag) {
@@ -200,6 +211,7 @@ int handle_result(Result *r)
         break;
     case TAG_QR:
         if (r->generation == S.qr_gen && S.sheet.open && S.sheet_qr_s && r->rgba) {
+            qr_ink(r->rgba, r->w, r->h);
             tex_free(&S.sheet_qr);
             S.sheet_qr = r_tex(r->rgba, r->w, r->h);
         }
