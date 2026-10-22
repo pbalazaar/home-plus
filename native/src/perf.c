@@ -7,7 +7,8 @@
  * screen. With /tmp/homeplus-perf-gpu too (or HOMEPLUS_PERF=gpu) it waits for the GPU after each part of a frame,
  * which slows it down but says what each part costs the GPU (`perf gpu:`). The slowest of the service's
  * answers handled between a run's frames is in its line too, with its tag (home.h's TAG_*), and how many
- * of its frames drew each backdrop (the rest found it unchanged). Each return to the front is a line of its
+ * of its frames drew each backdrop (the rest found it unchanged); what pictures cost since the last rest is
+ * a line of its own (`perf: pictures:`, net.c's counts). Each return to the front is a line of its
  * own (`perf: back:`): when its window events came, when come_back() ran, the first frame, and the first frames
  * with the Top Shelf complete and settled (shelf_complete()), with the first event's time on the wall clock,
  * which the service's log and a script on the TV read too. */
@@ -112,6 +113,10 @@ void perf_check(void)
     int on = env || access("/tmp/homeplus-perf", F_OK) == 0;
     int probe = on && ((env && !strcmp(env, "gpu")) || access("/tmp/homeplus-perf-gpu", F_OK) == 0);
     if (on != P.on || probe != P.probe) P.n = 0;
+    if (on && !P.on) { /* (pictures from before it was on aren't this run's) */
+        NetStats none;
+        net_stats(&none);
+    }
     P.on = on, P.probe = probe;
     if (!P.on || P.tick) return;
     P.tick = 1000.0 / (double)SDL_GetPerformanceFrequency();
@@ -231,9 +236,22 @@ static void stats(float *v, int n, float out[4])
     out[3] = v[n - 1];
 }
 
+/* what pictures cost since the last rest (net.c): a line of its own when any came, or were dropped */
+static void pictures_line(void)
+{
+    NetStats n;
+    net_stats(&n);
+    if (!n.pictures && !n.cancelled && !n.refused && !n.late) return;
+    log_remote("perf: pictures: %d decoded (%d at once at most, the slowest %.0f ms, the most one held %.1f MB), %d dropped "
+               "on their way, %d too big, %d too slow; decoded and waiting %.1f MB at most; the longest wait in the queue: "
+               "a picture %.0f ms, an answer %.0f ms", n.pictures, n.decoding, n.decode_ms, n.decode_peak / 1048576.0,
+               n.cancelled, n.refused, n.late, n.waiting_peak / 1048576.0, n.picture_wait_ms, n.action_wait_ms);
+}
+
 void perf_rest(void)
 {
     if (B.on && wall_ms() - B.event > 5000) back_line();
+    if (P.on) pictures_line();
     if (!P.on || !P.n) {
         perf_check();
         return;

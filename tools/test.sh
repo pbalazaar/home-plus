@@ -1,12 +1,14 @@
 #!/bin/sh
 # Runs Home+'s checks, the same ones CI runs on every pull request.
 #   tools/test.sh            the service's tests: unit tests and its HTTP API (seconds; Node 18+)
+#   tools/test.sh native     the launcher's own tests (native/test/: its requests and pictures), on Linux
+#                            with the preview packages, else in Docker (seconds)
 #   tools/test.sh screens    renders every launcher screen and checks them; they land in build/screens/
 #                            (on Linux with the preview packages, else in Docker; about 2 minutes)
 #   tools/test.sh qml        loads the Control Center's QML (native/qml) and drives it, as LG's
 #                            compositor would (on Linux with the preview packages, else in Docker)
 #   tools/test.sh package    builds the .ipk for the TV and checks it (WEBOS_SDK, else Docker)
-#   tools/test.sh all        all four
+#   tools/test.sh all        all five
 # On Windows, run it in WSL. (In PowerShell, the service's tests are: node --test "test/*.test.js")
 set -eu
 cd "$(dirname "$0")/.."
@@ -14,6 +16,20 @@ cd "$(dirname "$0")/.."
 service() {
   echo "== service tests"
   node --test test/*.test.js
+}
+
+native() {
+  echo "== the launcher's own tests"
+  run='make -s -C native test'
+  if [ "$(uname)" = Linux ] && [ -f /usr/include/SDL2/SDL.h ] && python3 -c 'import PIL' 2>/dev/null; then
+    sh -c "$run"
+  elif command -v docker >/dev/null; then
+    docker build -q -t homeplus-preview tools/native-preview >/dev/null
+    docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src homeplus-preview sh -c "$run"
+  else
+    echo "needs Docker, or Linux with: libsdl2-dev python3-pil" >&2
+    exit 1
+  fi
 }
 
 screens() {
@@ -53,7 +69,7 @@ package() {
 }
 
 case ${1:-service} in # (not "a && b": sh ignores set -e inside functions run that way)
-  service | screens | qml | package) "${1:-service}" ;;
-  all) service; screens; qml; package ;;
-  *) sed -n '2,10p' "$0" >&2; exit 2 ;;
+  service | native | screens | qml | package) "${1:-service}" ;;
+  all) service; native; screens; qml; package ;;
+  *) sed -n '2,12p' "$0" >&2; exit 2 ;;
 esac

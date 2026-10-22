@@ -284,12 +284,7 @@ void run_action(Action act, int arg, const char *id)
     case ACT_CALM: /* covers are made from the icons: fetch them again to remake them */
         S.vivid_covers = !S.vivid_covers;
         net_post("/api/prefs", S.vivid_covers ? "{\"calmColours\":false}" : "{\"calmColours\":true}", 0);
-        for (int i = 0; i < S.napps; i++) {
-            App *ca = &S.apps[i];
-            if (!ca->icon[0]) continue;
-            ca->icon_state = 1;
-            net_get_image(ca->icon, TAG_ICON, i, S.generation, 1, ICON_FIT, ICON_FIT);
-        }
+        request_icons();
         settings_again();
         break;
     case ACT_REDUCE_MOTION:

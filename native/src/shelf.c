@@ -341,13 +341,14 @@ void shelf_load(void)
         if (sel->bg_state == 1) net_bump(TAG_RAIL_BG, S.rail_index, S.rail_generation);
         for (int k = 0; k < n; k++) {
             RailItem *it = &S.rail[order[k]];
+            int prio = k ? PRIO_SOON : PRIO_NOW; /* (the selected title's, then its neighbours') */
             if (it->bg[0] && it->bg_state == 0) {
                 it->bg_state = 1;
-                net_get_image(it->bg, TAG_RAIL_BG, order[k], S.rail_generation, 0, W, H);
+                net_get_image(it->bg, TAG_RAIL_BG, order[k], S.rail_generation, 0, W, H, prio);
             }
             if (it->logo[0] && it->logo_state == 0) {
                 it->logo_state = 1;
-                net_get_image(it->logo, TAG_RAIL_LOGO, order[k], S.rail_generation, 0, 640, 240);
+                net_get_image(it->logo, TAG_RAIL_LOGO, order[k], S.rail_generation, 0, 640, 240, prio);
             }
         }
         if (S.offscreen) return; /* (release_images() let the rest go) */
@@ -366,7 +367,7 @@ void shelf_load(void)
         App *ca = item_app(S.shelf_cur);
         if (ca && ca->art[0] && ca->art_state == 0 && !rail_for(ca) && !carousel_coming(ca)) { /* its own page */
             ca->art_state = 1;
-            net_get_image(ca->art, TAG_ART, S.items[S.shelf_cur], S.generation, 0, W, H);
+            net_get_image(ca->art, TAG_ART, S.items[S.shelf_cur], S.generation, 0, W, H, PRIO_NOW);
         }
     }
 }

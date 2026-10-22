@@ -106,6 +106,8 @@ int parse_apps(const char *json)
     for (int i = 0; i < S.napps; i++) free_app(&S.apps[i]);
     memset(S.apps, 0, sizeof S.apps);
     S.napps = 0;
+    net_drop(TAG_ICON, -1, S.generation); /* the old list's pictures, waiting or on their way: their apps are gone */
+    net_drop(TAG_ART, -1, S.generation);
     S.generation++;
     cJSON_ArrayForEach(v, arr) {
         if (S.napps >= MAX_APPS) break;
@@ -124,15 +126,24 @@ int parse_apps(const char *json)
         App *a = item_app(i);
         if (a && keep[0] && !strcmp(a->id, keep)) S.focus = i;
     }
-    for (int i = 0; i < S.napps; i++) {
-        App *a = &S.apps[i];
-        if (a->icon[0]) {
-            a->icon_state = 1;
-            net_get_image(a->icon, TAG_ICON, i, S.generation, 1, ICON_FIT, ICON_FIT);
-        }
-    }
+    request_icons();
     S.shelf_cur = -1;
     return 1;
+}
+
+/* Every app's icon (its tile's logo and cover are made from it): the rows on screen first, then the
+ * ones next to them, then the rest; apps you've hidden last. */
+void request_icons(void)
+{
+    int asked[MAX_APPS] = { 0 }, row = S.focus / COLS;
+    for (int k = 0; k < S.nitems + S.napps; k++) {
+        int i = k < S.nitems ? S.items[k] : k - S.nitems; /* (in their order on screen, then any left: hidden) */
+        if (i < 0 || asked[i] || !S.apps[i].icon[0]) continue;
+        asked[i] = 1;
+        int d = k < S.nitems ? abs(k / COLS - row) : 99;
+        S.apps[i].icon_state = 1;
+        net_get_image(S.apps[i].icon, TAG_ICON, i, S.generation, 1, ICON_FIT, ICON_FIT, d <= 1 ? PRIO_NOW : d <= 3 ? PRIO_SOON : PRIO_LATER);
+    }
 }
 
 /* Opens an app. params: where in it (its launch parameters, as JSON), or NULL; hint: an

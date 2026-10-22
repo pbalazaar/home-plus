@@ -40,16 +40,18 @@ test.after(async () => {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
 });
 
-/* a picture, as the launcher asks for it: its status, how much of it came, and how long it took */
-function get(p) {
+/* a picture, as the launcher asks for it (of service s): its status, how much of it came, whether all of
+ * it did, and how long it took; given up on after 10 s (status -1) */
+function get(p, s = svc) {
   return new Promise((resolve) => {
     const t = Date.now();
-    let bytes = 0;
-    const done = (status) => resolve({ status, bytes, ms: Date.now() - t });
-    http.get({ host: '127.0.0.1', port: svc.port, path: p, headers: { 'X-Homeplus-Token': svc.token } }, (res) => {
+    let bytes = 0, req = null;
+    const done = (status, whole) => { clearTimeout(limit); resolve({ status, bytes, whole, ms: Date.now() - t }); };
+    const limit = setTimeout(() => { done(-1, false); req.destroy(); }, 10000);
+    req = http.get({ host: '127.0.0.1', port: s.port, path: p, headers: { 'X-Homeplus-Token': s.token } }, (res) => {
       res.on('data', (c) => { bytes += c.length; });
-      for (const e of ['end', 'aborted', 'error', 'close']) res.on(e, () => done(res.statusCode)); /* (cut short: not 'end') */
-    }).on('error', () => done(0));
+      for (const e of ['end', 'aborted', 'error', 'close']) res.on(e, () => done(res.statusCode, res.complete)); /* (cut short: not 'end') */
+    }).on('error', () => done(0, false));
   });
 }
 const kept = (p) => path.join(dir, 'config', 'images', p.slice('/img/'.length));
@@ -75,6 +77,34 @@ test('images: a server that never answers is given up on', async () => {
   const r = await get(pics[2]); /* HOMEPLUS_FETCH_TIMEOUT_MS: 500 ms here (15 s on the TV) */
   assert.equal(r.status, 502);
   assert.ok(r.ms < 2000, `it took ${r.ms} ms`);
+});
+
+test('images: a server that trickles a picture in is given up on at its deadline, and nothing of it is kept', async () => {
+  let hungUp = false;
+  const slow = http.createServer((req, res) => { /* a byte every 50 ms: never quiet for long, never done */
+    res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+    const tick = setInterval(() => res.write('x'), 50);
+    res.on('close', () => { clearInterval(tick); hungUp = true; });
+  });
+  await new Promise((resolve) => slow.listen(0, '127.0.0.1', resolve));
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-images-slow-'));
+  fs.writeFileSync(path.join(d, 'apps.txt'), 'stremio|Stremio');
+  const s = await startService(d, { HOMEPLUS_PREVIEW_ART: `http://127.0.0.1:${slow.address().port}`,
+    HOMEPLUS_FETCH_TIMEOUT_MS: '500', HOMEPLUS_FETCH_DEADLINE_MS: '1000' }); /* (on the TV: 15 s and 30 s) */
+  try {
+    const pic = (await s.call('GET', '/api/continue')).json.items.find((it) => it.id.endsWith('4')).background;
+    const r = await get(pic, s);
+    assert.equal(r.whole, false, 'it was passed on as if whole');
+    assert.ok(r.ms >= 900 && r.ms < 3000, `cut short after ${r.ms} ms (its deadline: 1 s)`);
+    await until(() => hungUp, 3000, 'the picture\'s server to be hung up on');
+    const images = path.join(d, 'config', 'images');
+    await until(() => !fs.existsSync(images) || !fs.readdirSync(images).length, 3000, 'what came of it to go');
+  } finally {
+    await s.stop();
+    slow.closeAllConnections();
+    await new Promise((resolve) => slow.close(resolve));
+    fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+  }
 });
 
 test('images: a redirect to the TV itself is refused', async () => {

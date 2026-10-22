@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <math.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,6 +34,37 @@
 #define MAX_SIDE 8192
 #define MAX_PIXELS (16L << 20)
 #define MAX_TEX 4096
+
+/* Memory: one picture is decoded at a time, and what that holds (its pixels, then its shrunk copy beside
+ * them) is at most DECODE_BUDGET, or it isn't decoded; its file (up to MAX_IMAGE_BODY) and stb's own
+ * scratch come on top. Decoded pictures the main thread hasn't taken yet stay within WAITING_BUDGET:
+ * past it the next waits before it's decoded (one always goes). */
+#define DECODE_BUDGET (64L << 20)
+#define WAITING_BUDGET (16L << 20)
+
+/* Time: a request fails when the service sends nothing for IDLE_MS, or takes longer than its deadline in
+ * all, so a picture trickling in a byte at a time can't keep a worker for good. A picture's is longer than
+ * the service's for its server (30 s, every redirect included), so that's the one that answers first. */
+#define IDLE_MS 20000
+#define DEADLINE_MS 30000
+#define IMAGE_DEADLINE_MS 40000
+
+static int service_port = SERVICE_PORT; /* (tests: HOMEPLUS_PORT, as the service's) */
+static Uint32 deadline_ms = DEADLINE_MS, image_deadline_ms = IMAGE_DEADLINE_MS; /* (tests: HOMEPLUS_NET_DEADLINE_MS) */
+
+typedef struct Job {
+    JobKind kind;
+    int tag, index, generation, sample, fit_w, fit_h, prio;
+    char path[MAX_PATH_LEN];
+    char *post;
+    Uint32 queued_at;
+    int fd;             /* its connection while it downloads, else -1 (under lock) */
+    SDL_atomic_t cancel; /* dropped on its way (net_drop): it stops, and never answers */
+    int late;           /* it went past its deadline */
+    struct Job *next;
+} Job;
+
+static SDL_mutex *lock;
 
 /* ------------------------------------------------------------------ HTTP */
 
@@ -65,23 +97,40 @@ static void current_token(char *out, size_t cap)
     SDL_UnlockMutex(token_lock);
 }
 
-static int http_once(const char *path, const char *post_body, const char *tok, size_t max, char **body, size_t *len)
+/* a job's connection, while it has one: net_drop shuts it down to stop the job (fd -1: it's closed) */
+static void job_fd(Job *j, int fd)
+{
+    if (!j) return;
+    SDL_LockMutex(lock);
+    j->fd = fd;
+    SDL_UnlockMutex(lock);
+}
+
+static void hang_up(Job *j, int fd)
+{
+    job_fd(j, -1);
+    close(fd);
+}
+
+/* j: the job it's for (its deadline, and net_drop can stop it), or NULL */
+static int http_once(const char *path, const char *post_body, const char *tok, size_t max, char **body, size_t *len, Job *j)
 {
     *body = NULL;
     if (len) *len = 0;
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return 0;
-    struct timeval tv = { 20, 0 };
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    struct timeval tv = { IDLE_MS / 1000, 0 };
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
     struct sockaddr_in a = { 0 };
     a.sin_family = AF_INET;
-    a.sin_port = htons(SERVICE_PORT);
+    a.sin_port = htons(service_port);
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    if (connect(fd, (struct sockaddr *)&a, sizeof a) < 0) {
-        close(fd);
+    job_fd(j, fd);
+    if ((j && SDL_AtomicGet(&j->cancel)) || connect(fd, (struct sockaddr *)&a, sizeof a) < 0) {
+        hang_up(j, fd);
         return 0;
     }
+    Uint32 start = SDL_GetTicks(), heard = start, deadline = j && j->kind == JOB_IMAGE ? image_deadline_ms : deadline_ms;
 
     char head[MAX_PATH_LEN + 384];
     size_t blen = post_body ? strlen(post_body) : 0;
@@ -90,8 +139,10 @@ static int http_once(const char *path, const char *post_body, const char *tok, s
                       post_body ? "POST" : "GET", path, tok,
                       post_body ? "Content-Type: application/json\r\n" : "",
                       "Content-Length: ", blen);
-    if (send(fd, head, hn, 0) != hn || (blen && send(fd, post_body, blen, 0) != (ssize_t)blen)) {
-        close(fd);
+    /* (MSG_NOSIGNAL: sending on a connection net_drop shut, or the service closed, fails the request
+     * rather than ending Home+ with a SIGPIPE) */
+    if (send(fd, head, hn, MSG_NOSIGNAL) != hn || (blen && send(fd, post_body, blen, MSG_NOSIGNAL) != (ssize_t)blen)) {
+        hang_up(j, fd);
         return 0;
     }
 
@@ -105,16 +156,31 @@ static int http_once(const char *path, const char *post_body, const char *tok, s
             buf = grown;
             cap = more;
         }
-        if (!buf) { /* more than max, or no memory for it: dropped, and the request fails */
-            close(fd);
+        /* the rest of the answer: by its deadline, and something every IDLE_MS (one poll: nothing wakes it
+         * meanwhile, net_drop included, which shuts the connection) */
+        Uint32 now = SDL_GetTicks();
+        int left = (int)(deadline - (now - start)), quiet = (int)(IDLE_MS - (now - heard));
+        if (!buf || left <= 0 || quiet <= 0) { /* more than max, no memory for it, or too slow: the request fails */
+            if (buf && left <= 0 && j) j->late = 1;
+            free(buf);
+            hang_up(j, fd);
             return 0;
         }
+        struct pollfd p = { fd, POLLIN, 0 };
+        int ready = poll(&p, 1, left < quiet ? left : quiet);
+        if (ready < 0 && errno != EINTR) break;
+        if (ready <= 0) continue;
         ssize_t k = recv(fd, buf + n, cap - n, 0);
         if (k < 0 && errno == EINTR) continue;
         if (k <= 0) break;
         n += k;
+        heard = SDL_GetTicks();
     }
-    close(fd);
+    hang_up(j, fd);
+    if (j && SDL_AtomicGet(&j->cancel)) { /* (shut down: what came of it is no answer) */
+        free(buf);
+        return 0;
+    }
     buf[n] = 0;
 
     int status = 0;
@@ -129,21 +195,26 @@ static int http_once(const char *path, const char *post_body, const char *tok, s
     return status;
 }
 
-int http_request(const char *path, const char *post_body, size_t max, char **body, size_t *len)
+static int http_job(const char *path, const char *post_body, size_t max, char **body, size_t *len, Job *j)
 {
     char tok[128];
     current_token(tok, sizeof tok);
-    int status = http_once(path, post_body, tok, max, body, len);
+    int status = http_once(path, post_body, tok, max, body, len, j);
     if (status == 403) { /* a new token: the service restarted, or our folder was reinstalled */
         free(*body);
         char *st = NULL;
-        http_once("/api/status", NULL, "", MAX_JSON_BODY, &st, NULL); /* makes the service write it again */
+        http_once("/api/status", NULL, "", MAX_JSON_BODY, &st, NULL, NULL); /* makes the service write it again */
         free(st);
         load_token();
         current_token(tok, sizeof tok);
-        status = http_once(path, post_body, tok, max, body, len);
+        status = http_once(path, post_body, tok, max, body, len, j);
     }
     return status;
+}
+
+int http_request(const char *path, const char *post_body, size_t max, char **body, size_t *len)
+{
+    return http_job(path, post_body, max, body, len, NULL);
 }
 
 /* ------------------------------------------------------------------ icon colour */
@@ -260,34 +331,56 @@ static unsigned char *shrink(const unsigned char *px, int w, int h, int nw, int 
 
 /* ------------------------------------------------------------------ job queue */
 
-typedef struct Job {
-    JobKind kind;
-    int tag, index, generation, sample, fit_w, fit_h;
-    char path[MAX_PATH_LEN];
-    char *post;
-    struct Job *next;
-} Job;
-
 typedef struct Done {
     Result r;
     struct Done *next;
 } Done;
 
-static SDL_mutex *lock;
-static SDL_cond *wake;
+static SDL_cond *wake, *taken; /* taken: net_poll took a decoded picture (room for the next) */
+static SDL_mutex *decoder;     /* one picture decoded at a time */
 static Job *jobs_head, *jobs_tail;
+static Job *active[WORKERS];   /* what each worker is doing */
 static Done *done_head, *done_tail;
+static size_t waiting;         /* decoded pictures in the done list, bytes (held, under lock) */
+static int decoding;           /* pictures being decoded now (under lock: one, the decoder sees to it) */
+static NetStats stats;         /* (under lock) */
 static SDL_Thread *threads[WORKERS];
 static int running;
 Uint32 net_event = (Uint32)-1;
 
-/* Queues a job. Pictures wait behind everything else (a slow download shouldn't hold up
- * the service's answers), in the order they were asked for. */
+static int same_picture(const Job *a, const Job *b)
+{
+    return a->kind == JOB_IMAGE && b->kind == JOB_IMAGE && a->tag == b->tag && a->index == b->index && a->generation == b->generation &&
+           a->sample == b->sample && a->fit_w == b->fit_w && a->fit_h == b->fit_h && !strcmp(a->path, b->path);
+}
+
+/* Queues a job. Pictures wait behind everything else (a slow download shouldn't hold up the service's
+ * answers), the ones wanted soonest first, in the order they were asked for. The same picture asked for
+ * again while it waits isn't queued twice: it keeps its place, or goes ahead if it's wanted sooner now. */
 static void push_job(Job *j)
 {
+    j->fd = -1;
+    j->queued_at = SDL_GetTicks();
     SDL_LockMutex(lock);
+    for (Job **p = &jobs_head, *prev = NULL; *p; prev = *p, p = &(*p)->next) {
+        if (!same_picture(*p, j)) continue;
+        Job *had = *p;
+        if (had->prio >= j->prio) { /* (it keeps its place) */
+            SDL_UnlockMutex(lock);
+            free(j->post);
+            free(j);
+            return;
+        }
+        *p = had->next; /* sooner now: queued again, below */
+        if (jobs_tail == had) jobs_tail = prev;
+        j->queued_at = had->queued_at;
+        free(had->post);
+        free(had);
+        break;
+    }
     Job **p = &jobs_head;
-    while (*p && (j->kind == JOB_IMAGE || (*p)->kind != JOB_IMAGE)) p = &(*p)->next;
+    if (j->kind != JOB_IMAGE) while (*p && (*p)->kind != JOB_IMAGE) p = &(*p)->next;
+    else while (*p && ((*p)->kind != JOB_IMAGE || (*p)->prio >= j->prio)) p = &(*p)->next;
     j->next = *p;
     *p = j;
     if (!j->next) jobs_tail = j;
@@ -295,9 +388,11 @@ static void push_job(Job *j)
     SDL_UnlockMutex(lock);
 }
 
-static void push_done(Result *r)
+/* r goes to the main thread (net_poll), which is woken for it; 0: no memory to (it never comes) */
+static int deliver(Result *r)
 {
     Done *d = calloc(1, sizeof *d);
+    if (!d) return 0;
     d->r = *r;
     SDL_LockMutex(lock);
     if (done_tail) done_tail->next = d; else done_head = d;
@@ -307,14 +402,111 @@ static void push_done(Result *r)
     SDL_Event e = { 0 };
     e.type = net_event;
     SDL_PushEvent(&e);
+    return 1;
 }
 
-/* A picture into r->rgba, shrunk to what it's drawn at; left NULL (the picture fails: the glow, or
- * none) when it doesn't decode, or is too big to (MAX_SIDE, MAX_PIXELS). */
-static void decode_image(const Job *j, Result *r, const unsigned char *body, size_t len)
+/* a decoded picture's room among those waiting, given back */
+static void give_back(size_t held)
 {
-    int w, h, n;
-    if (!stbi_info_from_memory(body, (int)len, &w, &h, &n) || w > MAX_SIDE || h > MAX_SIDE || (long)w * h > MAX_PIXELS) return;
+    if (!held) return;
+    SDL_LockMutex(lock);
+    waiting -= held;
+    SDL_CondBroadcast(taken);
+    SDL_UnlockMutex(lock);
+}
+
+/* A worker is done with j: its answer goes to the main thread, unless net_drop dropped it on its way. */
+static void finish(int w, Job *j, Result *r)
+{
+    SDL_LockMutex(lock);
+    active[w] = NULL;
+    int dropped = SDL_AtomicGet(&j->cancel);
+    if (j->kind == JOB_IMAGE) stats.cancelled += dropped, stats.late += j->late;
+    SDL_UnlockMutex(lock);
+    if (dropped || !deliver(r)) {
+        give_back(r->held);
+        r->held = 0;
+        net_result_free(r);
+    }
+}
+
+/* the size a picture is kept at: no larger than it's drawn (just covering fit_w x fit_h), nor than a
+ * texture can be (MAX_TEX a side) */
+static void kept_size(const Job *j, int w, int h, int *kw, int *kh)
+{
+    float s = j->fit_w > 0 ? fmaxf((float)j->fit_w / w, (float)j->fit_h / h) : 1;
+    *kw = w, *kh = h;
+    if (s < 1) {
+        *kw = (int)lroundf(w * s), *kh = (int)lroundf(h * s);
+        if (*kw < j->fit_w) *kw = j->fit_w;
+        if (*kh < j->fit_h) *kh = j->fit_h;
+    }
+    if (*kw > MAX_TEX || *kh > MAX_TEX) {
+        float k = fminf((float)MAX_TEX / *kw, (float)MAX_TEX / *kh);
+        *kw = (int)lroundf(*kw * k), *kh = (int)lroundf(*kh * k);
+        if (*kw < 1) *kw = 1;
+        if (*kh < 1) *kh = 1;
+    }
+}
+
+static void decode_pixels(const Job *j, Result *r, const unsigned char *body, size_t len);
+
+/* A picture into r->rgba, shrunk to what it's drawn at; left NULL (the picture fails: the glow, or
+ * none) when it doesn't decode, is too big to (MAX_SIDE, MAX_PIXELS, DECODE_BUDGET), or is dropped
+ * while it waits for room among the decoded pictures waiting. */
+static void decode_image(Job *j, Result *r, const unsigned char *body, size_t len)
+{
+    int w = 0, h = 0, n, kw, kh;
+    if (!stbi_info_from_memory(body, (int)len, &w, &h, &n)) return; /* (not a picture) */
+    if (w > MAX_SIDE || h > MAX_SIDE || (long)w * h > MAX_PIXELS) {
+        SDL_LockMutex(lock);
+        stats.refused++;
+        SDL_UnlockMutex(lock);
+        return;
+    }
+    kept_size(j, w, h, &kw, &kh);
+    size_t kept = (size_t)kw * kh * 4, need = (size_t)w * h * 4 + (kw != w || kh != h ? kept : 0);
+    SDL_LockMutex(lock);
+    if (need > DECODE_BUDGET) {
+        stats.refused++;
+        SDL_UnlockMutex(lock);
+        return;
+    }
+    while (running && !SDL_AtomicGet(&j->cancel) && waiting && waiting + kept > WAITING_BUDGET) SDL_CondWait(taken, lock);
+    if (!running || SDL_AtomicGet(&j->cancel)) {
+        SDL_UnlockMutex(lock);
+        return;
+    }
+    waiting += kept; /* (held for it now: given back if it fails) */
+    if (waiting > stats.waiting_peak) stats.waiting_peak = waiting;
+    SDL_UnlockMutex(lock);
+
+    SDL_LockMutex(decoder);
+    SDL_LockMutex(lock);
+    if (++decoding > stats.decoding) stats.decoding = decoding;
+    SDL_UnlockMutex(lock);
+    Uint32 t0 = SDL_GetTicks();
+    decode_pixels(j, r, body, len);
+    Uint32 took = SDL_GetTicks() - t0;
+    SDL_LockMutex(lock);
+    decoding--;
+    if (r->rgba) {
+        r->held = kept;
+        stats.pictures++;
+        if (need > stats.decode_peak) stats.decode_peak = need;
+        if (took > stats.decode_ms) stats.decode_ms = (float)took;
+    } else {
+        waiting -= kept;
+        SDL_CondBroadcast(taken);
+    }
+    SDL_UnlockMutex(lock);
+    SDL_UnlockMutex(decoder);
+}
+
+/* (decode_image's work, one picture at a time) */
+static void decode_pixels(const Job *j, Result *r, const unsigned char *body, size_t len)
+{
+    int n;
     r->rgba = stbi_load_from_memory(body, (int)len, &r->w, &r->h, &n, 4);
     if (!r->rgba) return;
     if (j->sample) sample_icon(r->rgba, r->w, r->h, r);
@@ -346,7 +538,8 @@ static void decode_image(const Job *j, Result *r, const unsigned char *body, siz
     }
 }
 
-static void run_job(Job *j)
+/* j's work, its answer into *res */
+static void run_job(Job *j, Result *res)
 {
     Result r = { 0 };
     r.kind = j->kind;
@@ -361,7 +554,7 @@ static void run_job(Job *j)
         if (rc >= 0) {
             r.body = reply ? reply : strdup("");
             r.status = rc == 1 ? 200 : 0;
-            push_done(&r);
+            *res = r;
             return;
         }
         char cmd[MAX_PATH_LEN + 600];
@@ -378,7 +571,7 @@ static void run_job(Job *j)
         luna_diag("luna-send %s -> %.300s", j->path, out);
         r.body = out;
         r.status = strstr(out, "\"returnValue\":true") || strstr(out, "\"returnValue\": true") ? 200 : 0;
-        push_done(&r);
+        *res = r;
         return;
     }
     if (j->kind == JOB_WAKE) {
@@ -386,26 +579,26 @@ static void run_job(Job *j)
         int rc = luna_call("luna://" SERVICE_ID "/ping", "{}", 8000, NULL);
         if (rc < 0) rc = system("luna-send -n 1 -w 5000 luna://" SERVICE_ID "/ping '{}' >/dev/null 2>&1") == 0;
         r.status = rc == 1 ? 200 : 0;
-        push_done(&r);
+        *res = r;
         return;
     }
 
     char *body = NULL;
     size_t len = 0;
     int image = j->kind == JOB_IMAGE;
-    r.status = http_request(j->path, j->kind == JOB_POST ? (j->post ? j->post : "{}") : NULL, image ? MAX_IMAGE_BODY : MAX_JSON_BODY, &body, &len);
+    r.status = http_job(j->path, j->kind == JOB_POST ? (j->post ? j->post : "{}") : NULL, image ? MAX_IMAGE_BODY : MAX_JSON_BODY, &body, &len, j);
     if (image) {
-        if (r.status == 200 && body && len) decode_image(j, &r, (unsigned char *)body, len);
+        if (r.status == 200 && body && len && !SDL_AtomicGet(&j->cancel)) decode_image(j, &r, (unsigned char *)body, len);
         free(body);
     } else {
         r.body = body;
     }
-    push_done(&r);
+    *res = r;
 }
 
 static int worker(void *arg)
 {
-    int actions = arg != NULL; /* pictures wait behind everything else in the queue: one at its head means only pictures */
+    int w = (int)(intptr_t)arg, actions = w == 0; /* pictures wait behind everything else in the queue: one at its head means only pictures */
     for (;;) {
         SDL_LockMutex(lock);
         while (running && (!jobs_head || (actions && jobs_head->kind == JOB_IMAGE))) SDL_CondWait(wake, lock);
@@ -416,8 +609,14 @@ static int worker(void *arg)
         Job *j = jobs_head;
         jobs_head = j->next;
         if (!jobs_head) jobs_tail = NULL;
+        active[w] = j;
+        float waited = (float)(SDL_GetTicks() - j->queued_at);
+        float *most = j->kind == JOB_IMAGE ? &stats.picture_wait_ms : &stats.action_wait_ms;
+        if (waited > *most) *most = waited;
         SDL_UnlockMutex(lock);
-        run_job(j);
+        Result r;
+        run_job(j, &r);
+        finish(w, j, &r);
         free(j->post);
         free(j);
     }
@@ -427,8 +626,13 @@ void net_start(void)
 {
     net_event = SDL_RegisterEvents(1);
     luna_setup();
+    const char *port = getenv("HOMEPLUS_PORT"), *deadline = getenv("HOMEPLUS_NET_DEADLINE_MS");
+    if (port && atoi(port) > 0) service_port = atoi(port);
+    if (deadline && atoi(deadline) > 0) deadline_ms = image_deadline_ms = (Uint32)atoi(deadline);
     lock = SDL_CreateMutex();
+    decoder = SDL_CreateMutex();
     wake = SDL_CreateCond();
+    taken = SDL_CreateCond();
     /* the token sits next to the binary on the TV; HOMEPLUS_TOKEN_FILE for the desktop preview */
     const char *env = getenv("HOMEPLUS_TOKEN_FILE");
     char *base = env ? NULL : SDL_GetBasePath();
@@ -437,7 +641,7 @@ void net_start(void)
     token_lock = SDL_CreateMutex();
     load_token();
     running = 1;
-    for (int i = 0; i < WORKERS; i++) threads[i] = SDL_CreateThread(worker, "homeplus-net", i ? NULL : (void *)1);
+    for (int i = 0; i < WORKERS; i++) threads[i] = SDL_CreateThread(worker, "homeplus-net", (void *)(intptr_t)i);
 }
 
 /* The service's events (the remote's Settings key while Home+ is in front): a request it answers
@@ -453,10 +657,7 @@ static int events_loop(void *arg)
         r.kind = JOB_JSON;
         r.tag = events_tag;
         r.status = http_request("/api/events", NULL, MAX_JSON_BODY, &r.body, NULL);
-        if (r.status == 200 && r.body && strstr(r.body, "\"events\":[\"")) {
-            push_done(&r);
-            continue;
-        }
+        if (r.status == 200 && r.body && strstr(r.body, "\"events\":[\"") && deliver(&r)) continue;
         free(r.body);
         if (r.status != 200) SDL_Delay(2000); /* the service isn't up yet */
     }
@@ -475,6 +676,9 @@ void net_stop(void)
     SDL_LockMutex(lock);
     running = 0;
     SDL_CondBroadcast(wake);
+    SDL_CondBroadcast(taken);
+    for (int i = 0; i < WORKERS; i++)
+        if (active[i] && active[i]->fd >= 0) shutdown(active[i]->fd, SHUT_RDWR); /* (a picture downloading) */
     SDL_UnlockMutex(lock);
     for (int i = 0; i < WORKERS; i++) SDL_WaitThread(threads[i], NULL);
 }
@@ -502,12 +706,13 @@ void net_post(const char *path, const char *body, int tag)
     push_job(j);
 }
 
-void net_get_image(const char *path, int tag, int index, int generation, int sample, int fit_w, int fit_h)
+void net_get_image(const char *path, int tag, int index, int generation, int sample, int fit_w, int fit_h, int prio)
 {
     Job *j = new_job(JOB_IMAGE, path, tag, index, generation);
     j->sample = sample;
     j->fit_w = fit_w;
     j->fit_h = fit_h;
+    j->prio = prio;
     push_job(j);
 }
 
@@ -519,6 +724,7 @@ void net_bump(int tag, int index, int generation)
     for (Job **p = first; *p; prev = *p, p = &(*p)->next) {
         Job *j = *p;
         if (j->kind != JOB_IMAGE || j->tag != tag || j->index != index || j->generation != generation) continue;
+        j->prio = PRIO_NOW; /* (what's asked for now from here on goes after it) */
         if (p != first) {
             *p = j->next;
             if (jobs_tail == j) jobs_tail = prev;
@@ -547,6 +753,17 @@ int net_drop(int tag, int index, int generation)
             p = &j->next;
         }
     }
+    /* ...and on their way: the download stops (its connection shut, so the service sees it go), and what
+     * came of it is never decoded nor answered (finish) */
+    for (int i = 0; i < WORKERS; i++) {
+        Job *j = active[i];
+        if (!j || j->kind != JOB_IMAGE || j->tag != tag || (index >= 0 && j->index != index) || j->generation != generation) continue;
+        if (SDL_AtomicGet(&j->cancel)) continue;
+        SDL_AtomicSet(&j->cancel, 1);
+        if (j->fd >= 0) shutdown(j->fd, SHUT_RDWR);
+        SDL_CondBroadcast(taken); /* (one waiting for room gives up) */
+        n++;
+    }
     SDL_UnlockMutex(lock);
     return n;
 }
@@ -570,10 +787,15 @@ int net_poll(Result *out)
     if (d) {
         done_head = d->next;
         if (!done_head) done_tail = NULL;
+        if (d->r.held) { /* taken: room for the next picture */
+            waiting -= d->r.held;
+            SDL_CondBroadcast(taken);
+        }
     }
     SDL_UnlockMutex(lock);
     if (!d) return 0;
     *out = d->r;
+    out->held = 0;
     free(d);
     return 1;
 }
@@ -584,4 +806,14 @@ void net_result_free(Result *r)
     if (r->rgba) stbi_image_free(r->rgba);
     r->body = NULL;
     r->rgba = NULL;
+}
+
+void net_stats(NetStats *out)
+{
+    memset(out, 0, sizeof *out);
+    if (!lock) return; /* (not started yet) */
+    SDL_LockMutex(lock);
+    *out = stats;
+    memset(&stats, 0, sizeof stats);
+    SDL_UnlockMutex(lock);
 }

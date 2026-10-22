@@ -46,7 +46,7 @@ void on_media_signin(Result *r)
             if (qr[0]) { /* room for it now; the picture follows */
                 S.qr_gen++;
                 S.sheet_qr_s = 360;
-                net_get_image(qr, TAG_QR, 0, S.qr_gen, 0, 0, 0);
+                net_get_image(qr, TAG_QR, 0, S.qr_gen, 0, 0, 0, PRIO_NOW);
             }
             tex_free(&S.sheet_big);
             S.sheet_big = text_render(S.f_bold, 96, jstr(pend, "code"), 0, &S.sheet_big_w, &S.sheet_big_h);
@@ -136,7 +136,7 @@ void on_keys(Result *r)
                "and paste your TMDB key, or Trakt\xE2\x80\x99s Client ID and Secret.");
     S.qr_gen++;
     S.sheet_qr_s = 360;
-    net_get_image("/api/keys/qr", TAG_QR, 0, S.qr_gen, 0, 0, 0);
+    net_get_image("/api/keys/qr", TAG_QR, 0, S.qr_gen, 0, 0, 0, PRIO_NOW);
     sheet_add("Cancel", ACT_UP, 0, 0);
     S.sheet.page = PAGE_KEYS; /* Cancel and Back close the page, and go back to where it was opened */
     S.sheet.parent = parent, S.sheet.parent_index = parent_index;

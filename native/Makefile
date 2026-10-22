@@ -1,6 +1,7 @@
 # Home+ native front end.
 #   make            -> build/host/homeplus   (desktop build, for previews)
 #   make webos      -> build/webos/homeplus  (32-bit ARM, links the TV's SDL2 2.0.14)
+#   make test       -> its own tests, on the desktop (test/; their pictures need python3 with PIL)
 #
 # Compiled against vendored SDL 2.0.14 headers so the binary only uses
 # functions the TV's libSDL2 actually has.
@@ -32,7 +33,15 @@ build/webos/homeplus: $(SRC) src/*.h
 	$(WEBOS_SDK)/bin/arm-webos-linux-gnueabi-strip $@
 	@rm -rf $(@D)/assets && cp -r assets $(@D)/assets
 
+test: build/host/net-test
+	@python3 test/make-fixtures.py build/test
+	build/host/net-test build/test
+
+build/host/net-test: test/net_test.c src/net.c src/luna.c src/*.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -Isrc -o $@ test/net_test.c src/net.c src/luna.c $(HOST_SDL) -lm -lpthread -ldl
+
 clean:
 	rm -rf build
 
-.PHONY: all webos clean
+.PHONY: all webos test clean

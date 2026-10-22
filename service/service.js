@@ -1032,9 +1032,11 @@ let imageDir = '', parts = 0, trimTimer = null;
 
 // They come from Stremio's addons, your Jellyfin and Plex servers and TMDB, and the service runs as
 // root, so it takes only so much: a picture up to 8 MB (TMDB's largest are about 3), from a server
-// that keeps sending (15 s without a byte and it's given up), redirected only to another web server
+// that keeps sending (15 s without a byte and it's given up) and is done within 30 s, its redirects
+// included (one trickling in a byte at a time is given up then), redirected only to another web server
 const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 const IMAGE_TIMEOUT_MS = Number(process.env.HOMEPLUS_FETCH_TIMEOUT_MS) || 15000; /* tests: shorter */
+const IMAGE_DEADLINE_MS = Number(process.env.HOMEPLUS_FETCH_DEADLINE_MS) || 30000; /* (the launcher's for it is 40 s) */
 
 function imageCacheDir() {
   if (!imageDir) {
@@ -1132,7 +1134,7 @@ function lookupOffTV(hostname, opts, cb) {
   });
 }
 
-function fetchRemote(url, res, depth = 0, file = '') {
+function fetchRemote(url, res, depth = 0, file = '', started = Date.now()) {
   let u = depth === 0 ? pictureURL(url, undefined, true) : url;
   if (!u) log('image: a picture from the TV itself, or not from a web server, refused');
   try { u = u && new URL(u); } catch (e) { u = null; }
@@ -1145,7 +1147,7 @@ function fetchRemote(url, res, depth = 0, file = '') {
     if (up.statusCode >= 300 && up.statusCode < 400 && up.headers.location && depth < 4) {
       up.resume();
       const next = pictureURL(up.headers.location, url, false);
-      if (next) return fetchRemote(next, res, depth + 1, file);
+      if (next) return fetchRemote(next, res, depth + 1, file, started);
       log('image: a redirect to the TV itself, or not to a web server, refused');
       res.writeHead(502);
       return res.end();
@@ -1165,7 +1167,11 @@ function fetchRemote(url, res, depth = 0, file = '') {
     if (file) keepImage(up, file);
   });
   req.on('timeout', () => req.destroy(new Error('timed out'))); /* the server stopped sending */
+  /* too long in all: cut short as when it stops sending (a redirect goes on with what's left) */
+  const late = setTimeout(() => req.destroy(new Error('took too long')), Math.max(0, started + IMAGE_DEADLINE_MS - Date.now()));
+  req.on('response', (up) => up.on('close', () => clearTimeout(late)));
   req.on('error', () => {
+    clearTimeout(late);
     if (answered) return;
     answered = true;
     res.writeHead(502);

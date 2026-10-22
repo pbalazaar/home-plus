@@ -110,6 +110,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libsdl2-dev xvfb xauth libgles2 libegl1 libgl1-mesa-dri python3-pil \
             qmlscene qml-module-qtquick2 qml-module-qtgraphicaleffects qml-module-qtmultimedia
+      - name: The launcher's own tests
+        run: tools/test.sh native
       - name: Render and check every screen
         run: tools/test.sh screens
       - name: Load and drive the Control Center's QML
