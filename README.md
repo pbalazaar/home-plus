@@ -1,5 +1,11 @@
 # Home+
 
+[![Latest release](https://img.shields.io/github/v/release/pbalazaar/home-plus)](https://github.com/pbalazaar/home-plus/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/pbalazaar/home-plus/ci.yml?branch=main&label=CI)](https://github.com/pbalazaar/home-plus/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/pbalazaar/home-plus)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/pbalazaar/home-plus/total)](https://github.com/pbalazaar/home-plus/releases)
+[![Platform: rooted LG webOS TVs](https://img.shields.io/badge/platform-rooted%20LG%20webOS%20TVs-blue)](#requirements)
+
 A tvOS-style home screen for rooted LG webOS TVs, in a Liquid Glass look, with Continue Watching from Stremio, Trakt, Jellyfin and Plex.
 
 ![Home+ home screen](docs/screenshots/home.jpg)
