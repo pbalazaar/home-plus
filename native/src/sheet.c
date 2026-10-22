@@ -201,7 +201,7 @@ void draw_sheet(void)
     float gw = S.sheet.fw + (pw - S.sheet.fw) * t, gh = S.sheet.fh + (ph - S.sheet.fh) * t;
     float r0 = fminf(S.sheet.fw, S.sheet.fh) / 2, gr = r0 + (rad - r0) * t;
     if (gw < 1 || gh < 1) return;
-    r_shadow(gx, gy, gw, gh, gr, 60, 24, 0.45f * tc);
+    glass_shadow(gx, gy, gw, gh, gr, 60, 24, 0.45f * tc);
     /* tinted dark like tvOS menus: bright tiles behind it stay quiet under the text */
     Glass g = { gx, gy, gw, gh, gr, 1, tc, -0.6f, -0.8f, 0, 1, SHEET_TINT };
     glass(&g);

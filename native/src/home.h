@@ -516,6 +516,7 @@ void update_clock(void);
 void draw_text(Tex *t, int w, int h, float x, float y, Uint8 a);
 void sway(float *dx, float *dy);
 void glass(const Glass *g);
+void glass_shadow(float x, float y, float w, float h, float radius, float blur, float dy, float alpha);
 void panel(int backdrop, float x, float y, float w, float h, float radius, float legible, float focus, float alpha);
 void ensure_big(App *a);
 void draw_skeleton(float x, float y, float w, float h, float radius, float alpha);

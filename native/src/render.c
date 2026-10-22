@@ -574,15 +574,38 @@ void r_shape(float x, float y, float w, float h, float radius, Uint8 r, Uint8 g,
     quad(&R.shape, x, y, w, h);
 }
 
-void r_shadow(float x, float y, float w, float h, float radius, float blur, float dy, float alpha)
+static void shadow(float x, float y, float w, float h, float radius, float blur, float dy, float alpha, int under)
 {
     if (alpha <= 0 || w <= 0 || h <= 0) return;
     use(&R.shadow);
+    radius = fminf(radius, fminf(w, h) / 2);
     gl.Uniform4f(R.shadow.color, 0, 0, 0, alpha);
     gl.Uniform4f(R.shadow.shape, x, y + dy, w, h);
-    gl.Uniform1f(R.shadow.radius, fminf(radius, fminf(w, h) / 2));
+    gl.Uniform1f(R.shadow.radius, radius);
     gl.Uniform1f(R.shadow.blur, blur);
-    quad(&R.shadow, x - blur * 1.5f, y + dy - blur * 1.5f, w + blur * 3, h + blur * 3);
+    float qx = x - blur * 1.5f, qy = y + dy - blur * 1.5f, qw = w + blur * 3, qh = h + blur * 3;
+    /* what the shape covers: inside its corners' arcs (0.3 r in), on whole pixels, so the four bands
+     * around it meet exactly (no seam, no pixel drawn twice) */
+    float in = radius * 0.3f + 1, hx0 = ceilf(x + in), hy0 = ceilf(y + in), hx1 = floorf(x + w - in), hy1 = floorf(y + h - in);
+    if (!under || hx1 - hx0 < 8 || hy1 - hy0 < 8 || hy0 < qy || hy1 > qy + qh) {
+        quad(&R.shadow, qx, qy, qw, qh);
+        return;
+    }
+    float x0 = floorf(qx), y0 = floorf(qy), x1 = ceilf(qx + qw), y1 = ceilf(qy + qh);
+    quad(&R.shadow, x0, y0, x1 - x0, hy0 - y0);   /* above it, */
+    quad(&R.shadow, x0, hy1, x1 - x0, y1 - hy1);  /* below, */
+    quad(&R.shadow, x0, hy0, hx0 - x0, hy1 - hy0); /* and either side */
+    quad(&R.shadow, hx1, hy0, x1 - hx1, hy1 - hy0);
+}
+
+void r_shadow(float x, float y, float w, float h, float radius, float blur, float dy, float alpha)
+{
+    shadow(x, y, w, h, radius, blur, dy, alpha, 0);
+}
+
+void r_shadow_under(float x, float y, float w, float h, float radius, float blur, float dy, float alpha)
+{
+    shadow(x, y, w, h, radius, blur, dy, alpha, 1);
 }
 
 void r_rim(float x, float y, float w, float h, float radius, float width, Uint8 a, float light_x, float light_y)

@@ -56,6 +56,13 @@ void glass(const Glass *g)
     r_shape(g->x, g->y, g->w, g->h, g->radius, 255, 255, 255, (Uint8)(50 * a), 1.5f, 1, 1); /* a hairline edge */
 }
 
+/* A shadow under glass at full strength: only what shows around it (Reduce Transparency's panel lets a little through) */
+void glass_shadow(float x, float y, float w, float h, float radius, float blur, float dy, float alpha)
+{
+    if (S.reduce_transparency) r_shadow(x, y, w, h, radius, blur, dy, alpha);
+    else r_shadow_under(x, y, w, h, radius, blur, dy, alpha);
+}
+
 void panel(int backdrop, float x, float y, float w, float h, float radius, float legible, float focus, float alpha)
 {
     if (alpha <= 0.004f) return;
@@ -231,7 +238,10 @@ static void draw_tile(int i, int backdrop)
         x += dx * k;
         y += dy * k;
     }
-    if (k > 0.01f && !backdrop) r_shadow(x, y, w, h, rad, 28, 16, 0.5f * k);
+    if (k > 0.01f && !backdrop) { /* an app's face covers its tile: opaque, or glass at full strength */
+        if (a) glass_shadow(x, y, w, h, rad, 28, 16, 0.5f * k);
+        else r_shadow(x, y, w, h, rad, 28, 16, 0.5f * k);
+    }
     if (!a) {
         static Tex *ht;
         static int hw, hh;
@@ -292,7 +302,7 @@ static void draw_scene(int backdrop)
     if (t < 0.999f) {
         float gx = DOCK_X * (1 - t), gy = dock_y * (1 - t), gw = W - 2 * gx, gh = dock_y + DOCK_H + (H - dock_y - DOCK_H) * t - gy;
         float rad = (TILE_R + PAD) * (1 - t), ga = t < 0.75f ? 1 : 1 - (t - 0.75f) / 0.25f;
-        if (!backdrop && t <= 0.004f) r_shadow(gx, gy, gw, gh, rad, 40, 14, 0.3f); /* only at rest: it'd be a big moving blur */
+        if (!backdrop && t <= 0.004f) glass_shadow(gx, gy, gw, gh, rad, 40, 14, 0.3f); /* only at rest: it'd be a big moving blur */
         /* clear while it's the dock (its icons are opaque), frosted as soon as it moves: growing
          * towards the whole screen, the clear glass's sharp, colour-split edge (four texture
          * reads a pixel against one) dropped frames on the TV */
