@@ -34,8 +34,7 @@ A tvOS-style home screen for rooted LG webOS TVs, in a Liquid Glass look, with C
 ## Requirements
 
 - A **rooted** LG TV running webOS, with the **[Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel)** installed.
-- **Compatibility target:** webOS **22–26**. The service supports their Node.js runtimes (including Node 12 on webOS 22/23); automated package checks cover native library imports. These checks don't replace testing the remote, TV controls and the Control Center over other apps on each model and firmware.
-- **Tested on:** LG C3 (OLED), webOS 9.2.1 (webOS 24; firmware 23.20.59). Other recent webOS TVs may well work, but haven't been tried. If you try one, please [send a compatibility report](https://github.com/pbalazaar/home-plus/issues/new?template=compatibility.yml), whether it went well or not.
+- **Tested on:** LG C3 (OLED), webOS 9.2.1 (webOS 24; firmware 23.20.59). Other recent webOS TVs may well work, but haven't been tried. The service also runs on webOS 22 and 23's Node 12 (checked in CI); nothing else has been tried on those TVs. If you try one, please [send a compatibility report](https://github.com/pbalazaar/home-plus/issues/new?template=compatibility.yml), whether it went well or not.
 - **Optional:**
   - for Continue Watching, any of: a [Stremio](https://www.stremio.com) account and the Stremio app; a [Jellyfin](https://jellyfin.org) server and the Jellyfin app; a [Plex](https://www.plex.tv) server and the Plex app;
   - a [Trakt](https://trakt.tv) account;
@@ -282,7 +281,7 @@ Every push is built and tested by GitHub Actions. Pushing a `v*` tag does the sa
 
 ## How Home+ is built and tested
 
-Home+ is designed by its author, who makes every decision about what it does and how it does it. Claude, an AI assistant, helps write its code and its documentation. Device testing uses the author's LG C3 (webOS 9.2.1, firmware 23.20.59); the compatibility target above includes versions that haven't been tried on a TV yet. The launcher is a native app, written in C. On every change CI runs the service's tests against the Node versions in webOS 22–26, drives the Control Center's QML, and builds and checks the package. The launcher's screens are rendered and checked locally.
+Home+ is designed by its author, who makes every decision about what it does and how it does it. Claude, an AI assistant, helps write its code and its documentation. Every commit has been tried on the author's own LG C3 (webOS 9.2.1, firmware 23.20.59). The launcher is a native app, written in C. On every change CI runs the service's tests against the Node versions in webOS 22–26, drives the Control Center's QML, and builds and checks the package. The launcher's screens are rendered and checked locally.
 
 ## How it works
 

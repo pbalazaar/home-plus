@@ -69,11 +69,13 @@ tools/test.sh all           # all four
   - nothing private ships (a local config can hold sign-ins);
   - the launcher is 32-bit ARM and calls only SDL functions the TV has.
 
-CI runs all of it on every pull request:
+CI runs all of it on every pull request, except the screens:
 
 - the service's tests, on Linux with the service on the Node versions in webOS 22–26, and on Windows;
-- the screens, attached to the run as the `screens` artifact;
+- the launcher's own tests (`native/test/`), and the Control Center's QML, loaded and driven;
 - the package.
+
+The screens are rendered on a desktop instead (`tools/test.sh screens`): in CI they took most of the run, and Mesa under Xvfb isn't the TV's GPU.
 
 **A real TV** is the only way to check the luna calls, the remote, how the launcher looks on the panel and how smoothly it runs. If you changed one of those and couldn't try it on a TV, say so in the pull request.
 
