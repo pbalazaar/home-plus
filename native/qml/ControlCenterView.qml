@@ -4,7 +4,8 @@ import QtGraphicalEffects 1.0
 // The Control Center over other apps (opened by ControlCenter.qml): the controls the owner placed,
 // on Home+'s four-unit grid under its clock, drawn as Home+ draws them (cc.c: draw_control_center;
 // draw.c: draw_clock; the same sizes), with tvOS 26's states: what's on has a cyan glyph, a switch that's
-// off sits on a pale disc. The glass is the video behind it, blurred (Glass.qml). They drop in.
+// off sits on a pale disc. The glass is the video behind it, blurred (Glass.qml). It slides in from the
+// screen's right edge, and back out.
 // Editing works as Home+'s: hold OK for Edit Controls; then OK picks one up and puts it down,
 // holding OK gives its sizes and Remove, the + slot adds one, Reset starts over.
 FocusScope {
@@ -50,7 +51,7 @@ FocusScope {
     readonly property int textSecondary: 179
     readonly property int textTertiary: 140
     // how long things take (Home+ moves on springs; these are their nearest steps): a press, a frame
-    // crossfading; focus, fades, moves, lists, sheets, closing; opening; a control settling in its place
+    // crossfading; focus, fades, moves, lists, sheets; the panel going out; the panel coming in
     readonly property int quick: 90
     readonly property int standard: 220
     readonly property int slow: 320
@@ -65,8 +66,27 @@ FocusScope {
     property int listIndex: 0
     property var listItems: []
     property bool closing: false
-    property bool opening: true    // the first drop; controls placed later just appear
+    property bool opening: true    // its first second: controls are put in place, not moved there; ones placed later pop in
     property string problem: ""    // a control that didn't work, or one with no room, says why under the grid
+
+    // Opening, the panel comes in from past the screen's right edge, each row a moment after the one above;
+    // closing, it goes back out there, the bottom row first; with Reduce Motion it fades in and out where it
+    // is (cc.c: cc_in, cc_slide, cc_fade). shown: how far in it is; rowIn(r): row r (the clock is the top
+    // one's, the hints and Reset under the grid the one after the last), which sets off a little after the
+    // one above and gets there with it
+    property real shown: 0
+    function rowIn(r) {
+        var lag = 0.03 * Math.max(0, r);
+        return Math.max(0, Math.min(1, (shown - lag) / (1 - lag)));
+    }
+    function slideX(p, left) { return still ? 0 : (1 - p) * (width + 40 - left); } // right of its place
+    function fadeIn(p) { // coming in from off the screen, it's all there by half way
+        if (still) return p;
+        var t = Math.max(0, Math.min(1, p * 2));
+        return t * t * (3 - 2 * t);
+    }
+    NumberAnimation { id: showIn; target: view; property: "shown"; to: 1; duration: view.still ? view.standard : view.settle; easing.type: Easing.OutCubic }
+    NumberAnimation { id: showOut; target: view; property: "shown"; to: 0; duration: view.still ? view.standard : view.slow; easing.type: Easing.OutCubic }
 
     // editing (cc.c: cc_edit_ok, cc_move_picked, cc_long_press)
     property bool editing: false
@@ -255,6 +275,7 @@ FocusScope {
         if (listOnly) openList(2);
         idle.restart();
         settled.start();
+        showIn.start();
         askFrame();
     }
     Timer { id: settled; interval: 1200; onTriggered: view.opening = false }
@@ -578,7 +599,7 @@ FocusScope {
         }
         var to = nearest(focusCount(), rectOf, focusIndex, dx, dy);
         if (to >= 0) focusIndex = to;
-        else if (dy < 0 && !editing) close(); // up past the top: it goes back into the clock
+        else if (dy < 0 && !editing) close(); // up past the top: it goes
     }
 
     function galleryRect(i) {
@@ -593,16 +614,12 @@ FocusScope {
         closing = true;
         asking.on = false;
         sheet = null;
-        listKind = 0;
         if (picked >= 0) { picked = -1; save(); } // one being moved stays where it is now
-        for (var i = 0; i < tiles.count; i++) {
-            var t = grid.itemAt(i);
-            if (t) t.leave();
-        }
-        clock.leave();
+        showIn.stop();
+        showOut.start(); // (a list on show goes with it, the controls still behind it)
         bye.start();
     }
-    Timer { id: bye; interval: view.slow; onTriggered: view.closed() } // after the closing ones
+    Timer { id: bye; interval: showOut.duration + 40; onTriggered: view.closed() } // once it's out
     Timer { id: idle; interval: 60000; onTriggered: view.close() } // left open, untouched
 
     function back() {
@@ -722,11 +739,9 @@ FocusScope {
     }
     Item {
         id: clock
-        property real drop: 0
         x: 0; y: 0; width: view.width; height: 160
-        opacity: Math.min(1, drop * 2)
-        transform: Translate { y: (1 - clock.drop) * -24 }
-        function leave() { clockOut.start(); }
+        opacity: view.fadeIn(view.shown)
+        transform: Translate { x: view.slideX(view.shown, view.gridX) } // with the panel, as its top row
 
         Text {
             id: time
@@ -764,8 +779,6 @@ FocusScope {
             Image { id: ccGlyph; anchors.centerIn: parent; width: 34; height: 34; source: "glyphs/controls.png"; smooth: true; mipmap: true; visible: false }
             Tint { anchors.fill: ccGlyph; src: ccGlyph; color: view.ink }
         }
-        NumberAnimation on drop { id: clockIn; from: 0; to: 1; duration: view.slow; easing.type: Easing.OutCubic }
-        NumberAnimation { id: clockOut; target: clock; property: "drop"; to: 0; duration: view.standard; easing.type: Easing.InCubic }
     }
 
     // ---- the controls
@@ -781,7 +794,9 @@ FocusScope {
             property bool isPicked: index === view.picked
             property real lit: focused ? 1 : 0 // focused: white
             property real lift: focused ? 1 : 0
-            property real drop: 0                             // 0 above, 1 in place
+            property real pop: 1                              // one placed once it's open pops in (popIn)
+            property real p: view.rowIn(model.row)            // how far in, opening and closing, with its row
+            property real slide: view.slideX(p, view.gridX)   // ...so this far right of its place
             property real shakeX: 0
             property real rad: large ? 40 : height / 2
             property real ink: model.available ? 1 : 0.45    // Not Available: its glyph and words dim
@@ -794,38 +809,25 @@ FocusScope {
             width: model.w * view.unit + (model.w - 1) * view.gap
             height: model.h * view.unit + (model.h - 1) * view.gap
             z: isPicked ? 3 : focused ? 2 : 1
-            opacity: Math.min(1, drop * 2.5) * (view.listKind ? 0 : 1)
-            Behavior on opacity { enabled: tile.drop >= 1; NumberAnimation { duration: view.standard } }
+            opacity: Math.min(1, pop * 2.5) * view.fadeIn(p) * (view.listKind ? 0 : 1)
+            Behavior on opacity { enabled: view.shown >= 1 && tile.pop >= 1; NumberAnimation { duration: view.standard } } // (a list)
             Behavior on lit { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
             Behavior on lift { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
 
             transform: [
                 Scale {
                     origin.x: tile.width / 2; origin.y: tile.height / 2
-                    xScale: (view.still ? 1 : 0.94 + 0.06 * Math.min(1, tile.drop)) * (1 + 0.06 * tile.lift) * (tile.isPicked ? 1.08 : 1)
+                    xScale: (view.still ? 1 : 0.94 + 0.06 * Math.min(1, tile.pop)) * (1 + 0.06 * tile.lift) * (tile.isPicked ? 1.08 : 1)
                     yScale: xScale
                 },
-                Translate { // the drop, a shake, and while editing a wobble (none with Reduce Motion)
-                    x: tile.shakeX + (view.editing && !view.still && !tile.isPicked ? Math.sin(view.wobble * 7 + index * 1.7) * 1.4 : 0)
-                    y: (view.still ? 0 : (1 - tile.drop) * -80) + (view.editing && !view.still && !tile.isPicked ? Math.cos(view.wobble * 9.1 + index * 1.7) * 1.1 : 0)
+                Translate { // in and out with the panel, a shake, and while editing a wobble (none with Reduce Motion)
+                    x: tile.slide + tile.shakeX + (view.editing && !view.still && !tile.isPicked ? Math.sin(view.wobble * 7 + index * 1.7) * 1.4 : 0)
+                    y: view.editing && !view.still && !tile.isPicked ? Math.cos(view.wobble * 9.1 + index * 1.7) * 1.1 : 0
                 }
             ]
 
-            // drops in from the clock, nearest first, settling softly; one added later just appears
-            property int delay: 40 + (model.row + (3 - model.col)) * 28
-            SequentialAnimation {
-                id: dropIn
-                PauseAnimation { duration: tile.delay }
-                NumberAnimation { target: tile; property: "drop"; from: 0; to: 1; duration: view.settle; easing.type: view.still ? Easing.OutCubic : Easing.OutBack; easing.overshoot: 0.9 }
-            }
-            NumberAnimation { id: popIn; target: tile; property: "drop"; from: 0.4; to: 1; duration: view.standard; easing.type: Easing.OutBack }
-            Component.onCompleted: if (view.opening) dropIn.start(); else popIn.start()
-            SequentialAnimation {
-                id: dropOut
-                PauseAnimation { duration: (view.gridRows - 1 - Math.max(0, model.row)) * 12 } // the bottom row first
-                NumberAnimation { target: tile; property: "drop"; to: 0; duration: view.standard; easing.type: Easing.InCubic }
-            }
-            function leave() { dropIn.stop(); popIn.stop(); dropOut.start(); }
+            NumberAnimation { id: popIn; target: tile; property: "pop"; from: 0.4; to: 1; duration: view.standard; easing.type: Easing.OutBack }
+            Component.onCompleted: if (!view.opening) popIn.start()
 
             SequentialAnimation {
                 id: shaking // the TV said no (a shake has its own steps, as the marquee does)
@@ -849,7 +851,7 @@ FocusScope {
                 sourceA: glassA; sourceB: glassB; fade: view.fade
                 live: view.hasFrame
                 solid: view.solid; dim: view.editDim
-                screenX: tile.x
+                screenX: tile.x + tile.slide // (the picture where it is, coming in too)
                 screenY: tile.y
                 visible: tile.lit < 0.99 // under white, nothing to see
             }
@@ -984,11 +986,13 @@ FocusScope {
     Item {
         id: plus
         property bool focused: view.focusIndex === tiles.count && !view.sheet && !view.listKind
-        visible: view.editing && view.plusRow >= 0 && !view.listKind && !view.closing
+        visible: view.editing && view.plusRow >= 0 && !view.listKind
         x: view.gridX + Math.max(0, view.plusCol) * (view.unit + view.gap)
         y: view.gridY + Math.max(0, view.plusRow) * (view.unit + view.gap)
         Behavior on x { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
         Behavior on y { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
+        opacity: view.fadeIn(view.rowIn(view.plusRow))
+        transform: Translate { x: view.slideX(view.rowIn(view.plusRow), view.gridX) } // in and out with its row
         width: view.unit; height: view.unit
         Rectangle {
             anchors.fill: parent
@@ -999,16 +1003,18 @@ FocusScope {
         }
         Image { id: plusGlyph; anchors.centerIn: parent; width: 34; height: 34; source: "glyphs/plus.png"; smooth: true; mipmap: true; visible: false }
         Tint { anchors.fill: plusGlyph; src: plusGlyph; color: plus.focused ? view.ink : "white" }
-        MouseArea { anchors.fill: parent; hoverEnabled: true; enabled: !view.sheet && !view.listKind; onEntered: view.focusIndex = tiles.count; onClicked: { view.focusIndex = tiles.count; view.ok(); } }
+        MouseArea { anchors.fill: parent; hoverEnabled: true; enabled: !view.sheet && !view.listKind && !view.closing; onEntered: view.focusIndex = tiles.count; onClicked: { view.focusIndex = tiles.count; view.ok(); } }
     }
+    // under the grid, the row after the last (rowIn): what OK does, Reset, and what went wrong
+    readonly property real underIn: rowIn(rows)
     Text {
-        visible: view.editing && !view.listKind && !view.closing && view.problem === ""
-        x: view.rightEdge - width
+        visible: view.editing && !view.listKind && view.problem === ""
+        x: view.rightEdge - width + view.slideX(view.underIn, view.gridX)
         y: view.gridY + view.rows * (view.unit + view.gap) + 4
         text: view.picked >= 0 ? "Arrows move it  ·  OK puts it down"
             : view.plusRow < 0 ? "No room  ·  Hold OK on one for options" : "OK picks it up  ·  Hold for options"
         color: "white"
-        opacity: view.textSecondary / 255
+        opacity: view.textSecondary / 255 * view.fadeIn(view.underIn)
         font.family: medium.name
         font.weight: Font.Medium
         font.pixelSize: view.hintPx
@@ -1018,9 +1024,10 @@ FocusScope {
     Item { // Reset: red, like sheets' buttons that can't be undone
         id: reset
         property bool focused: view.focusIndex === tiles.count + 1 && !view.sheet && !view.listKind
-        visible: view.editing && !view.listKind && !view.closing
-        x: view.gridX
+        visible: view.editing && !view.listKind
+        x: view.gridX + view.slideX(view.underIn, view.gridX)
         y: view.gridY + view.rows * (view.unit + view.gap) + 44
+        opacity: view.fadeIn(view.underIn)
         width: view.gridW; height: 64
         Glass {
             anchors.fill: parent
@@ -1039,19 +1046,20 @@ FocusScope {
             font.weight: Font.DemiBold
             font.pixelSize: 24
         }
-        MouseArea { anchors.fill: parent; hoverEnabled: true; enabled: !view.sheet && !view.listKind; onEntered: view.focusIndex = tiles.count + 1; onClicked: { view.focusIndex = tiles.count + 1; view.ok(); } }
+        MouseArea { anchors.fill: parent; hoverEnabled: true; enabled: !view.sheet && !view.listKind && !view.closing; onEntered: view.focusIndex = tiles.count + 1; onClicked: { view.focusIndex = tiles.count + 1; view.ok(); } }
     }
 
     // what went wrong, in the hint's place under the grid, as Home+ says it
     Text {
-        x: view.gridX
+        property real p: view.rowIn(Math.max(view.rows, 1))
+        x: view.gridX + view.slideX(p, view.gridX)
         width: view.gridW
         y: view.gridY + Math.max(view.rows, 1) * (view.unit + view.gap) + 4
         horizontalAlignment: Text.AlignRight
         visible: view.problem !== "" && !view.listKind
         text: view.problem
         color: "white"
-        opacity: view.textStatic / 255
+        opacity: view.textStatic / 255 * view.fadeIn(p)
         font.family: medium.name
         font.weight: Font.Medium
         font.pixelSize: view.hintPx
@@ -1064,18 +1072,18 @@ FocusScope {
 
     Item {
         id: list
-        property real t: (view.listKind === 1 || view.listKind === 2) && !view.closing ? 1 : 0
+        property real t: view.listKind === 1 || view.listKind === 2 ? 1 : 0 // (closing, it goes with the panel)
         Behavior on t { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
         readonly property int rowH: view.listRowH
         readonly property int rowGap: view.listGap
         readonly property int head: view.listHead
         readonly property int shown: Math.min(view.listItems.length, 8)
         readonly property int first: Math.max(0, Math.min(view.listIndex - 4, view.listItems.length - shown))
-        x: view.gridX
+        x: view.gridX + view.slideX(view.shown, view.gridX)
         y: view.gridY - 12 * (1 - t)
         width: view.gridW
         height: head + (shown ? shown * (rowH + rowGap) - rowGap : 40) + 14
-        opacity: t
+        opacity: t * view.fadeIn(view.shown)
         visible: t > 0.01
 
         Glass {
@@ -1134,7 +1142,7 @@ FocusScope {
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
-                    enabled: !view.sheet
+                    enabled: !view.sheet && !view.closing
                     onEntered: view.listIndex = parent.i
                     onClicked: { view.listIndex = parent.i; view.listOk(); }
                 }
@@ -1146,13 +1154,13 @@ FocusScope {
 
     Item {
         id: gal
-        property real t: view.listKind === 3 && !view.closing ? 1 : 0
+        property real t: view.listKind === 3 ? 1 : 0 // (closing, it goes with the panel)
         Behavior on t { NumberAnimation { duration: view.standard; easing.type: Easing.OutCubic } }
-        x: view.rightEdge - view.galW
+        x: view.rightEdge - view.galW + view.slideX(view.shown, view.rightEdge - view.galW)
         y: view.gridY - 12 * (1 - t)
         width: view.galW
         height: view.galleryH
-        opacity: t
+        opacity: t * view.fadeIn(view.shown)
         visible: t > 0.01
 
         Glass {
@@ -1231,7 +1239,7 @@ FocusScope {
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
-                    enabled: !view.sheet
+                    enabled: !view.sheet && !view.closing
                     onEntered: view.listIndex = index
                     onClicked: { view.listIndex = index; view.galleryOk(); }
                 }

@@ -146,6 +146,22 @@ void parse_system(const char *json)
 float cc_grid_x(void) { return RIGHT - 4 * CC_U - 3 * CC_G; } /* its right edge: the clock's */
 float cc_grid_y(void) { return TOP_Y + BAR + 26; }
 
+/* Opening, the Control Center comes in from past the screen's right edge as one panel, each row a moment after
+ * the one above; closing, it goes back out there, the bottom row first. With Reduce Motion it fades in and out
+ * where it is. How far in row r is, 0..1 (under the grid, the hints and Reset are the row after the last): a row
+ * sets off a little after the one above and gets there with it, so none stops short. */
+static float cc_in(int r)
+{
+    float open = fminf(fmaxf(S.cc.t, 0), 1), lag = 0.03f * (r > 0 ? r : 0);
+    return fminf(fmaxf((open - lag) / (1 - lag), 0), 1);
+}
+
+/* how far right of its place the Control Center draws something whose left edge is `left`, `in` of the way in */
+float cc_slide(float in, float left) { return S.reduce_motion ? 0 : (1 - in) * (W + 40 - left); }
+
+/* ...and how strongly: coming in from off the screen, it's all there by half way */
+static float cc_fade(float in) { return S.reduce_motion ? in : smooth01(0, 0.5f, in); }
+
 /* Places the controls in order on the four-unit grid, each in the first space it fits (reading
  * order), in the rows that fit under the clock; the + slot (while editing) takes the first free
  * unit after the last of them. */
@@ -517,7 +533,6 @@ void draw_control_center(void)
     S.cc.marquee = 0;
     if (S.cc.t < 0.004f) return;
     float open = fminf(fmaxf(S.cc.t, 0), 1), lt = fminf(fmaxf(S.cc.list_t, 0), 1);
-    float stagger = S.cc.n > 1 ? fminf(0.04f, 0.45f / (S.cc.n - 1)) : 0, span = 1 - stagger * (S.cc.n > 1 ? S.cc.n - 1 : 0);
     Uint32 now = SDL_GetTicks();
     float dim = cc_dim(); /* (also behind the gallery: still editing) */
     if (dim > 0.002f) r_fill(0, 0, 0, (Uint8)(255 * dim)); /* editing, or a row over the dock: the home screen steps back */
@@ -525,16 +540,11 @@ void draw_control_center(void)
         CCItem *c = &S.cc.it[i];
         float x, y, w, h;
         if (!cc_rect(i, &x, &y, &w, &h)) continue; /* no room for it */
-        float ti = (open - stagger * i) / span;
-        ti = (ti < 0 ? 0 : ti > 1 ? 1 : ti) * (1 - lt); /* out of the clock one after another; a list takes their place */
+        float in = cc_in(c->row), ti = cc_fade(in) * (1 - lt); /* a list takes their place */
         if (ti <= 0.004f) continue;
         float k = c->s, g = fminf(fmaxf(k, 0), 1);
-        float sc = (S.reduce_motion ? 1 : 0.86f + 0.14f * ti) * (1 + 0.06f * k) * (i == S.cc.picked ? 1.08f : 1);
-        float cx = x + w / 2, cy = y + h / 2;
-        if (!S.reduce_motion) { /* out of the clock: up and to the right while they grow */
-            cx += (1 - ti) * (RIGHT - 60 - cx) * 0.25f;
-            cy += (1 - ti) * (TOP_Y + BAR / 2.0f - cy) * 0.25f;
-        }
+        float sc = (1 + 0.06f * k) * (i == S.cc.picked ? 1.08f : 1);
+        float cx = x + w / 2 + cc_slide(in, cc_grid_x()), cy = y + h / 2;
         if (k > 0.01f) {
             float dx, dy;
             sway(&dx, &dy);
@@ -587,9 +597,10 @@ void draw_control_center(void)
         }
     }
     if (S.cc.editing && lt < 0.99f) {
-        float x, y, w, h, a = open * (1 - lt);
+        float x, y, w, h, in = cc_in(S.cc.plus_row), a = cc_fade(in) * (1 - lt);
         if (cc_rect(S.cc.n, &x, &y, &w, &h)) { /* the + slot: a ring with a plus */
             float g = fminf(fmaxf(S.cc.plus_s, 0), 1);
+            x += cc_slide(in, cc_grid_x());
             r_shape(x, y, w, h, h / 2, 255, 255, 255, (Uint8)(110 * a * (1 - g)), 2.0f, 1, 1);
             if (g > 0.01f) r_shape(x, y, w, h, h / 2, 245, 245, 247, (Uint8)(255 * a * g), 0, 1, 1);
             Uint8 col = (Uint8)(255 - 227 * g);
@@ -604,10 +615,13 @@ void draw_control_center(void)
         Tex *ht = S.cc.picked >= 0 ? S.cc.move_hint : S.cc.plus_row < 0 ? S.cc.no_room : S.cc.edit_hint;
         int hw = ht == S.cc.move_hint ? S.cc.mhw : ht == S.cc.no_room ? S.cc.nrw : S.cc.ehw;
         int hh = ht == S.cc.move_hint ? S.cc.mhh : ht == S.cc.no_room ? S.cc.nrh : S.cc.ehh;
-        if (!S.cc.problem) draw_text(ht, hw, hh, RIGHT - hw, cc_grid_y() + cc_rows() * (CC_U + CC_G) + 4, (Uint8)(TEXT_SECONDARY * a));
+        in = cc_in(cc_rows()), a = cc_fade(in) * (1 - lt); /* under the grid: what OK does, and Reset */
+        float dx = cc_slide(in, cc_grid_x());
+        if (!S.cc.problem) draw_text(ht, hw, hh, RIGHT - hw + dx, cc_grid_y() + cc_rows() * (CC_U + CC_G) + 4, (Uint8)(TEXT_SECONDARY * a));
         if (cc_rect(S.cc.n + 1, &x, &y, &w, &h)) { /* Reset: red, like sheets' destructive buttons */
             static const Uint8 G[3] = { RED_ON_GLASS }, F[3] = { RED_ON_WHITE };
             float g = fminf(fmaxf(S.cc.reset_s, 0), 1);
+            x += dx;
             panel(0, x, y, w, h, h / 2, 1, g, a);
             if (g > 0.01f) r_shape(x, y, w, h, h / 2, 245, 245, 247, (Uint8)(255 * a * g), 0, 1, 1);
             r_image(S.cc.reset, x + (w - S.cc.rsw) / 2, y + (h - S.cc.rsh) / 2, S.cc.rsw, S.cc.rsh, (Uint8)(G[0] + (F[0] - G[0]) * g),
@@ -616,11 +630,13 @@ void draw_control_center(void)
     }
     if (S.cc.problem && lt < 0.99f) { /* what went wrong, in the hint's place under the grid */
         int rows = cc_rows() > 1 ? cc_rows() : 1;
-        draw_text(S.cc.problem, S.cc.prw, S.cc.prh, RIGHT - S.cc.prw, cc_grid_y() + rows * (CC_U + CC_G) + 4, (Uint8)(TEXT_STATIC * open * (1 - lt)));
+        float in = cc_in(rows);
+        draw_text(S.cc.problem, S.cc.prw, S.cc.prh, RIGHT - S.cc.prw + cc_slide(in, cc_grid_x()), cc_grid_y() + rows * (CC_U + CC_G) + 4,
+                  (Uint8)(TEXT_STATIC * cc_fade(in) * (1 - lt)));
     }
-    if (lt > 0.004f) {
-        if (S.cc.list_kind == 3) draw_cc_gallery(lt * open);
-        else draw_cc_list(lt * open);
+    if (lt > 0.004f) { /* (a list, or the gallery, comes and goes with the panel too) */
+        if (S.cc.list_kind == 3) draw_cc_gallery(lt * cc_fade(open), open);
+        else draw_cc_list(lt * cc_fade(open), open);
     }
 }
 

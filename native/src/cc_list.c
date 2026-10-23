@@ -157,10 +157,11 @@ void cc_list_ok(void)
 }
 
 /* A list control's list, in the Control Center's place: its name, then the choices (the one on
- * ticked; inputs with nothing behind them say so) */
-void draw_cc_list(float a)
+ * ticked; inputs with nothing behind them say so). in: how far in the panel is (cc_slide) */
+void draw_cc_list(float a, float in)
 {
     float x = cc_grid_x(), y = cc_grid_y(), w = 4 * CC_U + 3 * CC_G;
+    x += cc_slide(in, x);
     int rows = S.cc.list_n < CC_LIST_ROWS ? S.cc.list_n : CC_LIST_ROWS;
     const float rh = CC_LIST_ROW_H, gap = CC_LIST_GAP, head = CC_LIST_HEAD;
     float h = head + (rows ? rows * (rh + gap) - gap : 40) + 14;
@@ -185,9 +186,10 @@ void draw_cc_list(float a)
 
 /* The gallery, in the Control Center's place: its name, each group's name, and the controls on offer
  * as round buttons with their names under them; the focused one white, like the controls themselves */
-void draw_cc_gallery(float a)
+void draw_cc_gallery(float a, float in)
 {
     float x = RIGHT - GAL_W, y = cc_grid_y(), w = GAL_W, h = S.cc.gal_h;
+    x += cc_slide(in, x);
     if (!S.reduce_motion) y -= 12 * (1 - a); /* it settles in */
     r_shadow(x, y, w, h, 34, 30, 12, 0.35f * a);
     panel(0, x, y, w, h, 34, 1, 0, a);

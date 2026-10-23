@@ -359,9 +359,6 @@ static void draw_scene(int backdrop)
     }
 }
 
-/* The Control Center: tvOS's glass tiles under the clock, growing out of it one after
- * another; the focused one turns white, like every focused button. Round buttons have
- * only their icon: the focused one's name shows under the grid. */
 /* Text in a room it may not fit, like tvOS's: what doesn't fit fades out at the room's edge,
  * and from `since` (0: never) it waits 2 s, then slides left to show the rest, a gap, then
  * the start again. Sets S.cc.marquee while it moves. */

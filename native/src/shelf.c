@@ -453,7 +453,9 @@ static void draw_app_bigtile(App *a, Uint8 alpha, int backdrop)
     /* it leaves with the shelf's content, so it never ghosts behind the grid */
     float leave = fmaxf(0, 1 - 2.5f * S.scrolled);
     if (leave <= 0) return;
-    float tw = 520, th = tw * TILE_H / TILE_W, cc = 1 - fminf(fmaxf(S.cc.t, 0), 1); /* it steps aside for the Control Center */
+    /* it steps aside for the Control Center: gone before the panel, coming in from the right, is over it, and back
+     * only once the panel is mostly out again (they'd show through each other) */
+    float tw = 520, th = tw * TILE_H / TILE_W, cc = 1 - smooth01(0, 0.5f, S.cc.t);
     if (cc <= 0.004f) return;
     draw_big_tile(a, RIGHT - tw, SAFE_Y + 120, tw, th, TILE_R * tw / TILE_W, (Uint8)(alpha * leave * cc), 1, backdrop, 0);
 }

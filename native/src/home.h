@@ -582,6 +582,7 @@ void parse_control(const char *json);
 void parse_system(const char *json);
 float cc_grid_x(void);
 float cc_grid_y(void);
+float cc_slide(float in, float left);
 void cc_pack(void);
 int cc_placed(void);
 int cc_fit(int i, const char *sizes, int need);
@@ -608,8 +609,8 @@ void cc_list_texts(void);
 void cc_list_open(int which);
 void cc_list_key(SDL_Keycode k);
 void cc_list_ok(void);
-void draw_cc_list(float a);
-void draw_cc_gallery(float a);
+void draw_cc_list(float a, float in);
+void draw_cc_gallery(float a, float in);
 
 /* shelf.c */
 void pic_hold(Pic *p, Tex **tex);

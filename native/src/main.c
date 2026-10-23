@@ -96,7 +96,8 @@ int update(float dt)
         int f = S.zone == ZONE_TOP && S.top_index == i && !S.cc.open; /* open, focus is in the Control Center */
         spring(&S.top_s[i], &S.top_v[i], f ? on : 0.0f, f ? resp : 0.35f, f ? damp : 0.7f, dt, &anim);
     }
-    spring(&S.cc.t, &S.cc.tv, S.cc.open ? 1.0f : 0.0f, S.reduce_motion ? 0.15f : 0.32f, 0.9f, dt, &anim);
+    /* the Control Center slides in and settles without a bounce, and goes back out quicker (cc.c: cc_in) */
+    spring(&S.cc.t, &S.cc.tv, S.cc.open ? 1.0f : 0.0f, S.reduce_motion ? 0.15f : S.cc.open ? 0.42f : 0.3f, 1.0f, dt, &anim);
     if (S.cc.marquee && S.cc.open) anim = 1; /* a long name is scrolling */
     Uint32 tick = SDL_GetTicks();
     for (int i = 0; i < S.cc.n; i++) {
