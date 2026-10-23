@@ -403,6 +403,7 @@ int pointer_at(int mx, int my, int apply)
         for (int i = 0; i < S.cc.n + (S.cc.editing ? 2 : 0) && !S.cc.list && S.cc.picked < 0; i++) {
             float x, y, w, h;
             if (!cc_rect(i, &x, &y, &w, &h)) continue;
+            x += cc_shift(i); /* (opening, it's still on its way: where it's drawn) */
             if (mx >= x && mx < x + w && my >= y && my < y + h) {
                 if (apply && S.cc.index != i) S.cc.index = i, cc_problem(NULL);
                 return 1;

@@ -587,6 +587,7 @@ void cc_pack(void);
 int cc_placed(void);
 int cc_fit(int i, const char *sizes, int need);
 int cc_rect(int i, float *x, float *y, float *w, float *h);
+float cc_shift(int i);
 int cc_find(const char *id);
 void cc_problem(const char *text);
 void cc_post(const char *body);

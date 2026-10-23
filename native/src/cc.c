@@ -254,6 +254,14 @@ int cc_rect(int i, float *x, float *y, float *w, float *h)
     return 1;
 }
 
+/* ...and how far right of that it's drawn while the panel comes in (cc_in): the pointer finds it there, not in
+ * the place it's on its way to */
+float cc_shift(int i)
+{
+    int r = i >= 0 && i < S.cc.n ? S.cc.it[i].row : i == S.cc.n ? S.cc.plus_row : cc_rows();
+    return cc_slide(cc_in(r), cc_grid_x());
+}
+
 int cc_find(const char *id)
 {
     for (int i = 0; i < S.cc.n; i++)
