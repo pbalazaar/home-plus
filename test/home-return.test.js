@@ -60,7 +60,9 @@ describe('getting back to Home+', { concurrency: true }, () => {
     try {
       await until(() => t.launches().length, 4000, 'Home+ launched');
       const ms = t.launches()[0].t - t.said('getForegroundAppInfo', '').t;
-      assert.ok(ms >= 50 && ms < 300, `launched ${ms} ms after the app quit (50 ms for another app to say it's coming)`);
+      /* (45: the service's 50 ms timer can read a millisecond or two short here, as Node times it on libuv's
+       * clock, not Date.now()'s; CI saw 49) */
+      assert.ok(ms >= 45 && ms < 300, `launched ${ms} ms after the app quit (50 ms for another app to say it's coming)`);
       assert.match(t.log(), /home takeover \(netflix quit\) -> com\.github\.pbalazaar\.homeplus ok/);
     } finally {
       await t.stop();
@@ -72,7 +74,7 @@ describe('getting back to Home+', { concurrency: true }, () => {
     try {
       await until(() => t.launches().length, 4000, 'Home+ launched');
       const ms = t.launches()[0].t - t.said('getAppLifeEvents', 'netflix').t;
-      assert.ok(ms >= 50 && ms < 300, `launched ${ms} ms after SAM said the app closed`);
+      assert.ok(ms >= 45 && ms < 300, `launched ${ms} ms after SAM said the app closed`); /* (45: as above) */
     } finally {
       await t.stop();
     }
