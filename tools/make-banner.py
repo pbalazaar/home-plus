@@ -1,27 +1,23 @@
 #!/usr/bin/env python3
-"""Draws the README's banner and GitHub's social preview: a label, the name and a line about Home+ over a
-dark ground, and a screenshot from the TV in a TV's frame, in the picture's light. Writes docs/banner.jpg
-(2400 x 1520, the TV whole) and docs/social-preview.jpg (1280 x 640, the TV running off the bottom: the
-picture a link to the repo shows, set in the repo's Settings -> Social preview).
+"""Draws the README's banner and GitHub's social preview: a screenshot from the TV in a TV's frame, most of
+the picture, on a dark ground in the screenshot's light. Writes docs/banner.jpg (2400 x 1660, Home+'s name
+over the TV) and docs/social-preview.jpg (1280 x 640, the TV alone: the picture a link to the repo shows,
+set in the repo's Settings -> Social preview).
 Needs Pillow:  python3 tools/make-banner.py   (or in the preview container)
 """
 import os
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-SHOT = os.path.join(ROOT, 'docs/screenshots/continue-watching.jpg')
+SHOT = os.path.join(ROOT, 'docs/screenshots/home-clear.jpg')
 FONTS = os.path.join(ROOT, 'native/assets/fonts')
 
 LABEL = 'A HOME SCREEN FOR ROOTED LG TVS'
 NAME = 'Home+'
-LINES = ['Your apps, what you’re watching in Stremio,',
-         'Jellyfin and Plex, and the TV’s own controls,',
-         'in a Liquid Glass look.']
 
 GROUND = (11, 12, 15)
 BLUE = (138, 176, 255)  # the icon's, lighter on the dark ground
 WHITE = (245, 245, 247)
-GREY = (160, 163, 170)
 
 
 def font(name, px):
@@ -42,19 +38,21 @@ def light(size, box, colour, alpha, r):
     return im.filter(ImageFilter.GaussianBlur(r))
 
 
-def banner(w, h, k=2):
-    """w x h, laid out by the width (drawn k times the size, then scaled down: smooth edges). A banner too
-    short for the whole TV crops it at the bottom."""
+def banner(w, h, tv, top=None, words=False, k=2):
+    """w x h, laid out by the width: the TV tv thousandths of it wide, its top `top` thousandths of it down
+    (None: in the middle), and with words the label and the name above it. Drawn k times the size, then
+    scaled down: smooth edges."""
     W, H, u = w * k, h * k, w * k / 1000
     im = Image.new('RGBA', (W, H), GROUND + (255,))
     shot = Image.open(SHOT).convert('RGB')
 
-    # the TV: a 16:9 screen in a thin frame, centred, 0.6875 of the width
-    tw, bezel, r = round(687.5 * u), round(8.5 * u), round(9 * u)
+    # the TV: a 16:9 screen in a thin frame, centred
+    tw = round(tv * u)
+    bezel, r = round(0.012 * tw), round(0.013 * tw)
     sw = tw - 2 * bezel
     sh = round(sw * 9 / 16)
     th = sh + 2 * bezel
-    tx, ty = (W - tw) // 2, round(176 * u)
+    tx, ty = (W - tw) // 2, (H - th) // 2 if top is None else round(top * u)
 
     # around it the picture's own colour, as the light of a TV with ambient LEDs; a cooler light at the top
     # right; its shadow
@@ -74,16 +72,15 @@ def banner(w, h, k=2):
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, sw - 1, sh - 1), round(2.5 * u), fill=255)
     im.paste(shot.resize((sw, sh), Image.LANCZOS), (tx + bezel, ty + bezel), mask)
 
-    # the label and the name on the left; the line on the right, its last line level with the name
-    left, right = 56 * u, W - 56 * u
-    lf, nf, tf = font('SemiBold', 9.8 * u), font('Bold', 50 * u), font('Medium', 13 * u)
-    spaced(d, left, 69.5 * u, LABEL, lf, BLUE, 0.2 * lf.size)
-    d.text((left - 0.03 * nf.size, 122.5 * u), NAME, font=nf, fill=WHITE, anchor='ls')
-    for i, line in enumerate(LINES):
-        d.text((right, 126.5 * u - (len(LINES) - 1 - i) * 1.6 * tf.size), line, font=tf, fill=GREY, anchor='rs')
+    if words:  # the label and the name above it, in line with its left edge
+        lf, nf = font('SemiBold', 9.8 * u), font('Bold', 44 * u)
+        spaced(d, tx, 76.5 * u, LABEL, lf, BLUE, 0.2 * lf.size)
+        d.text((tx - 0.03 * nf.size, 118.5 * u), NAME, font=nf, fill=WHITE, anchor='ls')
     return im.resize((w, h), Image.LANCZOS).convert('RGB')
 
 
 if __name__ == '__main__':
-    banner(2400, 1520).save(os.path.join(ROOT, 'docs/banner.jpg'), quality=88, optimize=True, progressive=True)
-    banner(1280, 640).save(os.path.join(ROOT, 'docs/social-preview.jpg'), quality=90, optimize=True, progressive=True)
+    banner(2400, 1660, 880, 139, words=True).save(os.path.join(ROOT, 'docs/banner.jpg'), quality=88, optimize=True, progressive=True)
+    # GitHub's repo card shows the picture's middle three quarters (its top and bottom cut off), and the repo's
+    # name under it: no words, and the whole screen, from its top bar to the dock, inside that band
+    banner(1280, 640, 720).save(os.path.join(ROOT, 'docs/social-preview.jpg'), quality=90, optimize=True, progressive=True)

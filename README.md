@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.jpg" alt="Home+ on an LG TV: Stremio's Continue Watching in the Top Shelf, over the dock of apps" width="100%">
+  <img src="docs/banner.jpg" alt="Home+ on an LG TV: what's popular on Prime Video in the Top Shelf, over the dock's apps as clear glass tiles" width="100%">
 </p>
 
 # Home+

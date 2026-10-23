@@ -128,8 +128,9 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
 - Docker on a Mac can see a file before it's fully written: if a build reports
   "expected ... at end of input", just run it again.
 - The README's banner and GitHub's social preview (the picture a link to the repo shows): `tools/make-banner.py`
-  → `docs/banner.jpg` and `docs/social-preview.jpg`, from `docs/screenshots/continue-watching.jpg`. The social
-  preview is uploaded by hand on GitHub (Settings → General → Social preview).
+  → `docs/banner.jpg` and `docs/social-preview.jpg`, from `docs/screenshots/home-clear.jpg` (the desktop preview
+  fed by the TV's own service through a read-only proxy, App Tiles on Clear). The social preview is uploaded by
+  hand on GitHub (Settings → General → Social preview); GitHub's repo card shows only its middle three quarters.
 
 ## Installing on the TV
 Copy the `.ipk`s to `/tmp` on the TV, then for each:
