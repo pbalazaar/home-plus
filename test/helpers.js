@@ -12,7 +12,8 @@ const ROOT = path.join(__dirname, '..');
 
 /* A local HTTP server standing in for an online service. route(req, url, body) returns
  * { status, json } or { status, body, type } (either with headers too), { hang: true } to never
- * answer, or nothing for a 404. Every request is recorded in .hits. */
+ * answer, { cut: text } to send only text of a longer reply and then hang up, or nothing for a 404.
+ * Every request is recorded in .hits. */
 async function mockServer(route) {
   const hits = [];
   const server = http.createServer((req, res) => {
@@ -23,6 +24,12 @@ async function mockServer(route) {
       hits.push({ method: req.method, path: url.pathname, query: url.searchParams, headers: req.headers, body });
       const r = (await route(req, url, body)) || { status: 404, json: {} };
       if (r.hang) return;
+      if (r.cut !== undefined) { /* it says 100 bytes more are coming, and closes the connection instead */
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(r.cut) + 100 });
+        res.write(r.cut);
+        setTimeout(() => res.destroy(), 50);
+        return;
+      }
       res.writeHead(r.status || 200, Object.assign({ 'Content-Type': r.type || 'application/json' }, r.headers));
       res.end(r.json !== undefined ? JSON.stringify(r.json) : r.body || '');
     });

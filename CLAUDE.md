@@ -120,8 +120,9 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   `HOMEPLUS_LOG` and `HOMEPLUS_RECENTS_FILE` move its files in /tmp (opened only as its own, never
   through a link: `service/tmp.js`); `HOMEPLUS_FETCH_TIMEOUT_MS` and `HOMEPLUS_LUNA_TIMEOUT_MS` shorten
   the image proxy's and luna calls' 15 s. The harness's `HOMEPLUS_PREVIEW_ART` serves the mock Stremio
-  titles' pictures from a test's server, `HOMEPLUS_PREVIEW_LUNA_SILENT` (a regular expression) makes
-  those luna calls never answer, and `HOMEPLUS_PREVIEW_NO_APPS` has webOS list no apps.
+  titles' pictures from a test's server, `HOMEPLUS_PREVIEW_HTTPS` sends Stremio's and Trakt's API calls to
+  one, `HOMEPLUS_PREVIEW_LUNA_SILENT` (a regular expression) makes those luna calls never answer, and
+  `HOMEPLUS_PREVIEW_NO_APPS` has webOS list no apps.
   `tools/native-preview/glass-test.sh <art.jpg> <out.png>` renders a glass test card.
   `tools/native-preview/compare-screens.py <before> <after>` compares two folders of preview shots, for a change
   that should draw the same: it leaves out the clock, and allows the few scenes caught mid-animation the difference two

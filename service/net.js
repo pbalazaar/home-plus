@@ -1,6 +1,6 @@
 /* JSON over HTTP or HTTPS, for the media-server modules (Jellyfin, Plex).
  * Resolves { status, json } and never throws for an HTTP error status;
- * network errors and timeouts reject. */
+ * network errors, timeouts and replies cut short reject. */
 'use strict';
 
 const http = require('http');
@@ -23,10 +23,13 @@ function requestJSON(method, url, { headers = {}, body, timeout = 10000 } = {}) 
       res.setEncoding('utf8');
       res.on('data', (c) => { if (buf.length < 4 * 1024 * 1024) buf += c; });
       res.on('end', () => {
+        if (res.complete === false) return; /* cut short: Node 12 ends it all the same ('close' rejects) */
         let json = null;
         try { json = buf ? JSON.parse(buf) : null; } catch (e) { /* not JSON */ }
         resolve({ status: res.statusCode, json });
       });
+      // The server hung up halfway through the reply: Node 16 and newer never end it, only close it
+      res.on('close', () => { if (res.complete === false) reject(new Error(`connection closed before the reply was complete: ${u.host}`)); });
     });
     req.on('timeout', () => req.destroy(new Error(`timed out: ${u.host}`)));
     req.on('error', reject);

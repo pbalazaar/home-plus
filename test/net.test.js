@@ -42,6 +42,12 @@ test('net: a server that never answers times out', async (t) => {
   await assert.rejects(requestJSON('GET', `${s.base}/x`, { timeout: 200 }), /timed out/);
 });
 
+test('net: a server that hangs up halfway through its reply is a network error (Node 16 and newer never end that reply)', { timeout: 5000 }, async (t) => {
+  const s = await mockServer(() => ({ cut: '{"items": [1, 2,' }));
+  t.after(s.close);
+  await assert.rejects(requestJSON('GET', `${s.base}/x`), /connection closed before the reply was complete/);
+});
+
 test('net: only http and https URLs', async () => {
   await assert.rejects(requestJSON('GET', 'ftp://example.com/x'), /unsupported URL/);
   await assert.rejects(requestJSON('GET', 'not a url'), /bad URL/);

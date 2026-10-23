@@ -30,10 +30,13 @@ function request(method, path, { body, clientId, token } = {}) {
       res.setEncoding('utf8');
       res.on('data', (c) => { buf += c; });
       res.on('end', () => {
+        if (res.complete === false) return; /* cut short: Node 12 ends it all the same ('close' rejects) */
         let json = null;
         try { json = buf ? JSON.parse(buf) : null; } catch (e) { /* non-JSON error page */ }
         resolve({ status: res.statusCode, json });
       });
+      // The server hung up halfway through the reply: Node 16 and newer never end it, only close it
+      res.on('close', () => { if (res.complete === false) reject(new Error('Trakt connection closed before the reply was complete')); });
     });
     req.on('timeout', () => req.destroy(new Error('Trakt request timed out')));
     req.on('error', reject);

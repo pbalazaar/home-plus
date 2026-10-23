@@ -10,11 +10,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
-const { startService, until } = require('./helpers');
+const { mockServer, startService, until } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
 let svc, dir;
 const call = (...args) => svc.call(...args);
+const within5s = (p) => Promise.race([p, new Promise((resolve, reject) => setTimeout(() => reject(new Error('still waiting after 5 s')), 5000))]);
 
 test.before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-api-'));
@@ -210,7 +211,6 @@ test('api: a TV service that never answers doesn\'t keep a request waiting', asy
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-api-silent-'));
   fs.writeFileSync(path.join(d, 'apps.txt'), 'netflix|Netflix');
   const s = await startService(d, { HOMEPLUS_PREVIEW_LUNA_SILENT: 'listApps|connectionmanager', HOMEPLUS_LUNA_TIMEOUT_MS: '500' });
-  const within5s = (p) => Promise.race([p, new Promise((resolve, reject) => setTimeout(() => reject(new Error('still waiting after 5 s')), 5000))]);
   try {
     const apps = await within5s(s.call('GET', '/api/apps'));
     assert.ok(apps.status >= 500, `no app list is an error, not an empty list: ${apps.status}`);
@@ -220,6 +220,32 @@ test('api: a TV service that never answers doesn\'t keep a request waiting', asy
     assert.equal(cc.json.network.kind, 'none');
   } finally {
     await s.stop();
+    fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
+test('api: a server that hangs up halfway through its reply doesn\'t keep Continue Watching waiting', async () => {
+  /* a second service, whose Stremio, Trakt and Jellyfin all hang up halfway through every reply: on
+   * Node 16 and newer such a reply never ended, and nor did the request for the shelf */
+  const cut = await mockServer(() => ({ cut: '{"result": [' }));
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-api-cut-'));
+  fs.writeFileSync(path.join(d, 'apps.txt'), 'stremio|Stremio');
+  const s = await startService(d, { HOMEPLUS_PREVIEW_HTTPS: cut.base }); /* Stremio's and Trakt's APIs */
+  try {
+    const file = path.join(d, 'config', 'config.json');
+    fs.writeFileSync(file, JSON.stringify(Object.assign(JSON.parse(fs.readFileSync(file, 'utf8')), {
+      traktClientId: 'id', traktAccess: 'token', traktExpires: Date.now() + 86400000,
+      jellyfin: { url: cut.base, userId: 'u1', user: 'Ann', token: 'token' }
+    })));
+    for (const p of ['/api/continue', '/api/continue?source=jellyfin']) {
+      const r = await within5s(s.call('GET', p));
+      assert.equal(r.status, 200, p);
+      assert.deepEqual(r.json.items, [], p);
+    }
+    for (const p of ['/api/datastoreGet', '/sync/playback', '/UserItems/Resume']) assert.ok(cut.hits.some((h) => h.path === p), `asked for ${p}`);
+  } finally {
+    await s.stop();
+    await cut.close();
     fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });
   }
 });

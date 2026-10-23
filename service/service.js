@@ -136,8 +136,11 @@ function postJSON(url, body) {
       res.setEncoding('utf8');
       res.on('data', (c) => { buf += c; });
       res.on('end', () => {
+        if (res.complete === false) return; /* cut short: Node 12 ends it all the same ('close' rejects) */
         try { resolve(JSON.parse(buf)); } catch (e) { reject(new Error('Bad response from ' + url)); }
       });
+      // The server hung up halfway through the reply: Node 16 and newer never end it, only close it
+      res.on('close', () => { if (res.complete === false) reject(new Error('Connection closed before the reply was complete: ' + url)); });
     });
     req.on('timeout', () => req.destroy(new Error('Request timed out')));
     req.on('error', reject);

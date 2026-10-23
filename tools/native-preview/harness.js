@@ -43,7 +43,14 @@ const library = SHOWS.map((name, i) => Object.assign({
     lastWatched: `2026-10-${20 - i}T10:00:00Z` }
 }, ART ? { background: `${ART}/${i}` } : {}));
 
+// HOMEPLUS_PREVIEW_HTTPS: Stremio's and Trakt's APIs (the service's https requests) are this server
+// instead (tests: one that hangs up halfway through its replies)
+const HTTPS = process.env.HOMEPLUS_PREVIEW_HTTPS;
 https.request = (url, opts, cb) => {
+  if (HTTPS) {
+    const u = new URL(url);
+    return require('http').request(HTTPS + u.pathname + u.search, opts, cb);
+  }
   const req = new EventEmitter();
   req.end = () => {
     const res = new EventEmitter();
