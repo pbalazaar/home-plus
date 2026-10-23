@@ -127,6 +127,9 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   runs of one build show (~0.3%, and up to ~2% for `crossfade`).
 - Docker on a Mac can see a file before it's fully written: if a build reports
   "expected ... at end of input", just run it again.
+- The README's banner and GitHub's social preview (the picture a link to the repo shows): `tools/make-banner.py`
+  → `docs/banner.jpg` and `docs/social-preview.jpg`, from `docs/screenshots/continue-watching.jpg`. The social
+  preview is uploaded by hand on GitHub (Settings → General → Social preview).
 
 ## Installing on the TV
 Copy the `.ipk`s to `/tmp` on the TV, then for each:

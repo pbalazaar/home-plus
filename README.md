@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/banner.jpg" alt="Home+ on an LG TV: Stremio's Continue Watching in the Top Shelf, over the dock of apps" width="100%">
+</p>
+
 # Home+
 
 [![Latest release](https://img.shields.io/github/v/release/pbalazaar/home-plus)](https://github.com/pbalazaar/home-plus/releases/latest)
@@ -9,8 +13,6 @@
 A tvOS-style home screen for rooted LG webOS TVs, in a Liquid Glass look, with Continue Watching from Stremio, Trakt, Jellyfin and Plex.
 
 ![Home+ home screen](docs/screenshots/home.jpg)
-
-![Continue Watching in the Top Shelf](docs/screenshots/continue-watching.jpg)
 
 *Screenshots show a real TV's apps and Continue Watching. The Jellyfin one uses placeholder shows.*
 
@@ -119,6 +121,8 @@ With Tinted on, ten colours appear under the four looks: **Left** and **Right** 
 ## Continue Watching
 
 Focus Stremio, Jellyfin or Plex in the top row, and the Top Shelf shows what you're partway through there: one title at a time, with its picture, its logo and how far you are, turning to the next every 10 seconds. Press **Up** (the chevron above the dock says you can), then **Left** and **Right**, to step through them.
+
+![Continue Watching in the Top Shelf](docs/screenshots/continue-watching.jpg)
 
 Sign in under **Settings → Accounts**, or hold **OK** on the app and choose **Sign In**. The TV shows a code, and a QR code where the service has one; you approve it on your phone or computer, where you're already signed in. No password is typed on the TV.
 
