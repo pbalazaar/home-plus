@@ -1,6 +1,6 @@
 # Builds and tests every push to main and every pull request:
 # - build: the .ipk for the TV, checked, attached to the run as the "homeplus-ipk" artifact;
-# - service: the service's tests, on Linux (running the service on the TV's Node 16) and on Windows;
+# - service: the service's tests, on Linux (the Node versions in webOS 22–26) and on Windows;
 # - launcher: the launcher's own tests (native/test/), and the Control Center's QML, loaded and driven.
 #   Its screens are rendered on a desktop instead (tools/test.sh screens): here they took most of the
 #   run, and Mesa under Xvfb isn't the TV's GPU.
@@ -67,13 +67,21 @@ jobs:
             dist/*.manifest.json
 
   service:
-    name: Service (${{ matrix.os }})
+    name: Service (${{ matrix.os }}, Node ${{ matrix.tv-node || '22' }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04
-            tv-node: 16 # the TV's Node: the API tests run the service on it
+            tv-node: '12.21.0' # webOS 22; the runner stays on Node 22
+          - os: ubuntu-24.04
+            tv-node: '12.22.2' # webOS 23
+          - os: ubuntu-24.04
+            tv-node: '16.19.1' # webOS 24
+          - os: ubuntu-24.04
+            tv-node: '16.20.2' # webOS 25
+          - os: ubuntu-24.04
+            tv-node: '20.12.2' # webOS 26
           - os: windows-latest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10

@@ -1,7 +1,7 @@
 /* The service's local HTTP API, end to end: the real service.js on the preview harness's
  * stand-in webOS (tools/native-preview/harness.js), with its mock Stremio library and TMDB.
  * It runs on its own port with its config in a temporary folder, so no root is needed.
- * HOMEPLUS_SERVICE_NODE runs it with another Node, such as the TV's Node 16 (CI does). */
+ * HOMEPLUS_SERVICE_NODE runs it with another Node, including webOS 22/23's Node 12 (CI does). */
 'use strict';
 
 const test = require('node:test');

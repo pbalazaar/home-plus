@@ -13,7 +13,7 @@ Thanks for helping with Home+. Most people install a release: the `.ipk` on the 
 What the TV allows:
 
 - **The launcher** is a 32-bit ARM program that uses the TV's own SDL, version 2.0.14. It's compiled against SDL 2.0.14's headers (`native/third_party/SDL2`), and the package check turns away a launcher that calls an SDL function the TV doesn't have. LG's additions to SDL are looked up while running, the way `input.c` finds `SDL_webOSCursorVisibility`.
-- **The service** runs on the TV's Node 16, so newer JavaScript, such as `fetch`, isn't there. It has no npm dependencies: its folder is copied to the TV as it is.
+- **The service** targets Node 12.21.0 and newer (webOS 22 and later), so optional chaining and newer APIs such as `fetch` mustn't be required. `service/remove.js` handles file and tree removal on Node 12 too. It has no npm dependencies: its folder is copied to the TV as it is.
 - **The GPU and CPU** are shared with the TV's own apps, and often with PicCap and HyperHDR. Keep the launcher's use of them low.
 
 ## Building
@@ -58,7 +58,7 @@ tools/test.sh package       # builds the .ipk and checks it
 tools/test.sh all           # all four
 ```
 
-- **The service's tests** need Node 18 or newer. In PowerShell, run them with `node --test "test/*.test.js"` (Node 22 or newer). Everything the service talks to (TMDB, Jellyfin, Plex, Stremio, the TV) is mocked, so they need no network and no TV.
+- **The service's tests** need Node 18 or newer. In PowerShell, run them with `node --test "test/*.test.js"` (Node 22 or newer). `HOMEPLUS_SERVICE_NODE=/path/to/node node --test test/*.test.js` runs service subprocesses and cleanup checks on an older Node while keeping the test runner on the newer one; it also checks that every shipped service module parses on the target runtime. Everything the service talks to (TMDB, Jellyfin, Plex, Stremio, the TV) is mocked, so they need no network and no TV.
 - **The Control Center over other apps** is QML that LG's compositor runs (`native/qml`), and the TV keeps no log of its errors. `tools/test.sh qml` loads it on Qt's own QML runtime, with stand-ins for LG's modules (`tools/qml-check/stubs`), opens it with sample controls and goes through it as the remote would; any QML error fails it.
 - **The screens** are rendered on a Linux desktop with Mesa. Elsewhere, `tools/test.sh` renders them in Docker. The check makes sure that every screen was drawn, at 1920×1080, that it isn't blank, and that it isn't just the home screen again. Look at them as well: they're in `build/screens/`.
   - For a new screen, add a `shot` line to `tools/native-preview/run.sh`: the keys to press, and when to take the picture.
@@ -71,7 +71,7 @@ tools/test.sh all           # all four
 
 CI runs all of it on every pull request:
 
-- the service's tests, on Linux (with the service on Node 16, as on the TV) and on Windows;
+- the service's tests, on Linux with the service on the Node versions in webOS 22–26, and on Windows;
 - the screens, attached to the run as the `screens` artifact;
 - the package.
 
@@ -80,7 +80,7 @@ CI runs all of it on every pull request:
 ## Pull requests
 
 - Keep each pull request to one change, and say what it changes and why.
-- Match the code around it: its names and its comments. C is gnu11 and builds without warnings. The service's JavaScript runs on Node 16.
+- Match the code around it: its names and its comments. C is gnu11 and builds without warnings. The service's JavaScript must run on Node 12.21.0 and newer.
 - Add or update the service's tests, or a preview scene for a new screen.
 - For a change you can see, add before and after screenshots.
 - Leave the version alone: it changes when a release is made.

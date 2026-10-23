@@ -79,7 +79,7 @@ function freePort() {
 /* The real service.js on the preview harness's stand-in webOS (tools/native-preview/harness.js;
  * dir holds its apps.txt and pictures), on a port of its own, with its config in dir/config, so no
  * root is needed; env adds HOMEPLUS_* settings. HOMEPLUS_SERVICE_NODE runs it with another Node,
- * such as the TV's Node 16 (CI does). Resolves once it answers, with call() for requests as the
+ * such as webOS 22/23's Node 12 (CI does). Resolves once it answers, with call() for requests as the
  * launcher makes them (token, Host 127.0.0.1) unless told otherwise, and stop(). */
 async function startService(dir, env = {}) {
   const port = await freePort();

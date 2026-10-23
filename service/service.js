@@ -20,6 +20,7 @@ const Service = require('webos-service');
 const callers = require('./callers');
 const png = require('./png');
 const tmp = require('./tmp');
+const remove = require('./remove');
 
 const service = new Service(pkg.name);
 
@@ -383,7 +384,7 @@ function installBootScript() {
     if (have === script) return true;
     if (!fs.existsSync(script)) { log('boot script: no', script); return false; }
     fs.mkdirSync(path.dirname(INITD), { recursive: true }); /* some ways of rooting never made it */
-    fs.rmSync(INITD, { force: true }); /* the copy Home+ 0.11 and older made */
+    remove.rmSync(INITD, { force: true }); /* the copy Home+ 0.11 and older made */
     fs.symlinkSync(script, INITD);
     log('boot script linked:', INITD, '->', script);
     return true;
@@ -663,7 +664,7 @@ const framesDir = () => fs.mkdtempSync(path.join(FRAMES_IN, 'homeplus-cc-')); /*
 try { /* left by a service that stopped (only its own) */
   for (const f of fs.readdirSync(FRAMES_IN).filter((f) => /^homeplus-cc-/.test(f))) {
     const p = path.join(FRAMES_IN, f), st = fs.lstatSync(p);
-    if (st.isDirectory() && st.uid === process.getuid?.()) fs.rmSync(p, { recursive: true, force: true });
+    if (st.isDirectory() && process.getuid && st.uid === process.getuid()) remove.rmSync(p, { recursive: true, force: true });
   }
 } catch (e) { /* nothing there */ }
 const settle = (promise, ms) => Promise.race([promise, new Promise((done) => setTimeout(done, ms, null))]);
@@ -719,11 +720,11 @@ async function capture(dir, method, go) {
   const answer = luna('luna://com.webos.service.capture/executeOneShot', { path: file, method, format: 'PNG', width: 160, height: 90 });
   answer.then(free, free);
   const r = await settle(answer, CAPTURE_TIMEOUT_MS);
-  const drop = () => fs.rm(file, { force: true }, () => {});
+  const drop = () => remove.rm(file, { force: true }, () => {});
   if (!r) answer.then(drop, drop); /* given up on: whatever it writes goes */
   return { file, r };
 }
-const dropFrames = (dir) => captureFree.then(() => fs.rm(dir, { recursive: true, force: true }, () => {}));
+const dropFrames = (dir) => captureFree.then(() => remove.rm(dir, { recursive: true, force: true }, () => {}));
 
 // a small picture of the screen (DISPLAY) or the video (VIDEO) into dir/frame.png, whole or not at
 // all, taken if go() says so once the TV is free, and kept if live() still says so when it comes:
@@ -747,7 +748,7 @@ async function grab(dir, method, go, live) {
   } catch (e) {
     return e.message;
   } finally {
-    if (file) fs.rmSync(file, { force: true }); /* (unless it's the frame now) */
+    if (file) remove.rmSync(file, { force: true }); /* (unless it's the frame now) */
   }
 }
 
@@ -787,7 +788,7 @@ async function captureFrames(gen, dir, snapshot, blurVideo) {
         continue;
       }
       if (video) { /* the video went dark, or can't be captured now: clear glass, over what's there */
-        fs.rmSync(path.join(dir, 'frame.png'), { force: true });
+        remove.rmSync(path.join(dir, 'frame.png'), { force: true });
         shown = null;
         frameChanged(false);
         video = false;
@@ -821,7 +822,7 @@ function overlayMain() {
 // LG's compositor compiles a system UI's QML the first time it opens (~250 ms more): when the Settings
 // key opens the Control Center, have it compiled once, unseen, a little after the service starts.
 function preloadOverlay() {
-  if (!fs.existsSync(OVERLAY_QML) || !(settingsKeyState().on || keyState(INPUT_KEY).on) || process.getuid?.() !== 0) return;
+  if (!fs.existsSync(OVERLAY_QML) || !(settingsKeyState().on || keyState(INPUT_KEY).on) || !process.getuid || process.getuid() !== 0) return;
   if (overlayOpen || overlayBusy) return; /* (it would close it) */
   luna(SYSUI + '/launch', {
     appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
@@ -895,7 +896,7 @@ function dropElevation() {
       const d = path.join(root, dir);
       if (!fs.statSync(d).isDirectory()) continue;
       for (const f of fs.readdirSync(d)) {
-        if (f.startsWith(NATIVE_ID) || f.startsWith(OLD_ID)) { fs.rmSync(path.join(d, f), { force: true }); n++; }
+        if (f.startsWith(NATIVE_ID) || f.startsWith(OLD_ID)) { remove.rmSync(path.join(d, f), { force: true }); n++; }
       }
     }
   } catch (e) { /* not elevated this way */ }
@@ -905,12 +906,12 @@ function dropElevation() {
 async function uninstall() {
   const steps = {};
   await unmountRedirect().catch(() => {});
-  try { [INITD, BOOT_LOG].forEach((f) => fs.rmSync(f, { force: true })); steps.bootScript = true; } catch (e) { steps.bootScript = e.message; }
+  try { [INITD, BOOT_LOG].forEach((f) => remove.rmSync(f, { force: true })); steps.bootScript = true; } catch (e) { steps.bootScript = e.message; }
   try { /* (binds left alone keep their scripts: they may run one) */
     steps.inputhookBinds = dropInputhookBinds();
-    Object.keys(KEY_SCRIPTS).forEach((f) => fs.rmSync(f, { force: true }));
+    Object.keys(KEY_SCRIPTS).forEach((f) => remove.rmSync(f, { force: true }));
   } catch (e) { steps.inputhookBinds = e.message; }
-  try { fs.rmSync(path.dirname(findConfigPath()), { recursive: true, force: true }); steps.settings = true; } catch (e) { steps.settings = e.message; }
+  try { remove.rmSync(path.dirname(findConfigPath()), { recursive: true, force: true }); steps.settings = true; } catch (e) { steps.settings = e.message; }
   steps.elevationFiles = dropElevation();
   log('uninstall:', steps);
   // removing the package stops this service, so it goes last, after the reply is sent
@@ -1171,7 +1172,7 @@ function trimImages() {
       files.sort((a, b) => a.at - b.at);
       for (const x of files) {
         if (total <= IMAGE_CACHE_MAX * 0.8) break;
-        fs.rmSync(path.join(imageDir, x.f), { force: true });
+        remove.rmSync(path.join(imageDir, x.f), { force: true });
         total -= x.size;
       }
     } catch (e) {
@@ -1231,6 +1232,9 @@ function fetchRemote(url, res, depth = 0, file = '', started = Date.now()) {
     res.writeHead(200, { 'Content-Type': up.headers['content-type'] || 'image/jpeg', 'Cache-Control': 'max-age=86400' });
     let got = 0, ended = false;
     up.on('data', (c) => { if ((got += c.length) > IMAGE_MAX_BYTES) up.destroy(); }); /* too big after all: not kept */
+    // Node 12 can emit 'end' after 'aborted', before 'close': stop the pipe before that end
+    // can finish a partial image as a whole response (or leave its socket open for another one).
+    up.on('aborted', () => res.destroy());
     up.on('end', () => { ended = true; });
     up.on('close', () => { if (!ended || up.complete === false) res.destroy(); }); /* cut short: so is the launcher's */
     // The launcher hung up (it dropped the picture: the Top Shelf moved on): it still comes into the cache, there
@@ -1268,12 +1272,12 @@ function writeToken() {
     /* written beside it, then renamed over it: a link put in its place is replaced, never followed (as root) */
     const part = `${f}.${process.pid}.part`;
     try {
-      fs.rmSync(part, { force: true });
+      remove.rmSync(part, { force: true });
       const fd = fs.openSync(part, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), 0o644);
       try { fs.writeSync(fd, TOKEN); fs.fchmodSync(fd, 0o644); } finally { fs.closeSync(fd); } /* (the launcher reads it: not root) */
       fs.renameSync(part, f);
       written++;
-    } catch (e) { fs.rmSync(part, { force: true }); /* not installed there, or not root yet */ }
+    } catch (e) { remove.rmSync(part, { force: true }); /* not installed there, or not root yet */ }
   }
   return written > 0;
 }

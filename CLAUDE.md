@@ -12,7 +12,7 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   service would take the port, so it's uninstalled first (`tools/install.sh` does it; the launcher's
   "Uninstall the Old Home+" says so when `/api/status` isn't its own service's), and LG Input Hook
   binds made for it count as Home+'s.
-- `service/` — Node 16 webOS service `com.github.pbalazaar.homeplus.service`, elevated with Homebrew
+- `service/` — Node 12.21+ webOS service (webOS 22 and later) `com.github.pbalazaar.homeplus.service`, elevated with Homebrew
   Channel's `elevateService` (the launcher asks; see First run). Luna methods + a local HTTP API on `127.0.0.1:47823` (see README).
   Also: Home button takeover (`watch` mode, and `redirect` = no-flash bind mount over LG home's
   start page, approved by the owner; and an app that quits brings Home+ at once, see Known TV quirks), settings
@@ -116,7 +116,10 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   `HOMEPLUS_CONFIG_DIR` and `HOMEPLUS_PORT` let the service run without root, on another port, and
   `HOMEPLUS_APP_DIR`, `HOMEPLUS_INITD_DIR` and `HOMEPLUS_INPUTHOOK_BINDS` stand in for the app folder,
   Homebrew Channel's init.d and LG Input Hook's binds (`startService` in `test/helpers.js` starts it).
-  `HOMEPLUS_SERVICE_NODE` runs the tests' service on another Node (CI: 16, as on the TV).
+  `HOMEPLUS_SERVICE_NODE` runs the tests' service and cleanup checks on another Node (CI: webOS 22–26's
+  12.21.0, 12.22.2, 16.19.1, 16.20.2 and 20.12.2; the test runner stays on Node 22). All shipped service
+  modules are syntax-checked on that target too. Use `service/remove.js` for forced file/tree cleanup:
+  Node 12 has no `fs.rm`/`fs.rmSync`, and cannot parse optional chaining.
   `HOMEPLUS_LOG` and `HOMEPLUS_RECENTS_FILE` move its files in /tmp (opened only as its own, never
   through a link: `service/tmp.js`); `HOMEPLUS_FETCH_TIMEOUT_MS` and `HOMEPLUS_LUNA_TIMEOUT_MS` shorten
   the image proxy's and luna calls' 15 s. The harness's `HOMEPLUS_PREVIEW_ART` serves the mock Stremio
