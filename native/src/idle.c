@@ -137,13 +137,13 @@ static void release_images(void)
     }
 }
 
-/* Back from an app opened from Home+, the home screen starts at the top (come_back). That's made ready while the
- * app is in front: the Top Shelf's page there is asked for and its pictures loaded, and once they're in it's
- * the page on show (the page left lets go of its pictures), so the first frame back is the home screen as it
+/* Back from an app opened from Home+, the home screen is as it was left, the focus on what opened the app (as
+ * tvOS's). That's made ready while the app is in front: the page the Top Shelf wants there (still on its way if
+ * the app opened before its picture came) is asked for and its pictures loaded, and once they're in it's the
+ * page on show (the page left lets go of its pictures), so the first frame back is the home screen as it
  * stays. When Home+ goes, and as the service's answers come while it's hidden. */
 void ready_home(void)
 {
-    go_home();
     if (S.focus < COLS) S.shelf_cur = S.focus;
     S.rail_next = 0; /* (the carousel turns a whole turn after it's back) */
     shelf_load();
@@ -190,10 +190,7 @@ void come_back(void)
         S.back_at = S.reduce_motion ? 0 : SDL_GetTicks() | 1; /* (Reduce Motion: there at once, as a sheet appears in place) */
         S.rail_next = 0; /* the carousel turns a whole turn after it's back (the titles beside it were let go) */
     }
-    if (S.away) go_home(); /* back from another app (or the Home button): start at the top */
     S.away = 0;
-    if (S.asked) open_asked(S.asked); /* ...unless the Control Center over that app asked for something */
-    S.asked = 0;
     S.offscreen = 0;
     S.last_input = SDL_GetTicks();
     S.idle_stage = 0;

@@ -96,15 +96,16 @@ shot signout-ask "UUODDDDRODDDDDOO" 6400
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_TMDB=1
 shot popular "" 5200
 shot popular-browse "URR" 5600
-# back from an app opened from Stremio's tile (the Home button, a moment later): at the top again, Netflix's
-# popular titles in the Top Shelf, in on the first frame back (they're loaded while hidden), which comes into focus
-# from blurred and dim (the shot is that first frame: this machine's frames can take longer than the 350 ms)
+# back from an app opened from Stremio's tile (the Home button, a moment later): as it was left, Stremio's tile
+# focused and its Continue Watching in the Top Shelf, in on the first frame back (kept while hidden), which comes
+# into focus from blurred and dim (the shot is that first frame: this machine's frames can take longer than the
+# 700 ms; Y is at 4050)
 shot back-focus "RR......O.X......Y" 4060
-shot back-home "RR......O.X......Y" 4500
+shot back-home "RR......O.X......Y" 4900
 # ...and away long enough that it let go of its render targets (HOMEPLUS_TARGETS_KEPT_MS: 30 s on the TV): the
 # first frame back makes them again, and the home screen is as it is after a moment away (check-screens.py)
 export HOMEPLUS_TARGETS_KEPT_MS=300
-shot back-later "RR......O.X......Y" 4500
+shot back-later "RR......O.X......Y" 4900
 unset HOMEPLUS_TARGETS_KEPT_MS
 # at rest, the loop sleeps (the TV's CPU and GPU are PicCap's and HyperHDR's too), also with Stremio's
 # Continue Watching turning its pages

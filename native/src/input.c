@@ -143,15 +143,6 @@ void move_focus(int dx, int dy)
     S.focus = next;
 }
 
-void go_home(void)
-{
-    sheet_close();
-    sw_reset();
-    if (S.moving) { S.moving = 0; save_layout(); }
-    S.zone = 0;
-    S.focus = 0;
-}
-
 /* LG's SDL 2.0.14 reports remote keys with the *scancode* number in keysym.sym
  * (Right arrow arrives as sym=79 = SDL_SCANCODE_RIGHT). Map those back to keycodes;
  * real keycodes (from a USB keyboard or the desktop build) pass through, and so do

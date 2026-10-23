@@ -122,8 +122,7 @@ int handle_result(Result *r)
         if (r->body) { /* asked for from the Control Center over another app, which brings Home+ to the front */
             int want = strstr(r->body, "\"settings\"") ? OPEN_SETTINGS : strstr(r->body, "\"recents\"") ? OPEN_RECENTS
                      : strstr(r->body, "\"accessibility\"") ? OPEN_ACCESSIBILITY : 0;
-            if (want && S.away) S.asked = want; /* coming back starts at the top: opened after that */
-            else if (want) open_asked(want);
+            if (want) open_asked(want); /* (while hidden too: coming back leaves it open) */
         }
         break;
     case TAG_HOME:

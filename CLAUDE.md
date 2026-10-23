@@ -75,11 +75,12 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   64 MB, at most 16 MB of them waiting to be taken), and `perf: memory` what textures and render targets hold
   as Home+ hides, and after 30 s hidden, when it lets go of the render targets (`hidden_idle()`; the first frame back
   makes them again). A backdrop is drawn only when what's in it changes (`draw_backdrop()`: each draw is first noted
-  into a fingerprint). Back from an app opened from Home+, the home screen starts at the top: `ready_home()`
-  (`idle.c`) does that as Home+ goes, loads the Top Shelf's page there while hidden and shows it in place of the
-  page left (`shelf_jump()`), and the first frame back moves every animation to its end (`S.settle`). Then it
-  comes into focus over `BACK_MS` (`back_in()`, `draw.c`): the scene's blurred, dimmed backdrop over it clears
-  (not with Reduce Motion: it's there at once).
+  into a fingerprint). Back from an app opened from Home+, the home screen is as it was left, the focus on what
+  opened the app (as tvOS's; it went back to the top until 0.18.0): `ready_home()` (`idle.c`), as Home+ goes, loads
+  the page the Top Shelf wants there while hidden and shows it in place of the page left (`shelf_jump()`), and the
+  first frame back moves every animation to its end (`S.settle`). Then it comes into focus over `BACK_MS` (700 ms,
+  `back_in()`, `draw.c`): the scene's blurred, dimmed backdrop over it clears, easing out gently (not with Reduce
+  Motion: it's there at once).
   App tile looks (Settings → Display & OLED → App Tiles; prefs `iconLook`, `iconTint` from `TINTS`):
   `draw_face()` (`draw.c`) draws every tile (dock, big tile, Recents), `FS_LOGO` the logo in one colour or for a
   dark tile. `make_logo()` (`tiles.c`) cuts a logo out of its icon's background, edge pixels unblended from it

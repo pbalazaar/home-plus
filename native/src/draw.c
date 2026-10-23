@@ -434,7 +434,8 @@ static void draw_backdrop(int which)
 }
 
 /* Back from another app, the home screen comes into focus, as tvOS's does: its blurred, dimmed copy over it
- * clears (an ease out). 1: in focus. */
+ * clears. A gentle ease out (quadratic): a cubic one cleared most of it in its first fifth, and felt like a cut.
+ * 1: in focus. */
 static float back_in(void)
 {
     if (!S.back_at) return 1;
@@ -443,7 +444,7 @@ static float back_in(void)
         S.back_at = 0;
         return 1;
     }
-    return 1 - (1 - t) * (1 - t) * (1 - t);
+    return 1 - (1 - t) * (1 - t);
 }
 
 int render(float dt, const char *shot)

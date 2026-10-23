@@ -56,7 +56,7 @@
 #define ROTATE_MS 10000                /* the Top Shelf carousel turns to its next title */
 #define PAGE_WAIT_MS 1200              /* the longest the Top Shelf waits for a page's picture */
 #define SKEL_MS 250                    /* a wait longer than this shows placeholders (a skeleton) */
-#define BACK_MS 350                    /* back from another app, the home screen comes into focus */
+#define BACK_MS 700                    /* back from another app, the home screen comes into focus */
 #define MAX_DOTS 16                    /* its position, as dots */
 #define BAR 56                         /* the clock capsule */
 #define TOP_Y 52                       /* where tvOS 26 has it */
@@ -337,8 +337,7 @@ typedef struct {
 
     Uint32 ok_down;
     int ok_long;
-    int away;           /* we launched another app; reset to the top when we're back */
-    int asked;          /* the Control Center over another app asked for one of OPEN_*, for when we're back */
+    int away;           /* we launched another app: its Top Shelf page is made ready while it's in front (ready_home) */
     int service_ok, wake_tries;
     int setup, setup_tries, elevate_tries, home_asked;
     int onboarded, welcome;  /* the welcome steps are done (/api/status), and the one on show (WELCOME_*) */
@@ -688,7 +687,6 @@ void enter_top(int col);
 int top_down_tile(void);
 void focus_rect(float *x, float *y, float *w, float *h);
 void move_focus(int dx, int dy);
-void go_home(void);
 int is_back(SDL_Keycode k);
 void keys_take_over(void);
 int pointer_moved(int mx, int my);
