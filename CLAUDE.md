@@ -103,7 +103,11 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   package: launcher, service, boot script, licence notices). Versions in `native/appinfo.json` and
   `service/package.json` must match.
 - CI (`.github/workflows/ci.yml`) builds and tests every push; pushing a `v*` tag publishes a release
-  once its build, service tests and launcher job (its own tests, the QML check) have passed. The
+  once its build, service tests, launcher job (its own tests, the QML check) and compatibility check have
+  passed. The compatibility job runs webOSbrew's `webosbrew-ipk-verify` (dev-toolbox-cli, built at
+  `VERIFY_REV`, cached with its firmware data) over the package for `VERIFY_FW` (`>=5.0`: webOS 5, 2020, on;
+  every generation is rootable on some firmware, cani.rootmy.tv, but webOS 4 and older have Node 0.12 or
+  older). Its datasets' Node: webOS 5 and 6 8.12.0, 22 12.21.0, 23 12.22.2, 24 16.19.1, 25 16.20.2, 26 20.12.2. The
   launcher's screens aren't rendered in CI (they took most of a run, and a slow apt mirror then put it
   past its 15 minutes): render them with `tools/test.sh screens`. The toolchain is checked against
   `docker/toolchain.sha256` (change it with `SDK_RELEASE`); the actions are pinned to commits.
@@ -120,7 +124,7 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   `HOMEPLUS_CONFIG_DIR` and `HOMEPLUS_PORT` let the service run without root, on another port, and
   `HOMEPLUS_APP_DIR`, `HOMEPLUS_INITD_DIR` and `HOMEPLUS_INPUTHOOK_BINDS` stand in for the app folder,
   Homebrew Channel's init.d and LG Input Hook's binds (`startService` in `test/helpers.js` starts it).
-  `HOMEPLUS_SERVICE_NODE` runs the tests' service and cleanup checks on another Node (CI: webOS 6's 8.12.0
+  `HOMEPLUS_SERVICE_NODE` runs the tests' service and cleanup checks on another Node (CI: webOS 5 and 6's 8.12.0
   and webOS 22–26's 12.21.0, 12.22.2, 16.19.1, 16.20.2 and 20.12.2; the test runner stays on Node 22). All
   shipped service modules are syntax-checked on that target too. Use `service/remove.js` for forced
   file/tree cleanup and `service/mkdir.js` for `mkdir -p`: Node 8 and 12 have no `fs.rm`/`fs.rmSync`, Node 8

@@ -1,9 +1,10 @@
 # Builds and tests every push to main and every pull request:
 # - build: the .ipk for the TV, checked, attached to the run as the "homeplus-ipk" artifact;
-# - service: the service's tests, on Linux (the Node versions in webOS 6 and 22–26) and on Windows;
+# - service: the service's tests, on Linux (the Node versions in webOS 5–6 and 22–26) and on Windows;
 # - launcher: the launcher's own tests (native/test/), and the Control Center's QML, loaded and driven.
 #   Its screens are rendered on a desktop instead (tools/test.sh screens): here they took most of the
 #   run, and Mesa under Xvfb isn't the TV's GPU.
+# - compatibility: the package checked by webOSbrew's verifier against LG's firmware from webOS 5 on.
 # Pushing a tag like v1.0.0 does the same, and once all of it has passed, publishes a GitHub release
 # with the package and its manifest attached.
 name: CI
@@ -27,6 +28,13 @@ env:
   SDK_RELEASE: 2026.08-webos
   SDK_FILE: arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz
   WEBOS_SDK: /home/runner/toolchain/arm-webos-linux-gnueabi_sdk-buildroot
+  # webOSbrew's compatibility checker (webosbrew/dev-toolbox-cli), built from this commit. It reads the
+  # firmware data from its own source folder, so that's cached along with the binary.
+  VERIFY_REV: 2d5a7b6881850d825aa7fdc6c0b5e53c91dc40d3
+  VERIFY_DIR: /home/runner/webosbrew-verify
+  # The firmware Home+ supports: webOS 5 (2020) and later, which can all be rooted and whose Node (8.12
+  # and later) runs the service. webOS 4 and older have Node 0.12 or older.
+  VERIFY_FW: '>=5.0'
 
 jobs:
   build:
@@ -73,7 +81,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            tv-node: '8.12.0' # webOS 6; the runner stays on Node 22
+            tv-node: '8.12.0' # webOS 5 and 6; the runner stays on Node 22
           - os: ubuntu-24.04
             tv-node: '12.21.0' # webOS 22
           - os: ubuntu-24.04
@@ -139,9 +147,45 @@ jobs:
       - name: Load and drive the Control Center's QML
         run: tools/test.sh qml
 
+  compatibility:
+    name: Compatibility
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: homeplus-ipk
+          path: dist
+
+      - name: Cache the compatibility checker
+        id: verify-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.VERIFY_DIR }}
+          key: webosbrew-verify-${{ env.VERIFY_REV }}
+
+      - name: Build the compatibility checker
+        if: steps.verify-cache.outputs.cache-hit != 'true'
+        run: |
+          git init -q "$VERIFY_DIR" && cd "$VERIFY_DIR"
+          git fetch -q --depth 1 https://github.com/webosbrew/dev-toolbox-cli "$VERIFY_REV"
+          git checkout -q FETCH_HEAD
+          cargo build --release --locked -p ipk-verify
+          mkdir bin && mv target/release/webosbrew-ipk-verify bin/ && rm -rf target .git # (its data stays: common/data)
+
+      - name: Check the package against LG's firmware
+        run: |
+          "$VERIFY_DIR/bin/webosbrew-ipk-verify" --fw-releases "$VERIFY_FW" --format markdown \
+            --output "$RUNNER_TEMP/compatibility.md" dist/*.ipk
+          status=$?
+          cat "$RUNNER_TEMP/compatibility.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+        shell: bash {0} # (the summary is written whatever the verdict)
+
   release:
     name: Release
-    needs: [build, service, launcher]
+    needs: [build, service, launcher, compatibility]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:

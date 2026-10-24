@@ -43,8 +43,8 @@
 
 ## Requirements
 
-- A **rooted** LG TV running webOS, with the **[Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel)** installed.
-- **Tested on:** LG C3 (OLED), webOS 9.2.1 (firmware 23.20.59). [COMPATIBILITY.md](COMPATIBILITY.md) lists reported TV checks. The service also runs on webOS 22 and 23's Node 12 and webOS 6's Node 8 (checked in CI); nothing else has been tried on those TVs. If you try one, please [send a compatibility report](https://github.com/pbalazaar/home-plus/issues/new?template=compatibility.yml), whether it went well or not.
+- A **rooted** LG TV running **webOS 5 (2020) or later**, with the **[Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel)** installed. Whether yours can be rooted depends on its firmware: [CanI.RootMy.TV](https://cani.rootmy.tv/) says. webOS 4 and older can be rooted too, but their Node.js (0.12 or older) can't run Home+'s service.
+- **Tested on:** LG C3 (OLED), webOS 9.2.1 (firmware 23.20.59). [COMPATIBILITY.md](COMPATIBILITY.md) lists reported TV checks. CI checks every build against LG's firmware for webOS 5 to 26 with [webOSbrew's compatibility checker](https://github.com/webosbrew/dev-toolbox-cli), and runs the service's tests on each one's Node; no TV but the C3 has tried it yet. If you try one, please [send a compatibility report](https://github.com/pbalazaar/home-plus/issues/new?template=compatibility.yml), whether it went well or not.
 - **Optional:**
   - for Continue Watching, any of: a [Stremio](https://www.stremio.com) account and the Stremio app; a [Jellyfin](https://jellyfin.org) server and the Jellyfin app; a [Plex](https://www.plex.tv) server and the Plex app;
   - a [Trakt](https://trakt.tv) account;
