@@ -32,8 +32,9 @@ env:
   # firmware data from its own source folder, so that's cached along with the binary.
   VERIFY_REV: 2d5a7b6881850d825aa7fdc6c0b5e53c91dc40d3
   VERIFY_DIR: /home/runner/webosbrew-verify
-  # The firmware Home+ supports: webOS 5 (2020) and later, which can all be rooted and whose Node (8.12
-  # and later) runs the service. webOS 4 and older have Node 0.12 or older.
+  # The firmware Home+ supports: webOS 5 (2020) and later, whose Node (8.12 and later) runs the service.
+  # Every webOS has some firmware that can be rooted (CanI.RootMy.TV), but webOS 4 and older have Node
+  # 0.12 or older.
   VERIFY_FW: '>=5.0'
 
 jobs:
@@ -159,15 +160,15 @@ jobs:
           path: dist
 
       - name: Cache the compatibility checker
-        id: verify-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.VERIFY_DIR }}
           key: webosbrew-verify-${{ env.VERIFY_REV }}
 
       - name: Build the compatibility checker
-        if: steps.verify-cache.outputs.cache-hit != 'true'
-        run: |
+        run: | # (also when the cache brought back a folder without it)
+          [ -x "$VERIFY_DIR/bin/webosbrew-ipk-verify" ] && exit 0
+          rm -rf "$VERIFY_DIR"
           git init -q "$VERIFY_DIR" && cd "$VERIFY_DIR"
           git fetch -q --depth 1 https://github.com/webosbrew/dev-toolbox-cli "$VERIFY_REV"
           git checkout -q FETCH_HEAD

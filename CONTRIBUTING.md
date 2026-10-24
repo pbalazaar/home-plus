@@ -85,7 +85,7 @@ CI runs all of it on every pull request, except the screens:
 
 - the service's tests, on Linux with the service on the Node versions in webOS 5–6 and 22–26, and on Windows;
 - the launcher's own tests (`native/test/`), and the Control Center's QML, loaded and driven;
-- the package, and its compatibility: [webOSbrew's checker](https://github.com/webosbrew/dev-toolbox-cli) against LG's firmware from webOS 5 (2020) on, the oldest that can be rooted and runs the service (`VERIFY_FW` in `ci.yml`). Its table is the job's summary.
+- the package, and its compatibility: [webOSbrew's checker](https://github.com/webosbrew/dev-toolbox-cli) against LG's firmware from webOS 5 (2020) on, the oldest whose Node runs the service (older webOS can be rooted too, but ships Node 0.12 or older; `VERIFY_FW` in `ci.yml`). Its table is the job's summary.
 
 The screens are rendered on a desktop instead (`tools/test.sh screens`): in CI they took most of the run, and Mesa under Xvfb isn't the TV's GPU.
 
