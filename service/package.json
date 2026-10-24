@@ -1,6 +1,6 @@
 {
   "name": "com.github.pbalazaar.homeplus.service",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Home+ helper service: app list/launch and Stremio Continue Watching",
   "license": "MIT",
   "main": "service.js"
