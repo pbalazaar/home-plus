@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs Home+'s checks; CI runs all of them but the screens on every pull request.
 #   tools/test.sh            the service's tests: unit tests and its HTTP API (seconds; Node 18+)
-#   tools/test.sh native     the launcher's own tests (native/test/: its requests and pictures), on Linux
+#   tools/test.sh native     the launcher's own tests (native/test/: its requests, pictures and media sources), on Linux
 #                            with the preview packages, else in Docker (seconds)
 #   tools/test.sh screens    renders every launcher screen and checks them; they land in build/screens/
 #                            (on Linux with the preview packages, else in Docker; about 6 minutes). Not in

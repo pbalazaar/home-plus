@@ -90,10 +90,21 @@ int contains_ci(const char *hay, const char *needle)
     return 0;
 }
 
+/* Other apps for Jellyfin and Plex, from Homebrew Channel, whose names don't say so (webosbrew/apps-repo) */
+static const struct { const char *id; int src; } CLIENTS[] = {
+    { "org.litefin.app", SRC_JELLYFIN },   /* Litefin */
+    { "org.moonfin.webos", SRC_JELLYFIN }, /* Moonfin */
+    { "com.breezyfin.app", SRC_JELLYFIN }, /* Breezyfin */
+    { "com.ocenfin.app", SRC_JELLYFIN },   /* OcenFin */
+    { "com.beb.plxnative", SRC_PLEX },     /* PlxNative */
+};
+
 /* The media source an app's Top Shelf shows, by its id or name (store builds differ). */
 int media_source(const App *a)
 {
     if (!a) return SRC_NONE;
+    for (size_t i = 0; i < sizeof CLIENTS / sizeof *CLIENTS; i++)
+        if (!strcmp(a->id, CLIENTS[i].id)) return CLIENTS[i].src;
     if (contains_ci(a->id, "stremio") || contains_ci(a->title, "stremio")) return SRC_STREMIO;
     if (contains_ci(a->id, "jellyfin") || contains_ci(a->title, "jellyfin")) return SRC_JELLYFIN;
     if (contains_ci(a->id, "plex") || contains_ci(a->title, "plex") || !strcmp(a->id, "cdp-30")) return SRC_PLEX;

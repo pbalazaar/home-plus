@@ -33,10 +33,11 @@ build/webos/homeplus: $(SRC) src/*.h
 	$(WEBOS_SDK)/bin/arm-webos-linux-gnueabi-strip $@
 	@rm -rf $(@D)/assets && cp -r assets $(@D)/assets
 
-test: build/host/net-test build/host/icon-test
+test: build/host/net-test build/host/icon-test build/host/util-test
 	@python3 test/make-fixtures.py build/test
 	build/host/net-test build/test
 	build/host/icon-test
+	build/host/util-test
 
 build/host/net-test: test/net_test.c src/net.c src/luna.c src/*.h
 	@mkdir -p $(@D)
@@ -45,6 +46,10 @@ build/host/net-test: test/net_test.c src/net.c src/luna.c src/*.h
 build/host/icon-test: test/icon_test.c src/icon.c src/*.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -Isrc -o $@ test/icon_test.c src/icon.c -lm
+
+build/host/util-test: test/util_test.c src/util.c src/*.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -Isrc -o $@ test/util_test.c src/util.c third_party/cJSON.c -lm
 
 clean:
 	rm -rf build

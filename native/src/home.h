@@ -533,7 +533,7 @@ const char *jstr(cJSON *o, const char *k);
 double jnum(cJSON *o, const char *k);
 App *item_app(int item);
 int contains_ci(const char *hay, const char *needle);
-int media_source(const App *a);
+int media_source(const App *a); /* by name, or Homebrew Channel's other Jellyfin and Plex apps (CLIENTS) */
 void short_title(const App *a, char *out, size_t cap);
 int is_hidden(const char *id);
 void app_color(const App *a, Uint8 *r, Uint8 *g, Uint8 *b);
