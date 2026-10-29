@@ -88,12 +88,33 @@ function freePort() {
   });
 }
 
+/* What the service has logged, once its log is a file (a test may put a link or a FIFO at its name first) */
+function logged(file) {
+  try { return fs.lstatSync(file).isFile() ? fs.readFileSync(file, 'utf8') : ''; } catch (e) { return ''; }
+}
+
 /* The real service.js on the preview harness's stand-in webOS (tools/native-preview/harness.js;
- * dir holds its apps.txt and pictures), on a port of its own, with its config in dir/config, so no
- * root is needed; env adds HOMEPLUS_* settings. HOMEPLUS_SERVICE_NODE runs it with another Node,
- * such as webOS 22/23's Node 12 (CI does). Resolves once it answers, with call() for requests as the
- * launcher makes them (token, Host 127.0.0.1) unless told otherwise, and stop(). */
+ * dir holds its apps.txt and pictures), on a port of its own, with its config in dir/config and its
+ * log in dir/service.log, so no root is needed; env adds HOMEPLUS_* settings. HOMEPLUS_SERVICE_NODE
+ * runs it with another Node, such as webOS 22/23's Node 12 (CI does). Resolves once it answers, with
+ * call() for requests as the launcher makes them (token, Host 127.0.0.1) unless told otherwise, and stop().
+ * Test files run in parallel: another's service or server can take the port freePort() found before
+ * this one listens on it. The service then only logs that it couldn't (on the TV, the old Home+'s
+ * service has its port), and is started again on another port. */
 async function startService(dir, env = {}) {
+  const logFile = env.HOMEPLUS_LOG || path.join(dir, 'service.log');
+  for (let tries = 1; ; tries++) {
+    try {
+      return await launch(dir, env, logFile);
+    } catch (e) {
+      if (!e.taken || tries === 3) throw e; /* (three in a row isn't chance) */
+    }
+  }
+}
+
+/* One try at startService. The service is asked whether it's up only once its log says it listens:
+ * till then, whoever has its port would answer. */
+async function launch(dir, env, logFile) {
   const port = await freePort();
   const child = spawn(process.env.HOMEPLUS_SERVICE_NODE || process.execPath,
     [path.join(ROOT, 'tools/native-preview/harness.js'), dir, path.join(ROOT, 'service')], {
@@ -101,14 +122,16 @@ async function startService(dir, env = {}) {
         NODE_PATH: path.join(ROOT, 'tools/native-preview/stub'),
         HOMEPLUS_CONFIG_DIR: path.join(dir, 'config'),
         HOMEPLUS_TOKEN_FILE: path.join(dir, 'api-token'),
+        HOMEPLUS_LOG: logFile,
         HOMEPLUS_PORT: String(port),
         HOMEPLUS_PREVIEW: '1'
       }, env),
       stdio: ['ignore', 'pipe', 'pipe']
     });
-  let log = '';
-  child.stdout.on('data', (d) => { log += d; });
-  child.stderr.on('data', (d) => { log += d; });
+  let output = '';
+  child.stdout.on('data', (d) => { output += d; });
+  child.stderr.on('data', (d) => { output += d; });
+  const stopped = () => child.exitCode !== null || child.signalCode !== null; /* (killed: no exit code) */
   const svc = {
     port,
     token: '',
@@ -130,18 +153,28 @@ async function startService(dir, env = {}) {
       });
     },
     async stop() {
-      if (child.exitCode !== null) return;
+      if (stopped()) return;
       const gone = new Promise((resolve) => child.once('exit', resolve)); /* Windows won't delete files the service still has open */
       child.kill();
       await gone;
     }
   };
+  let taken = false;
   await until(async () => {
-    if (child.exitCode !== null) throw new Error(`the service stopped (exit code ${child.exitCode})`);
+    const log = logged(logFile);
+    /* (the line ends with the port: the try before this one leaves its own until this service empties the log) */
+    if (new RegExp(`image server error .*:${port}$`, 'm').test(log)) {
+      taken = true;
+      throw new Error(`port ${port} was taken`);
+    }
+    if (stopped()) throw new Error(`the service stopped (${child.signalCode || `exit code ${child.exitCode}`})`);
+    if (!log.includes(`image server listening on ${port}\n`)) return false;
     try { return (await svc.call('GET', '/api/status', { auth: false })).status === 200; } catch (e) { return false; }
   }, 15000, 'the service to start').catch(async (e) => {
     await svc.stop();
-    throw new Error(`${e.message}. Its output:\n${log}`);
+    const error = new Error(`${e.message}. Its output:\n${output}\nIts log:\n${logged(logFile)}`);
+    if (taken) error.taken = true; /* (startService tries another port) */
+    throw error;
   });
   svc.token = fs.readFileSync(path.join(dir, 'api-token'), 'utf8').trim();
   return svc;

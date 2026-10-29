@@ -9,16 +9,13 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const net = require('net');
-const http = require('http');
-const { spawn } = require('child_process');
 const { fileURLToPath } = require('url');
-const { until, sleep } = require('./helpers');
+const { until, sleep, startService } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
-const NODE = process.env.HOMEPLUS_SERVICE_NODE || process.execPath;
 const windows = process.platform === 'win32' && 'the TV\'s: file URLs of Unix paths, links and Unix modes'; /* a reason to skip */
-let child, port, token, dir, log = '';
+let svc, port, token, dir;
+const call = (...args) => svc.call(...args);
 
 const lines = (file) => (fs.existsSync(path.join(dir, file)) ? fs.readFileSync(path.join(dir, file), 'utf8') : '')
   .split('\n').filter(Boolean).map((l) => JSON.parse(l));
@@ -48,33 +45,6 @@ function oneAtATime(list) {
 const ask = async (after) => (await call('POST', '/api/overlay', { body: { event: 'frame', after } })).json;
 const framesFolder = () => path.dirname(fileURLToPath(calls(LAUNCH).at(-1).params.params.frame));
 
-function freePort() {
-  return new Promise((resolve) => {
-    const s = net.createServer().listen(0, '127.0.0.1', () => {
-      const p = s.address().port;
-      s.close(() => resolve(p));
-    });
-  });
-}
-
-function call(method, p, { body, auth = true } = {}) {
-  return new Promise((resolve, reject) => {
-    const data = body === undefined ? '' : JSON.stringify(body);
-    const h = Object.assign(auth ? { 'X-Homeplus-Token': token } : {}, data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {});
-    const req = http.request({ host: '127.0.0.1', port, path: p, method, headers: h }, (res) => {
-      let buf = '';
-      res.on('data', (c) => { buf += c; });
-      res.on('end', () => {
-        let json = null;
-        try { json = JSON.parse(buf); } catch (e) { /* not JSON */ }
-        resolve({ status: res.statusCode, json });
-      });
-    });
-    req.on('error', reject);
-    req.end(data || undefined);
-  });
-}
-
 test.before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-overlay-'));
   fs.writeFileSync(path.join(dir, 'apps.txt'), 'netflix|Netflix,youtube|YouTube');
@@ -83,43 +53,24 @@ test.before(async () => {
   for (const f of ['ControlCenter.qml', 'ControlCenterView.qml']) fs.copyFileSync(path.join(ROOT, 'native/qml', f), path.join(app, 'qml', f));
   fs.symlinkSync('qml', path.join(app, 'qml-old')); /* an older version's link */
   fs.mkdirSync(path.join(dir, 'frames')); /* where the frames' folders go (on the TV, /tmp) */
-  port = await freePort();
-  child = spawn(NODE, [path.join(ROOT, 'tools/native-preview/harness.js'), dir, path.join(ROOT, 'service')], {
-    env: Object.assign({}, process.env, {
-      NODE_PATH: path.join(ROOT, 'tools/native-preview/stub'),
-      HOMEPLUS_CONFIG_DIR: path.join(dir, 'config'),
-      HOMEPLUS_TOKEN_FILE: path.join(dir, 'api-token'),
-      HOMEPLUS_APP_DIR: app,
-      HOMEPLUS_FRAMES_DIR: path.join(dir, 'frames'),
-      HOMEPLUS_PREVIEW_LUNA_LOG: path.join(dir, 'luna.log'),
-      HOMEPLUS_PORT: String(port),
-      HOMEPLUS_PREVIEW: '1',
-      HOMEPLUS_PREVIEW_FOREGROUND: 'netflix', /* an app is in front */
-      HOMEPLUS_PREVIEW_AMBIENT: '1', /* with PicCap, capturing */
-      HOMEPLUS_PICCAP_PAUSED: path.join(dir, 'piccap-paused'),
-      HOMEPLUS_PICCAP_AGAIN_MS: String(AGAIN_MS),
-      HOMEPLUS_CAPTURE_RATE: String(1000 / GAP),
-      HOMEPLUS_CAPTURE_TIMEOUT_MS: String(GIVE_UP),
-      HOMEPLUS_CAPTURE_RETRY_MS: RETRY.join(),
-      HOMEPLUS_LUNA_TIMEOUT_MS: String(LUNA_MS)
-    }),
-    stdio: ['ignore', 'pipe', 'pipe']
+  svc = await startService(dir, {
+    HOMEPLUS_APP_DIR: app,
+    HOMEPLUS_FRAMES_DIR: path.join(dir, 'frames'),
+    HOMEPLUS_PREVIEW_LUNA_LOG: path.join(dir, 'luna.log'),
+    HOMEPLUS_PREVIEW_FOREGROUND: 'netflix', /* an app is in front */
+    HOMEPLUS_PREVIEW_AMBIENT: '1', /* with PicCap, capturing */
+    HOMEPLUS_PICCAP_PAUSED: path.join(dir, 'piccap-paused'),
+    HOMEPLUS_PICCAP_AGAIN_MS: String(AGAIN_MS),
+    HOMEPLUS_CAPTURE_RATE: String(1000 / GAP),
+    HOMEPLUS_CAPTURE_TIMEOUT_MS: String(GIVE_UP),
+    HOMEPLUS_CAPTURE_RETRY_MS: RETRY.join(),
+    HOMEPLUS_LUNA_TIMEOUT_MS: String(LUNA_MS)
   });
-  child.stdout.on('data', (d) => { log += d; });
-  child.stderr.on('data', (d) => { log += d; });
-  await until(async () => {
-    if (child.exitCode !== null) throw new Error(`the service stopped (exit code ${child.exitCode})`);
-    try { return (await call('GET', '/api/status', { auth: false })).status === 200; } catch (e) { return false; }
-  }, 15000, 'the service to start').catch((e) => { throw new Error(`${e.message}. Its output:\n${log}`); });
-  token = fs.readFileSync(path.join(dir, 'api-token'), 'utf8').trim();
+  ({ port, token } = svc);
 });
 
 test.after(async () => {
-  if (child && child.exitCode === null) {
-    const gone = new Promise((resolve) => child.once('exit', resolve));
-    child.kill();
-    await gone;
-  }
+  if (svc) await svc.stop();
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
 });
 
