@@ -14,8 +14,9 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   binds made for it count as Home+'s.
 - `service/` — Node 8.12+ webOS service (webOS 6 and webOS 22 and later) `com.github.pbalazaar.homeplus.service`, elevated with Homebrew
   Channel's `elevateService` (the launcher asks; see First run). Luna methods + a local HTTP API on `127.0.0.1:47823` (see `docs/ARCHITECTURE.md`).
-  Also: Home button takeover (`watch` mode, and `redirect` = no-flash bind mount over LG home's
-  start page, approved by the owner; and an app that quits brings Home+ at once, see Known TV quirks), settings
+  Also: Home button takeover (`watch` mode, and `redirect` = No Flash: a bind mount over LG home's
+  start page, approved by the owner, or where that can't work (the C3) Home+'s key filter in LG's compositor,
+  `keyfilter.js`, see Known TV quirks; and an app that quits brings Home+ at once, see Known TV quirks), settings
   apps, recents, and Continue Watching from
   Stremio + Trakt (`service.js`, `trakt.js`), Jellyfin (`jellyfin.js`) and Plex (`plex.js`), and what's popular
   on streaming apps from TMDB (`tmdb.js`, key via `tmdbSetup`). The launcher shows each as a Top Shelf
@@ -191,7 +192,7 @@ appears in your own SSH command line** — it kills the session. Use:
 - The Home button is left alone (`homeMode` "off") until the launcher has asked
   "Use Home+ as Your Home Screen?" once (`homeAsked` in config.json). Settings has the switch.
 - Once set up, the first open shows the welcome steps (`welcome_page()`, `setup.c`; `PAGE_WELCOME`): Welcome
-  (Get Started or Skip), the Home question, the remote's buttons (with LG Input Hook), Continue Watching sign-ins
+  (Get Started or Skip), the Home question, the remote's buttons (with the key filter or LG Input Hook), Continue Watching sign-ins
   (apps on the TV), App Tiles, then a tip or two. Their choices are Settings' own actions. Done or skipped, they're
   `onboarded` in config.json (`POST /api/home {"onboarded":true}`; the Home answer sends `false` with it);
   without the field, `homeAsked` counts, so an update from before them doesn't show them.
@@ -200,10 +201,11 @@ appears in your own SSH command line** — it kills the session. Use:
   the launcher shows its link as a QR code (`service/qr.js`, our own encoder: byte mode, level M, versions 1–10;
   `/api/keys/qr`). A save emits `keys` on `/api/events`. `HOMEPLUS_KEYS_HOST` names the address in the link
   (tests, the preview).
-- Settings → Remove Home+ (`POST /api/uninstall`): unmounts the no-flash page, deletes the boot
-  script and its log, lginputhook binds that launch Home+, `/var/lib/homeplus` and the elevation files,
-  then `appInstallService/dev/remove`s the package. A plain uninstall (Homebrew Channel) runs none of
-  that: what's left must be harmless (the dead link, the binds' fallbacks below); `/var/lib/homeplus` stays.
+- Settings → Remove Home+ (`POST /api/uninstall`): unmounts the no-flash page, takes the key filter out of
+  configd's list, deletes the boot script and its log, lginputhook binds that launch Home+, `/var/lib/homeplus`
+  and the elevation files, then `appInstallService/dev/remove`s the package. A plain uninstall (Homebrew Channel)
+  runs none of that: what's left must be harmless (the dead link, the binds' fallbacks below, the key filter's
+  until a reboot); `/var/lib/homeplus` stays.
 - Preview modes: `HOMEPLUS_PREVIEW_FRESH=1` (the welcome steps), `HOMEPLUS_PREVIEW_UNROOTED=1`
   (unelevated service; with no luna-send on the host this shows the Homebrew Channel screen),
   `HOMEPLUS_PREVIEW_OLD=1` (the old Home+'s service answers: "Uninstall the Old Home+").
@@ -227,8 +229,21 @@ appears in your own SSH command line** — it kills the session. Use:
   click then presses the keys' focus; the pointer takes over again after 40 px of real travel
   (`PTR_TAKE_PX`), so tremor doesn't. Not yet confirmed whether LG also sends a Return key with that click
   (if it does, `ok_down` dedupes them).
-- No-flash mode can't work on the C3: LG's home is a native app (`/usr/bin/com.webos.app.home`),
-  so the service falls back to `watch` and reports `noFlashAvailable: false`.
+- The no-flash page can't work on the C3: LG's home is a native app (`/usr/bin/com.webos.app.home`, a 54 KB
+  host for `qml/main.qml` in its folder), so No Flash there is Home+'s key filter (`service/keyfilter.js`). LG's
+  compositor runs each key through JS filters listed in configd's `com.webos.surfacemanager.keyFilters`
+  (`{file, handler}`; the C3's 18 are its base layer's, `/etc/configd/layers/base/com.webos.surfacemanager.json`),
+  each `Qt.include`d into a copy of `controllers/base/StarfishKeyFilterShell.js` with `lunaCall` (luna id
+  `com.webos.starfish.keyfilters`), `genericTimer` and the views in scope. Home+'s goes before `handleSystemKeys`
+  (Home is `Qt.Key_Super_L`; Settings `WebOS.Key_webOS_Settings` and Input `WebOS.Key_webOS_InputSource` are
+  `handleHotkeys`', after it), set with `setConfigs` `"volatile": true`: configd's memory only, so a reboot (or
+  a configd reconfigure) drops it, and the service watches `getConfigs` to put it back. The compositor rebuilds
+  its filters whenever the list changes; one that's missing or throws is skipped (webOS OSE's `WebOSKeyFilter`).
+  Each setConfigs leaves a ~148 KB `/tmp/configd_<time>_before_setConfigs.json`. Tried on the C3 on 2026-10-29
+  (0.20.0's service with the key filter, LG Input Hook's binds emptied): Home went from YouTube straight to
+  Home+, LG's home never in front, and Settings and Input worked. With LG Input Hook's binds, the hook takes
+  those keys before the compositor sees them. LG's Quick Settings and Input picker (`/usr/lib/qt5/qml/QuickSettings`,
+  `InputPicker`) are preloaded when the compositor starts, so their QML can't be swapped after boot.
 - When an app quits (its Exit, Back on its first screen, SAM's `closeByAppId`), SAM says `close` and `stop`
   (`getAppLifeEvents`), the foreground goes empty ~80 ms later, the screen is black, and 1.0 s after that SAM's
   last-app handler launches its idle app (settingsservice `general`/`lastAppHandlerPolicy` "idleApp", configd
@@ -241,8 +256,9 @@ appears in your own SSH command line** — it kills the session. Use:
 - Hidden, the launcher pumps SDL every 100 ms, so SAM's relaunch (the Home button) waited 0–100 ms. When SAM
   says it's launching Home+ while another app is in front, the service sends the launcher `wake` (`/api/events`),
   and it pumps every 10 ms for 300 ms (`keys_until`).
-- No flash on the C3 comes from lginputhook (`org.webosbrew.inputhook` 1.5.1; 1.4.0 couldn't
-  inject on webOS 23). `/home/root/.config/lginputhook/keybinds.json` binds Home (773) to Home+, so
+- Before the key filter, no flash on the C3 came from lginputhook (`org.webosbrew.inputhook` 1.5.1; 1.4.0
+  couldn't inject on webOS 23; on 23.20.59 ezinject falls back to its "generic method" and micomservice's hook
+  to replacing `write`). `/home/root/.config/lginputhook/keybinds.json` binds Home (773) to Home+, so
   LG's home never starts. Binding keys are the hook log's `uinput_code`, not `keyid`
   (`/tmp/lginput-hook-lginput2.log`). The hook injects once per boot, guarded by the `/tmp/inputhook`
   marker; after updating it, delete the marker and restart its service, or reboot. It rereads

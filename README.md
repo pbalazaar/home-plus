@@ -15,7 +15,7 @@
 > **Can I use it?**
 > - Your LG TV is **rooted** and has the [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel). Most current LG firmware can't be rooted; the Homebrew Channel's page explains how to check yours.
 > - So far it's **tested only on an LG C3** with webOS 9.2.1 (firmware 23.20.59). Other models and webOS versions may work but haven't been tried; reports from other TVs go in [COMPATIBILITY.md](COMPATIBILITY.md).
-> - Optional: [LG Input Hook](https://github.com/Simon34545/lginputhook), so LG's home screen never flashes on the Home button and the Settings button opens Home+'s Control Center over any app.
+> - The remote's buttons need nothing more on the C3: Home+ adds a key filter of its own to LG's, so LG's home screen never flashes on the Home button and the Settings button opens Home+'s Control Center over any app. On TVs without LG's key filters, [LG Input Hook](https://github.com/Simon34545/lginputhook) can do that (optional).
 
 **Install:** download the `.ipk` from the [latest release](https://github.com/pbalazaar/home-plus/releases/latest), install it with [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop) (Apps → Install), and open **Home+**. Changed your mind? **Settings → About → Remove Home+** removes its setup and uninstalls it. More in [Install](#install).
 
@@ -48,7 +48,7 @@
 - **Optional:**
   - for Continue Watching, any of: a [Stremio](https://www.stremio.com) account and the Stremio app; a [Jellyfin](https://jellyfin.org) server and the Jellyfin app; a [Plex](https://www.plex.tv) server and the Plex app;
   - a [Trakt](https://trakt.tv) account;
-  - [lginputhook](https://github.com/Simon34545/lginputhook), for a Home button without a flash (see [Home button](#home-button)).
+  - [lginputhook](https://github.com/Simon34545/lginputhook), for a Home button without a flash on TVs where Home+ can't add its own key filter (see [Home button](#home-button)).
 
 ## Install
 
@@ -83,7 +83,7 @@ Updates install the same way. An update resets the service's root access, and Ho
 
 **Magic Remote pointer:** point at anything and click. Pressing an arrow hands control back to the keys: then OK presses what the keys focused, wherever the cursor happens to be. Moving the pointer clearly takes over again.
 
-From the top row, press **Up** to reach the clock at the top right, as on tvOS; **OK** on it opens the Control Center. On Stremio, Jellyfin or Plex, Up goes into Continue Watching first, as the chevron above the dock shows. The remote's own **Settings** and **Input** keys open LG's menus; apps never receive them. With LG Input Hook installed (see [Home button](#home-button)), **Settings → Remote → Settings Button** makes the Settings key open the Control Center: over Home+, and over any other app or input too, where it opens on top of what's playing and the video carries on underneath (see below). **Input Button** does the same for the Input key, with the Control Center's inputs on their own: **OK** switches to one, and **Back** or the Input key again closes them.
+From the top row, press **Up** to reach the clock at the top right, as on tvOS; **OK** on it opens the Control Center. On Stremio, Jellyfin or Plex, Up goes into Continue Watching first, as the chevron above the dock shows. The remote's own **Settings** and **Input** keys open LG's menus; apps never receive them. Where Home+ can catch them (on the C3 by itself, elsewhere with LG Input Hook: see [Home button](#home-button)), **Settings → Remote → Settings Button** makes the Settings key open the Control Center: over Home+, and over any other app or input too, where it opens on top of what's playing and the video carries on underneath (see below). **Input Button** does the same for the Input key, with the Control Center's inputs on their own: **OK** switches to one, and **Back** or the Input key again closes them.
 
 ![Settings](docs/screenshots/settings.jpg)
 
@@ -108,10 +108,10 @@ luna-send -n 1 luna://com.github.pbalazaar.homeplus.service/control '{"action":"
 
 | Section | What's there |
 |---|---|
-| **Remote** | Whether the Home button opens Home+ or LG's home screen, No Flash on TVs that support it, and with LG Input Hook, what the Settings and Input buttons open |
+| **Remote** | Whether the Home button opens Home+ or LG's home screen, No Flash on TVs that support it, and what the Settings and Input buttons open (where Home+'s key filter or LG Input Hook can catch them) |
 | **Display & OLED** | Dim After, Turn Off After, Pixel Shift, Calm Colours (dark app backgrounds, so ambient lights don't flood the room), and whether the Top Shelf turns pages by itself |
 | **App Tiles** | Default, Dark, Clear or Tinted, and Tinted's colour |
-| **Control Center** | With LG Input Hook and PicCap: Blur Over Video, which pauses PicCap's capture while the Control Center is open over other apps, so its glass can blur the video |
+| **Control Center** | With PicCap, where the Settings button can open the Control Center over other apps: Blur Over Video, which pauses PicCap's capture while the Control Center is open over other apps, so its glass can blur the video |
 | **General** | Focus sounds, a 12-hour or 24-hour clock, and Hidden Apps (once you've hidden one) |
 | **Accessibility** | Reduce Motion, Reduce Transparency |
 | **Accounts** | Stremio, Trakt, Jellyfin, Plex and TMDB: whether they're connected, signing in and signing out |
@@ -210,15 +210,17 @@ With **Settings → Remote → Home Button** set to **Opens Home+**, Home+ watch
 
 Leaving an app (its own Exit, or Back on its first screen) comes back to Home+ too, without LG's home screen: Home+ opens as soon as the app has closed, before webOS would open LG's (it waits a second for that). Coming back, the home screen comes into focus where you left it, on the app you opened, as tvOS's does.
 
-To remove that flash, use lginputhook (1.5.1 or later, from the Homebrew Channel). It catches the Home button before LG's home screen starts. In the LG Input Hook app, add a keybind for button **773**, choose **Launch App** and pick **Home+**. Or put this in `/home/root/.config/lginputhook/keybinds.json`:
+**No Flash**, in **Settings → Remote** on TVs that allow it, keeps LG's home screen from showing at all: the Home button opens Home+ directly. On the C3, Home+ adds a key filter of its own to the ones LG's compositor runs on each key press, ahead of LG's handling of the Home button. It's held in memory only (restarting the TV removes it, and Home+ adds it again when it starts), and Home+ takes it out when no button needs it, or when you remove Home+. The Settings and Input buttons' choices (see [Using Home+](#using-home)) use the same filter. On TVs where LG's home screen is a web app, No Flash replaces LG's home page in memory while Home+ runs instead; nothing on disk changes.
+
+On TVs with neither, use lginputhook (1.5.1 or later, from the Homebrew Channel). It catches the Home button before LG's home screen starts. In the LG Input Hook app, add a keybind for button **773**, choose **Launch App** and pick **Home+**. Or put this in `/home/root/.config/lginputhook/keybinds.json`:
 
 ```json
 {"773": {"action": "launch", "id": "com.github.pbalazaar.homeplus"}}
 ```
 
-Home+ turns that keybind into a command that opens Home+ only while it's installed, and LG's home screen otherwise, so the Home button keeps working if Home+ is ever removed without **Remove Home+**. The Settings button's keybind (see [Using Home+](#using-home)) falls back to LG's Quick Settings the same way.
+Home+ turns that keybind into a command that opens Home+ only while it's installed, and LG's home screen otherwise, so the Home button keeps working if Home+ is ever removed without **Remove Home+**. The Settings and Input buttons' keybinds (see [Using Home+](#using-home)) fall back to LG's Quick Settings and Input picker the same way.
 
-On TVs where LG's home screen is a web app (not the C3), **Settings → Remote → Home Button** also offers **No Flash**. In that mode, Home+ replaces LG's home page in memory while it runs; nothing on disk changes.
+If LG Input Hook already has that keybind, it catches the Home button first, and Settings doesn't offer No Flash.
 
 ## OLED protection
 
@@ -232,10 +234,10 @@ Change the timings, or turn any of these off, in **Settings → Display & OLED**
 ## Removing Home+
 
 **Settings → About → Remove Home+** undoes everything Home+ set up, then uninstalls it:
-- it turns off the Home button takeover;
+- it turns off the Home button takeover, and takes its key filter out of LG's compositor;
 - it deletes its boot script, the boot script's log, and its settings;
 - it deletes its sign-ins and keys (Stremio, Trakt, Jellyfin, Plex, TMDB);
-- it removes its lginputhook keybinds, the Home key's and the Settings key's (your others stay);
+- it removes its lginputhook keybinds, the Home, Settings and Input keys' (your others stay);
 - it deletes the root access files the Homebrew Channel created.
 
 **If Home+ won't open,** do the same by hand over SSH:
@@ -248,7 +250,7 @@ luna-send -n 1 luna://com.webos.appInstallService/dev/remove '{"id":"com.github.
 
 If you added the lginputhook keybinds, delete them in the LG Input Hook app.
 
-**If Home+ is removed another way** (from the Homebrew Channel, say), it can't tidy up after itself, but what it leaves behind does nothing. The boot script is a link into Home+'s package, so it goes with Home+, and the Homebrew Channel skips the link left behind. The Home and Settings keybinds check for Home+ first, and without it open LG's home screen and Quick Settings, as the buttons do without Home+. What stays, to delete by hand if you like: those keybinds (in the LG Input Hook app), the link and its log (the first line above), and your settings, sign-ins and pictures (`/var/lib/homeplus`). Keybinds you made yourself for other buttons that open Home+ do nothing once it's gone, so delete those too.
+**If Home+ is removed another way** (from the Homebrew Channel, say), it can't tidy up after itself, but what it leaves behind does nothing. The boot script is a link into Home+'s package, so it goes with Home+, and the Homebrew Channel skips the link left behind. The Home, Settings and Input keybinds check for Home+ first, and without it open LG's home screen, Quick Settings and Input picker, as the buttons do without Home+. Its key filter stays in LG's compositor until the TV restarts, and does the same. What stays, to delete by hand if you like: those keybinds (in the LG Input Hook app), the link and its log (the first line above), and your settings, sign-ins and pictures (`/var/lib/homeplus`). Keybinds you made yourself for other buttons that open Home+ do nothing once it's gone, so delete those too.
 
 If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot scripts after a crash during start-up, so the TV comes back without Home+'s.
 
@@ -258,7 +260,7 @@ If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot s
   - `/tmp/homeplus-service.log`: the service.
   - `homeplus-native.log`: the launcher's own log, inside its app sandbox. Find it with `find / -name homeplus-native.log`.
   - `/var/lib/webosbrew/homeplus-boot.log`: the boot script, at the last start-up.
-- **The Home button still opens LG's home screen:** check **Settings → Remote → Home Button**. If you use lginputhook, restart the TV after changing its keybinds.
+- **The Home button still opens LG's home screen:** check **Settings → Remote → Home Button**. If you use lginputhook, restart the TV after changing its keybinds. With No Flash, `/tmp/homeplus-service.log` has a `key filter:` line, with the buttons it takes, whenever Home+ adds or changes its key filter.
 - **No Continue Watching:** sign in under **Settings → Accounts**, and make sure the app's tile is in the top row.
 - **A streaming app shows a glow, not what's popular:** check **Settings → Accounts → TMDB**, and that the app's name is one TMDB lists for your TV's country.
 - **"No Jellyfin server found":** the TV and the server must be on the same network, with the server's auto-discovery on (it is by default). Or give Home+ its address (see [Jellyfin](#jellyfin)).
@@ -266,7 +268,7 @@ If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot s
 
 ## Questions
 
-**Will it harm my TV?** Home+ runs a background service with root access and sets up a boot-script link and optional LG Input Hook keybinds. Root access and boot changes carry risk; testing on one TV cannot guarantee safety on every model or firmware. The keybinds fall back to LG's buttons when Home+ is gone. If the TV has trouble starting, the Homebrew Channel's failsafe can skip boot scripts. [Removing Home+](#removing-home) explains cleanup, including what a plain uninstall leaves behind.
+**Will it harm my TV?** Home+ runs a background service with root access and sets up a boot-script link, a key filter in LG's compositor that a restart clears, and optional LG Input Hook keybinds. Root access and boot changes carry risk; testing on one TV cannot guarantee safety on every model or firmware. The key filter and the keybinds fall back to LG's buttons when Home+ is gone. If the TV has trouble starting, the Homebrew Channel's failsafe can skip boot scripts. [Removing Home+](#removing-home) explains cleanup, including what a plain uninstall leaves behind.
 
 **Can I go back to LG's home screen?** Yes. **Settings → Remote → Home Button** gives the Home button back to LG, and **Settings → About → Remove Home+** removes its setup and uninstalls.
 
@@ -274,7 +276,7 @@ If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot s
 
 **Does it remove LG's ads everywhere?** No, only from the home screen, since Home+ replaces it. LG's screensaver, Live TV and its own apps are unchanged.
 
-**Why does LG's home screen flash when I press Home?** Without [LG Input Hook](#home-button), Home+ can only replace LG's home screen once it has appeared. With it, the Home button opens Home+ directly.
+**Why does LG's home screen flash when I press Home?** Without [No Flash](#home-button), Home+ can only replace LG's home screen once it has appeared. With it, the Home button opens Home+ directly.
 
 **Why do I need my own TMDB or Trakt key?** Home+ doesn't come with keys of its own, so each TV uses its own. Both are free, and you paste them on your phone from a QR code, with no typing on the TV. Plex, Jellyfin and Stremio need no key.
 

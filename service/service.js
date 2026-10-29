@@ -319,11 +319,17 @@ async function lgHomeEntry() {
   return { main };
 }
 
-// LG's home app doesn't change while we run, so check once whether no-flash can work at all.
+// LG's home app doesn't change while we run, so check once whether its page can be redirected.
 let lgHomeChecked = null;
-async function noFlashAvailable() {
+async function redirectAvailable() {
   if (!lgHomeChecked) lgHomeChecked = await lgHomeEntry();
   return !lgHomeChecked.error;
+}
+
+// No Flash: LG's home page redirected or, where it can't be (the C3's home is a native app), Home+'s
+// key filter taking the Home key. Not offered while LG Input Hook's Home bind (Home+'s) takes it.
+async function noFlashAvailable() {
+  return ((await redirectAvailable()) || keyFilter.available()) && !hookHome();
 }
 
 async function mountRedirect() {
@@ -365,11 +371,12 @@ function onboarded(cfg) {
 }
 
 async function applyHomeMode() {
-  if (homeMode(readConfig()) === 'redirect') {
+  if (homeMode(readConfig()) === 'redirect' && (await redirectAvailable())) {
     if (!(await mountRedirect())) log('no-flash unavailable; using watch mode');
   } else {
     await unmountRedirect();
   }
+  await applyKeyFilter(); /* (No Flash without the redirect: the key filter's) */
 }
 setTimeout(() => applyHomeMode().catch((e) => log('home mode error', e.message)), 1500);
 
@@ -438,6 +445,46 @@ const SETTINGS_KEY_SCRIPT = path.join(__dirname, 'settings-key.sh');
 const INPUT_KEY = '241';
 const INPUT_KEY_SCRIPT = path.join(__dirname, 'input-key.sh');
 const INPUT_PICKER = 'com.webos.app.quickinputpicker';
+
+// ---- Without LG Input Hook: Home+'s key filter in LG's compositor takes the same keys (service/keyfilter.js).
+// The Settings and Input keys are Home+'s when its bind in LG Input Hook is, or config.json says so
+// (settingsKey, inputKey: Settings' buttons, kept there for the key filter).
+
+const KEY_PREFS = { [SETTINGS_KEY]: 'settingsKey', [INPUT_KEY]: 'inputKey' };
+const keyFilter = require('./keyfilter')({
+  luna,
+  subscribe: (uri, params) => service.subscribe(uri, params),
+  log,
+  dir: () => path.dirname(findConfigPath()),
+  write: (file, text) => writeFileAtomic(file, text, 0o600), /* (the API's token is in it; the compositor runs as root) */
+  api: `http://127.0.0.1:${IMAGE_PORT}/api/key`,
+  token: () => TOKEN,
+  appId: NATIVE_ID,
+  lgHome: LG_HOME
+});
+if (isRoot()) keyFilter.start();
+
+function keyOn(key, cfg = readConfig()) {
+  const binds = readBinds();
+  return (!!binds && ourBind(binds[key], key)) || cfg[KEY_PREFS[key]] === true;
+}
+
+// LG Input Hook's Home bind is Home+'s: the hook takes the key itself, as before No Flash was offered here
+function hookHome() {
+  const binds = readBinds();
+  return !!binds && ourBind(binds[HOME_KEY], HOME_KEY);
+}
+
+// The keys the key filter takes: Home with No Flash where LG's home page can't be redirected, and Settings
+// and Input while their buttons are Home+'s. Each time one of those may have changed.
+async function applyKeyFilter() {
+  const cfg = readConfig();
+  return keyFilter.set({
+    home: homeMode(cfg) === 'redirect' && !(await redirectAvailable()),
+    settings: keyOn(SETTINGS_KEY, cfg),
+    input: keyOn(INPUT_KEY, cfg)
+  });
+}
 
 // LG Input Hook's binds ({} while it has none). null when the file can't be read or isn't JSON
 // (its app may be writing it, or a comma's astray): then it's left as it is, never written over
@@ -530,7 +577,10 @@ function upgradeBinds() {
 // started is looked for every minute (tests: HOMEPLUS_BINDS_RETRY_MS).
 const BINDS_RETRY_MS = Number(process.env.HOMEPLUS_BINDS_RETRY_MS) || 60000;
 if (isRoot()) {
-  const upgrade = () => { try { upgradeBinds(); } catch (e) { log('LG Input Hook binds:', e.message); } };
+  const upgrade = () => {
+    try { upgradeBinds(); } catch (e) { log('LG Input Hook binds:', e.message); }
+    applyKeyFilter().catch((e) => log('key filter:', e.message)); /* (a key's bind may have come or gone) */
+  };
   let timer = null;
   const watch = () => {
     try {
@@ -545,23 +595,29 @@ if (isRoot()) {
   watch();
 }
 
-// a key's bind (the Settings or Input key's): LG Input Hook is there to make one, and it's Home+'s
+// a key's button (the Settings or Input key's): LG Input Hook or Home+'s key filter is there to take the
+// key, and it's Home+'s
 function keyState(key) {
-  const binds = readBinds();
-  return { available: fs.existsSync(path.dirname(INPUTHOOK_BINDS)), on: !!binds && ourBind(binds[key], key) };
+  return { available: fs.existsSync(path.dirname(INPUTHOOK_BINDS)) || keyFilter.available(), on: keyOn(key) };
 }
 const settingsKeyState = () => keyState(SETTINGS_KEY);
 
-function setKeyBind(key, on) {
-  if (!keyState(key).available) throw new Error('LG Input Hook isn\'t installed');
-  const binds = readBinds();
-  if (!binds) throw new Error('LG Input Hook\'s keybinds.json isn\'t valid JSON'); /* (Settings says so; the file stays as it is) */
-  if (on) {
-    writeKeyScripts();
-    binds[key] = OUR_BINDS[key];
+// kept in cfg (written here); then applyKeyFilter()
+function setKeyBind(key, on, cfg = readConfig()) {
+  const hook = fs.existsSync(path.dirname(INPUTHOOK_BINDS));
+  if (!hook && !keyFilter.available()) throw new Error('LG Input Hook isn\'t installed');
+  if (hook) { /* its bind too: the hook takes the key before the compositor sees it */
+    const binds = readBinds();
+    if (!binds) throw new Error('LG Input Hook\'s keybinds.json isn\'t valid JSON'); /* (Settings says so; the file stays as it is) */
+    if (on) {
+      writeKeyScripts();
+      binds[key] = OUR_BINDS[key];
+    }
+    else if (ourBind(binds[key], key)) delete binds[key]; /* someone else's bind stays */
+    writeBinds(binds);
   }
-  else if (ourBind(binds[key], key)) delete binds[key]; /* someone else's bind stays */
-  writeBinds(binds);
+  cfg[KEY_PREFS[key]] = on;
+  writeConfig(cfg);
   log(key === INPUT_KEY ? 'input key:' : 'settings key:', on ? 'Home+' : 'LG');
 }
 
@@ -915,6 +971,7 @@ function dropElevation() {
 async function uninstall() {
   const steps = {};
   await unmountRedirect().catch(() => {});
+  steps.keyFilter = await keyFilter.remove().catch((e) => e.message); /* (out of the compositor's list; a reboot would do it too) */
   try { [INITD, BOOT_LOG].forEach((f) => remove.rmSync(f, { force: true })); steps.bootScript = true; } catch (e) { steps.bootScript = e.message; }
   try { /* (binds left alone keep their scripts: they may run one) */
     steps.inputhookBinds = dropInputhookBinds();
@@ -1519,8 +1576,9 @@ async function handleApi(req, res) {
       const b = req.method === 'POST' ? await readBody(req) : null;
       const cfg = readConfig();
       if (b) {
-        if (typeof b.settingsKey === 'boolean') setKeyBind(SETTINGS_KEY, b.settingsKey); /* the Settings key's bind */
-        if (typeof b.inputKey === 'boolean') setKeyBind(INPUT_KEY, b.inputKey); /* the Input key's */
+        if (typeof b.settingsKey === 'boolean') setKeyBind(SETTINGS_KEY, b.settingsKey, cfg); /* the Settings key's bind */
+        if (typeof b.inputKey === 'boolean') setKeyBind(INPUT_KEY, b.inputKey, cfg); /* the Input key's */
+        if (typeof b.settingsKey === 'boolean' || typeof b.inputKey === 'boolean') await applyKeyFilter();
         if (typeof b.onboarded === 'boolean') { /* the welcome steps: false while they're on, true once done or skipped */
           cfg.onboarded = b.onboarded;
           if (b.mode === undefined && !b.asked) writeConfig(cfg);
@@ -1534,7 +1592,7 @@ async function handleApi(req, res) {
           await applyHomeMode();
         }
       }
-      return sendJSON(res, 200, { mode: homeMode(cfg), noFlashActive: !!redirectTarget, noFlashAvailable: await noFlashAvailable(), settingsKey: settingsKeyState(), inputKey: keyState(INPUT_KEY),
+      return sendJSON(res, 200, { mode: homeMode(cfg), noFlashActive: !!redirectTarget || keyFilter.takes('home'), noFlashAvailable: await noFlashAvailable(), settingsKey: settingsKeyState(), inputKey: keyState(INPUT_KEY),
         piccap: !!picCapture && await picCapture.available() }); /* Settings -> Control Center offers Blur Over Video */
     }
     if (url.pathname === '/api/events') return listen(req, res);

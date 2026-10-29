@@ -121,7 +121,7 @@ void settings_page(int page, int index)
             "Home+ in place of LG\xE2\x80\x99s home screen, after apps too.");
         if (home_on && S.noflash_available)
             row("No Flash", S.noflash_active ? "On" : "Off", ACT_HOME_MODE, 0, 0, "LG\xE2\x80\x99s home screen never shows, not even for a moment.");
-        if (S.settings_key_available) { /* needs LG Input Hook, which catches the keys */
+        if (S.settings_key_available) { /* Home+'s key filter or LG Input Hook catches the keys */
             row("Settings Button", S.settings_key ? "Control Center" : "LG Quick Settings", ACT_SETTINGS_KEY, 0, 0,
                 "The Control Center, over other apps too.");
             row("Input Button", S.input_key ? "Home+ Inputs" : "LG Input Picker", ACT_INPUT_KEY, 0, 0,

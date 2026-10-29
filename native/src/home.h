@@ -287,8 +287,8 @@ typedef struct {
     char home_mode[16]; /* "redirect" (no-flash), "watch" or "off" */
     int sounds_off; /* focus sounds switched off in Settings (saved by the service) */
     Uint32 idle_dim_ms, idle_off_ms; /* OLED idle stages (0 = default) */
-    int noflash_active, noflash_available; /* available: LG's home is a web app we can replace */
-    int settings_key, settings_key_available; /* the remote's Settings key opens the Control Center (LG Input Hook) */
+    int noflash_active, noflash_available; /* available: LG's home page can be replaced, or the key filter can take Home */
+    int settings_key, settings_key_available; /* the remote's Settings key opens the Control Center (key filter, LG Input Hook) */
     int input_key;                    /* ... and its Input key, the Control Center's inputs */
     int cc_blur_video, piccap; /* Settings -> Control Center: Blur Over Video (over other apps, with PicCap installed) */
     Uint32 trakt_poll; /* while showing a Trakt code: next status check */

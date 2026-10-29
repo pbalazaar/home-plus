@@ -147,7 +147,8 @@ void setup_retry_now(void)
 /* ------------------------------------------------------------------ welcome */
 
 /* The first time Home+ opens, once it's set up: a few choices, a sheet each, then a tip or two. Each can be
- * changed later in Settings. Only the steps this TV has a use for: the remote's buttons need LG Input Hook. */
+ * changed later in Settings. Only the steps this TV has a use for: the remote's buttons need Home+'s key filter
+ * or LG Input Hook. */
 static int welcome_wanted(int step)
 {
     switch (step) {

@@ -648,7 +648,7 @@ void draw_control_center(void)
     }
 }
 
-/* The remote's Settings key while Home+ is in front (LG Input Hook runs our script, which asks the
+/* The remote's Settings key while Home+ is in front (Home+'s key filter, or LG Input Hook's script, asks the
  * service): the Control Center, as from the clock, over whatever was open; pressed again, it closes. */
 void settings_key(void)
 {
@@ -667,8 +667,8 @@ void settings_key(void)
     cc_open();
 }
 
-/* The remote's Input key (LG Input Hook), while Home+ is in front: the Control Center's inputs, as
- * over other apps. Opened for them alone, Back closes them; the key again closes them either way. */
+/* The remote's Input key (Home+'s key filter, LG Input Hook), while Home+ is in front: the Control Center's
+ * inputs, as over other apps. Opened for them alone, Back closes them; the key again closes them either way. */
 void input_key(void)
 {
     wake(0); /* a dimmed or dark screen comes back too */
