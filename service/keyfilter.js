@@ -217,10 +217,10 @@ module.exports = function createKeyFilter({ luna, subscribe, log, dir, write, ap
     available,
     // the filter in the list takes this key
     takes: (key) => !!placed && !!placed.keys[key],
-    // the keys to take now: { home, settings, input }
+    // the keys to take now: { home, settings, input }. true, or why not (configd refused, or didn't answer)
     set(keys) {
       wanted = pick(keys);
-      return queue();
+      return queue().then(() => failed || true);
     },
     // Remove Home+: out of the list, and its files gone. true, or why not
     remove() {

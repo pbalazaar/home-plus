@@ -451,6 +451,7 @@ const INPUT_PICKER = 'com.webos.app.quickinputpicker';
 // (settingsKey, inputKey: Settings' buttons, kept there for the key filter).
 
 const KEY_PREFS = { [SETTINGS_KEY]: 'settingsKey', [INPUT_KEY]: 'inputKey' };
+const FILTER_KEYS = { [SETTINGS_KEY]: 'settings', [INPUT_KEY]: 'input' }; /* (the key filter's names for them) */
 const keyFilter = require('./keyfilter')({
   luna,
   subscribe: (uri, params) => service.subscribe(uri, params),
@@ -476,7 +477,8 @@ function hookHome() {
 }
 
 // The keys the key filter takes: Home with No Flash where LG's home page can't be redirected, and Settings
-// and Input while their buttons are Home+'s. Each time one of those may have changed.
+// and Input while their buttons are Home+'s. Each time one of those may have changed: true, or why the TV
+// didn't take it.
 async function applyKeyFilter() {
   const cfg = readConfig();
   return keyFilter.set({
@@ -598,7 +600,9 @@ if (isRoot()) {
 // a key's button (the Settings or Input key's): LG Input Hook or Home+'s key filter is there to take the
 // key, and it's Home+'s
 function keyState(key) {
-  return { available: fs.existsSync(path.dirname(INPUTHOOK_BINDS)) || keyFilter.available(), on: keyOn(key) };
+  const hook = fs.existsSync(path.dirname(INPUTHOOK_BINDS));
+  /* without LG Input Hook, what the compositor's list has: a change configd didn't take isn't on */
+  return { available: hook || keyFilter.available(), on: keyOn(key) && (hook || keyFilter.takes(FILTER_KEYS[key])) };
 }
 const settingsKeyState = () => keyState(SETTINGS_KEY);
 
@@ -1576,9 +1580,18 @@ async function handleApi(req, res) {
       const b = req.method === 'POST' ? await readBody(req) : null;
       const cfg = readConfig();
       if (b) {
-        if (typeof b.settingsKey === 'boolean') setKeyBind(SETTINGS_KEY, b.settingsKey, cfg); /* the Settings key's bind */
-        if (typeof b.inputKey === 'boolean') setKeyBind(INPUT_KEY, b.inputKey, cfg); /* the Input key's */
-        if (typeof b.settingsKey === 'boolean' || typeof b.inputKey === 'boolean') await applyKeyFilter();
+        if (typeof b.settingsKey === 'boolean' || typeof b.inputKey === 'boolean') {
+          const was = { settingsKey: cfg.settingsKey, inputKey: cfg.inputKey };
+          if (typeof b.settingsKey === 'boolean') setKeyBind(SETTINGS_KEY, b.settingsKey, cfg); /* the Settings key's bind */
+          if (typeof b.inputKey === 'boolean') setKeyBind(INPUT_KEY, b.inputKey, cfg); /* the Input key's */
+          const took = await applyKeyFilter();
+          if (took !== true && !fs.existsSync(path.dirname(INPUTHOOK_BINDS))) { /* the key filter is all that catches them: as they were */
+            Object.assign(cfg, was);
+            writeConfig(cfg);
+            await applyKeyFilter();
+            throw new Error(`the TV didn't take Home+'s key filter: ${took}`); /* (Settings says so) */
+          }
+        }
         if (typeof b.onboarded === 'boolean') { /* the welcome steps: false while they're on, true once done or skipped */
           cfg.onboarded = b.onboarded;
           if (b.mode === undefined && !b.asked) writeConfig(cfg);

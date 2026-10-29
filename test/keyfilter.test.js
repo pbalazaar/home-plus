@@ -201,7 +201,7 @@ test('key filter: nothing until configd says what the list is; then Home+\'s goe
     assert.deepEqual(files(dir), []);
     configd.answer();
     await tick();
-    await kf.set({ settings: true });
+    assert.equal(await kf.set({ settings: true }), true, 'in the list');
     assert.equal(kf.available(), true);
     assert.equal(configd.sets.length, 1);
     assert.equal(configd.sets[0].volatile, true, 'in configd\'s memory only: a reboot clears it');
@@ -293,7 +293,7 @@ test('key filter: a list without LG\'s Home key filter, or configd refusing, tak
     const refusing = stubConfigd(LG_LIST, { refuse: true });
     const b = keyFilter(refusing, dir);
     refusing.answer();
-    await b.set({ settings: true });
+    assert.match(String(await b.set({ settings: true })), /Denied method call/, 'it says why');
     assert.equal(b.takes('settings'), false);
     assert.deepEqual(refusing.now(), LG_LIST);
     assert.match(b.logged.join('\n'), /configd refused it: Denied method call/);
@@ -377,6 +377,29 @@ test('key filter: without LG Input Hook, Settings offers the buttons and No Flas
     const removed = (await svc.call('POST', '/api/uninstall')).json;
     assert.equal(removed.keyFilter, true);
     assert.equal(last(sets()).params.configs[KEY_FILTERS], null, 'out of the compositor\'s list');
+  } finally {
+    await svc.stop();
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+  }
+});
+
+/* The same TV, its configd not answering setConfigs: without LG Input Hook nothing else catches the keys */
+test('key filter: a button configd doesn\'t take stays as it was, and Settings hears why', async () => {
+  const dir = tempDir();
+  fs.writeFileSync(path.join(dir, 'apps.txt'), 'netflix|Netflix');
+  const svc = await startService(dir, {
+    HOMEPLUS_INPUTHOOK_BINDS: path.join(dir, 'no-lginputhook', 'keybinds.json'),
+    HOMEPLUS_APP_DIR: path.join(dir, 'app'), HOMEPLUS_INITD_DIR: path.join(dir, 'init.d'),
+    HOMEPLUS_PREVIEW_LUNA_SILENT: 'setConfigs$', HOMEPLUS_LUNA_TIMEOUT_MS: '300',
+    HOMEPLUS_PREVIEW_SUBSCRIPTIONS: JSON.stringify({ getConfigs: [[100, { returnValue: true, subscribed: true, configs: { [KEY_FILTERS]: LG_LIST } }]] })
+  });
+  try {
+    await until(async () => (await svc.call('GET', '/api/home')).json.settingsKey.available, 8000, 'the key filter');
+    const r = await svc.call('POST', '/api/home', { body: { settingsKey: true } });
+    assert.equal(r.status, 500, 'Settings hears it didn\'t change');
+    assert.match(r.json.errorText, /key filter/);
+    assert.deepEqual((await svc.call('GET', '/api/home')).json.settingsKey, { available: true, on: false });
+    assert.notEqual(JSON.parse(fs.readFileSync(path.join(dir, 'config', 'config.json'), 'utf8')).settingsKey, true, 'not kept as on');
   } finally {
     await svc.stop();
     rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
