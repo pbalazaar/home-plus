@@ -15,6 +15,7 @@ const CATALOG = [ /* as check.qml's sample */
   { id: 'settings', title: 'Settings', kind: 'opens', icon: 'settings', group: 'Home+', sizes: ['small'], available: true, placed: true, pinned: true }
 ];
 http.createServer((req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   let body = '';
   req.on('data', (c) => { body += c; });
   req.on('end', () => {
