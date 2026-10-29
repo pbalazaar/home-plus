@@ -11,8 +11,10 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const vm = require('vm');
+const { URL } = require('url');
 const { EventEmitter } = require('events');
 const createKeyFilter = require('../service/keyfilter');
+const { rmSync } = require('../service/remove'); /* (runtime.test.js runs this file on the TV's Node too: no fs.rmSync before 14.14) */
 const { startService, until, last } = require('./helpers');
 
 const { filterSource, withFilter, KEY_FILTERS } = createKeyFilter;
@@ -214,7 +216,7 @@ test('key filter: nothing until configd says what the list is; then Home+\'s goe
     assert.equal(kf.takes('settings'), true);
     assert.equal(kf.takes('home'), false);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -236,7 +238,7 @@ test('key filter: the same keys change nothing; others are a new file in place o
     assert.equal(files(dir).length, 1, 'the old file is gone');
     assert.equal(kf.takes('home'), true);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -253,7 +255,7 @@ test('key filter: put back when configd reads its layers again', async () => {
     assert.equal(configd.sets.length, 2);
     assert.deepEqual(configd.now(), placed);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -274,7 +276,7 @@ test('key filter: no keys, and Remove Home+: out of the list, LG\'s own back, it
     assert.deepEqual(files(dir), []);
     assert.match(kf.logged.join('\n'), /key filter: off/);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -296,7 +298,7 @@ test('key filter: a list without LG\'s Home key filter, or configd refusing, tak
     assert.deepEqual(refusing.now(), LG_LIST);
     assert.match(b.logged.join('\n'), /configd refused it: Denied method call/);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -316,7 +318,7 @@ test('key filter: a service started again (a new token) puts its own in place of
     assert.match(fs.readFileSync(ours[0].file, 'utf8'), /"X-Homeplus-Token", "t2"/);
     assert.deepEqual(files(dir), [path.basename(ours[0].file)]);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -353,7 +355,8 @@ test('key filter: without LG Input Hook, Settings offers the buttons and No Flas
       open(method, url) { this.method = method; this.url = url; this.headers = {}; }
       setRequestHeader(name, value) { this.headers[name] = value; }
       send(body) {
-        const req = http.request(this.url, { method: this.method, headers: this.headers }, (res) => {
+        const u = new URL(this.url); /* (http.request(url, options) is Node 10.9's) */
+        const req = http.request({ hostname: u.hostname, port: u.port, path: u.pathname, method: this.method, headers: this.headers }, (res) => {
           res.resume();
           res.on('end', () => { this.status = res.statusCode; this.readyState = 4; this.onreadystatechange(); });
         });
@@ -376,6 +379,6 @@ test('key filter: without LG Input Hook, Settings offers the buttons and No Flas
     assert.equal(last(sets()).params.configs[KEY_FILTERS], null, 'out of the compositor\'s list');
   } finally {
     await svc.stop();
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
   }
 });
