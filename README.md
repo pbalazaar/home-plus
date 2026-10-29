@@ -14,8 +14,8 @@
 
 > **Can I use it?**
 > - Your LG TV is **rooted** and has the [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel). Most current LG firmware can't be rooted; the Homebrew Channel's page explains how to check yours.
-> - So far it's **tested only on an LG C3** with webOS 9.2.1 (firmware 23.20.59). Other models and webOS versions may work but haven't been tried; reports from other TVs go in [COMPATIBILITY.md](COMPATIBILITY.md).
-> - The remote's buttons need nothing more on the C3: Home+ adds a key filter of its own to LG's, so LG's home screen never flashes on the Home button and the Settings button opens Home+'s Control Center over any app. On TVs without LG's key filters, [LG Input Hook](https://github.com/Simon34545/lginputhook) can do that (optional).
+> - It's **tested on an LG C3** with webOS 9.2.1 (firmware 23.20.59), and people have tried it on an **LG C1** (webOS 6) and an **LG C4** (webOS 26). Other models and webOS versions haven't been tried yet: [COMPATIBILITY.md](COMPATIBILITY.md) has the reports, and one from your TV adds to it.
+> - On the C3, the remote's Home, Settings and Input buttons need no extra app: Home+ adds a key filter of its own to LG's key handling, so the Home button opens Home+ without LG's home screen showing first, and the Settings button can open Home+'s Control Center over any app. On TVs where that isn't possible, the optional [LG Input Hook](https://github.com/Simon34545/lginputhook) app does it.
 
 **Install:** download the `.ipk` from the [latest release](https://github.com/pbalazaar/home-plus/releases/latest), install it with [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop) (Apps → Install), and open **Home+**. Changed your mind? **Settings → About → Remove Home+** removes its setup and uninstalls it. More in [Install](#install).
 
@@ -34,7 +34,7 @@
 - **App tiles:** like iOS 26's, every app can show its own colours, sit on a dark tile, or turn to glass: clear, or tinted in one of ten colours.
 - **Motion and sound:** everything moves on springs, and menus grow out of the button that opened them. A soft tick plays when focus moves; **Settings → General → Sounds** turns it off.
 - **Continue Watching:** what you're partway through in Stremio (with your Trakt progress), Jellyfin or Plex, newest first. It turns to the next title every 10 seconds (or stays still: **Settings → Display & OLED → Top Shelf**); press **Up**, then **Left** and **Right**, to step through them. You sign in with a code or a QR code, so no password is typed on the TV.
-- **Recents:** an App Switcher for the apps you opened that are still running, most recent first. Apps webOS runs by itself (preloaded, or started again in the background) stay out. Open them, close them one by one, or close them all. Press **Back** on the first app to open it.
+- **Recents:** an App Switcher for the apps you opened that are still running, most recent first. Apps webOS runs by itself (preloaded, or started again in the background) stay out. Open them, close them one by one, or close them all. Press **Back** on the first app to open Recents.
 - **Your layout:** hold **OK** on an app to move it, move it to the front, hide it, or delete it from the TV (like tvOS's Delete App; LG's built-in apps, the Homebrew Channel, LG Input Hook and Home+ itself can't be deleted). Hidden apps collect in a "Hidden" tile at the end.
 - **Your home screen, all day:** optionally, the Home button opens Home+ instead of LG's home screen, closing an app comes back to it, and it's what you see after the TV starts.
 - **No ads:** no sponsored rows or tiles. Home+ connects only to the services you sign in to (see [Privacy and security](#privacy-and-security)).
@@ -44,11 +44,11 @@
 ## Requirements
 
 - A **rooted** LG TV running **webOS 5 (2020) or later**, with the **[Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel)** installed. Whether yours can be rooted depends on its firmware: [CanI.RootMy.TV](https://cani.rootmy.tv/) says. webOS 4 and older can be rooted too, but their Node.js (0.12 or older) can't run Home+'s service.
-- **Tested on:** LG C3 (OLED), webOS 9.2.1 (firmware 23.20.59). [COMPATIBILITY.md](COMPATIBILITY.md) lists reported TV checks. CI checks every build against LG's firmware for webOS 5 to 26 with [webOSbrew's compatibility checker](https://github.com/webosbrew/dev-toolbox-cli), and runs the service's tests on each one's Node; no TV but the C3 has tried it yet. If you try one, please [send a compatibility report](https://github.com/pbalazaar/home-plus/issues/new?template=compatibility.yml), whether it went well or not.
+- **Tested on:** LG C3 (OLED), webOS 9.2.1 (firmware 23.20.59). People have also tried it on an LG C1 (webOS 6.5.3) and an LG C4 (webOS 26); [COMPATIBILITY.md](COMPATIBILITY.md) says what each report covered. CI checks every build against LG's firmware for webOS 5 to 26 with [webOSbrew's compatibility checker](https://github.com/webosbrew/dev-toolbox-cli), and runs the service's tests on each one's Node. If you try another TV, please [send a compatibility report](https://github.com/pbalazaar/home-plus/issues/new?template=compatibility.yml), whether it went well or not.
 - **Optional:**
   - for Continue Watching, any of: a [Stremio](https://www.stremio.com) account and the Stremio app; a [Jellyfin](https://jellyfin.org) server and the Jellyfin app; a [Plex](https://www.plex.tv) server and the Plex app;
   - a [Trakt](https://trakt.tv) account;
-  - [lginputhook](https://github.com/Simon34545/lginputhook), for a Home button without a flash on TVs where Home+ can't add its own key filter (see [Home button](#home-button)).
+  - [lginputhook](https://github.com/Simon34545/lginputhook), for a Home button without a flash, and the Settings and Input buttons, on TVs where Home+ can't add its own key filter (see [Home button](#home-button)).
 
 ## Install
 
@@ -81,9 +81,11 @@ Updates install the same way. An update resets the service's root access, and Ho
 
 ![Recents, an App Switcher like tvOS's](docs/screenshots/recents.jpg)
 
-**Magic Remote pointer:** point at anything and click. Pressing an arrow hands control back to the keys: then OK presses what the keys focused, wherever the cursor happens to be. Moving the pointer clearly takes over again.
+**Magic Remote pointer:** point at anything and click. Pressing an arrow hands control back to the keys: then OK presses what the keys focused, wherever the cursor happens to be. Moving the pointer a short way gives it control again.
 
-From the top row, press **Up** to reach the clock at the top right, as on tvOS; **OK** on it opens the Control Center. On Stremio, Jellyfin or Plex, Up goes into Continue Watching first, as the chevron above the dock shows. The remote's own **Settings** and **Input** keys open LG's menus; apps never receive them. Where Home+ can catch them (on the C3 by itself, elsewhere with LG Input Hook: see [Home button](#home-button)), **Settings → Remote → Settings Button** makes the Settings key open the Control Center: over Home+, and over any other app or input too, where it opens on top of what's playing and the video carries on underneath (see below). **Input Button** does the same for the Input key, with the Control Center's inputs on their own: **OK** switches to one, and **Back** or the Input key again closes them.
+From the top row, press **Up** to reach the clock at the top right, as on tvOS; **OK** on it opens the Control Center. On Stremio, Jellyfin or Plex, Up goes into Continue Watching first, as the chevron above the dock shows.
+
+The remote's own **Settings** and **Input** keys open LG's menus, and apps never receive them. Where Home+ can catch them (on the C3 by itself, elsewhere with LG Input Hook: see [Home button](#home-button)), **Settings → Remote** can give them to Home+. **Settings Button** makes the Settings key open the Control Center, over Home+ and over any other app or input too, where it opens on top of what's playing and the video carries on underneath (see below). **Input Button** makes the Input key open the Control Center's inputs on their own: **OK** switches to one, and **Back** or the Input key again closes them.
 
 ![Settings](docs/screenshots/settings.jpg)
 
@@ -91,11 +93,11 @@ From the top row, press **Up** to reach the clock at the top right, as on tvOS; 
 
 **Control Center**, like tvOS's, opens from the clock: glass tiles under it for **Power Off**, **Wi-Fi** (your network; OK opens LG's network settings), **Screen Off** (sound keeps playing; any key brings the picture back), **Sound** (OK switches between TV speakers and HDMI ARC or eARC, and any other output the TV has used, like Optical: not a full picker), **Sleep Timer** (the minutes left; OK steps through LG's 10 to 240 minutes, and the TV turns off when it runs out), **Picture** (the picture mode; OK lists the modes LG offers for what's on, which differ for HDR and Dolby Vision), **Eye Comfort** (OK turns it on or off), and round buttons for **Inputs** (Live TV and the HDMI ports by LG's names, with what's plugged in, like "Soundbar · PS5"), **Recents**, **Accessibility** and **Settings**. A name too long for its tile scrolls while the tile has focus. Picture and Inputs open their list in the Control Center's place.
 
-**Over other apps**, the Settings key opens the same Control Center on top of what's playing, as LG's Quick Settings would open, and the video keeps playing under it. Its glass, like tvOS's, takes its look from the picture behind it: the TV hands Home+ a small frame of the video about three times a second, blurred, so the glass carries the picture's colours rather than its detail, and the corner behind the clock dims only where the picture is bright (a channel's logo, say). The TV can't always capture its video: protected video (Netflix and the like) gives no frames, and nor does any video while PicCap captures it, as the TV captures video for one app at a time. The glass is then a clear tint, unless **Blur Over Video** (Settings → Control Center) pauses PicCap while the Control Center is open. Everything works there as in Home+, editing too, with Home+'s focus sounds and its Reduce Motion and Reduce Transparency settings; **Back** closes it, and so does the Settings key again. Recents, Accessibility and Settings open Home+.
+**Over other apps** (with **Settings Button** set to the Control Center), the Settings key opens the same Control Center on top of what's playing, where LG's Quick Settings would open, and the video keeps playing under it. Its glass, like tvOS's, takes its look from the picture behind it: the TV hands Home+ a small frame of the video about three times a second, blurred, so the glass carries the picture's colours rather than its detail, and the corner behind the clock dims only where the picture is bright (a channel's logo, say). The TV can't always capture its video: protected video (Netflix and the like) gives no frames, and nor does any video while PicCap captures it, as the TV captures video for one app at a time. The glass is then a clear tint, unless **Blur Over Video** (Settings → Control Center) pauses PicCap while the Control Center is open. Everything works there as in Home+, editing too, with Home+'s focus sounds and its Reduce Motion and Reduce Transparency settings; **Back** closes it, and so does the Settings key again. Recents, Accessibility and Settings open Home+.
 
 ![Add a Control](docs/screenshots/control-gallery.jpg)
 
-**Make it yours**, like iOS 18's: hold **OK** on a control and choose **Edit Controls**. The controls wobble; **OK** picks one up and the arrows move it, holding **OK** changes its size (Small, Wide, Large) or removes it, and the **+** slot adds one: **Sound Mode**, **OLED Brightness**, **Energy Saving**, **Game Optimizer** and **Dynamic Tone Mapping** (whichever your TV has), and **Ambient Light** and **Screen Capture** when HyperHDR and PicCap are installed (they turn HyperHDR's LEDs and PicCap's capture on and off). There's room for seven rows: a size or a control that won't fit is turned down, and the Control Center says so. **Reset** puts it back, and **Back** is done; every change is saved as you make it. Each action is also a service method, so a script, a home automation or a key-mapping tool running on the TV can use it with `luna-send` (as root: Home+'s luna methods answer only `luna-send` and Home+ itself, not other apps):
+**Make it yours**, like iOS 18's: hold **OK** on a control and choose **Edit Controls**. The controls wobble; **OK** picks one up and the arrows move it, holding **OK** changes its size (Small, Wide, Large) or removes it, and the **+** slot adds one: **Sound Mode**, **OLED Brightness**, **Energy Saving**, **Game Optimizer** and **Dynamic Tone Mapping** (whichever your TV has), and **Ambient Light** and **Screen Capture** when HyperHDR and PicCap are installed (they turn HyperHDR's LEDs and PicCap's capture on and off). There's room for seven rows: a size or a control that doesn't fit is refused, and the Control Center says so. **Reset** puts it back, and **Back** is done; every change is saved as you make it. Each action is also a service method, so a script, a home automation or a key-mapping tool running on the TV can use it with `luna-send` (as root: Home+'s luna methods answer only `luna-send` and Home+ itself, not other apps):
 
 ```sh
 luna-send -n 1 luna://com.github.pbalazaar.homeplus.service/control '{"action":"screenOff"}'
@@ -111,7 +113,7 @@ luna-send -n 1 luna://com.github.pbalazaar.homeplus.service/control '{"action":"
 | **Remote** | Whether the Home button opens Home+ or LG's home screen, No Flash on TVs that support it, and what the Settings and Input buttons open (where Home+'s key filter or LG Input Hook can catch them) |
 | **Display & OLED** | Dim After, Turn Off After, Pixel Shift, Calm Colours (dark app backgrounds, so ambient lights don't flood the room), and whether the Top Shelf turns pages by itself |
 | **App Tiles** | Default, Dark, Clear or Tinted, and Tinted's colour |
-| **Control Center** | With PicCap, where the Settings button can open the Control Center over other apps: Blur Over Video, which pauses PicCap's capture while the Control Center is open over other apps, so its glass can blur the video |
+| **Control Center** | Blur Over Video (with PicCap installed, where the Settings button opens the Control Center over other apps): pauses PicCap's capture while the Control Center is open over an app, so its glass can blur the video |
 | **General** | Focus sounds, a 12-hour or 24-hour clock, and Hidden Apps (once you've hidden one) |
 | **Accessibility** | Reduce Motion, Reduce Transparency |
 | **Accounts** | Stremio, Trakt, Jellyfin, Plex and TMDB: whether they're connected, signing in and signing out |
@@ -136,7 +138,7 @@ Sign in under **Settings → Accounts**, or hold **OK** on the app and choose **
 
 ![Signing in to Plex with a QR code](docs/screenshots/plex-signin.jpg)
 
-Pressing **OK** on a card opens the app. The LG apps can't be sent to a specific title from outside, so a notification names the title, ready to pick from the app's own Continue Watching.
+Pressing **OK** on a card opens the app. Apps on LG TVs can't be opened at a specific title from outside, so a notification names the title, ready to pick from the app's own Continue Watching.
 
 ### Stremio
 
@@ -202,17 +204,19 @@ Streaming apps (Netflix, Prime Video, Disney+, Apple TV, Max and others) show wh
 
 Home+ checks the key with TMDB before keeping it, and `{"key":""}` removes it. The catalogs are your TV's LG store country's; if you watch from elsewhere, give the two-letter country code with `{"region":"AL"}` (`""` goes back to the TV's). Apps with no picture of their own (YouTube, Smart IPTV and the like) rotate through what's trending on TMDB instead, under "Trending Now".
 
-![Trending Now behind YouTube](docs/screenshots/trending.jpg) An app counts as a streaming service when its name is one TMDB lists for your TV's country (its LG store country). Its 10 most popular series and films are fetched every 12 hours. **OK** opens the app and names the title, ready to search for: LG's apps can't be sent to a title.
+![Trending Now behind YouTube](docs/screenshots/trending.jpg)
+
+An app counts as a streaming service when its name is one TMDB lists for your TV's country (its LG store country). Its 10 most popular series and films are fetched every 12 hours. **OK** opens the app and names the title, ready to search for: LG's apps can't be sent to a title.
 
 ## Home button
 
-With **Settings → Remote → Home Button** set to **Opens Home+**, Home+ watches for LG's home screen and opens itself instead. LG's home screen shows for a moment first.
+With **Settings → Remote → Home Button** set to **Opens Home+**, Home+ watches for LG's home screen and opens itself instead. Without No Flash (below), LG's home screen shows for a moment first.
 
 Leaving an app (its own Exit, or Back on its first screen) comes back to Home+ too, without LG's home screen: Home+ opens as soon as the app has closed, before webOS would open LG's (it waits a second for that). Coming back, the home screen comes into focus where you left it, on the app you opened, as tvOS's does.
 
-**No Flash**, in **Settings → Remote** on TVs that allow it, keeps LG's home screen from showing at all: the Home button opens Home+ directly. On the C3, Home+ adds a key filter of its own to the ones LG's compositor runs on each key press, ahead of LG's handling of the Home button. It's held in memory only (restarting the TV removes it, and Home+ adds it again when it starts), and Home+ takes it out when no button needs it, or when you remove Home+. The Settings and Input buttons' choices (see [Using Home+](#using-home)) use the same filter. On TVs where LG's home screen is a web app, No Flash replaces LG's home page in memory while Home+ runs instead; nothing on disk changes.
+**No Flash**, in **Settings → Remote**, keeps LG's home screen from showing at all: the Home button opens Home+ directly. Settings offers it only on TVs where it works, and giving the Home button to Home+ (the welcome question, or **Home Button** in Settings) turns it on there. On the C3, Home+ adds a key filter of its own to the ones LG's compositor runs on each key press, ahead of LG's handling of the Home button. The filter is held in memory only: restarting the TV removes it, and Home+ adds it again when it starts. Home+ takes it out when no button needs it, or when you remove Home+. The Settings and Input buttons' choices (see [Using Home+](#using-home)) use the same filter. On TVs where LG's home screen is a web app, No Flash replaces LG's home page in memory while Home+ runs instead; nothing on disk changes.
 
-On TVs with neither, use lginputhook (1.5.1 or later, from the Homebrew Channel). It catches the Home button before LG's home screen starts. In the LG Input Hook app, add a keybind for button **773**, choose **Launch App** and pick **Home+**. Or put this in `/home/root/.config/lginputhook/keybinds.json`:
+On TVs where Settings doesn't offer No Flash, use lginputhook (1.5.1 or later, from the Homebrew Channel). It catches the Home button before LG's home screen starts. In the LG Input Hook app, add a keybind for button **773**, choose **Launch App** and pick **Home+**. Or put this in `/home/root/.config/lginputhook/keybinds.json`:
 
 ```json
 {"773": {"action": "launch", "id": "com.github.pbalazaar.homeplus"}}
@@ -220,7 +224,7 @@ On TVs with neither, use lginputhook (1.5.1 or later, from the Homebrew Channel)
 
 Home+ turns that keybind into a command that opens Home+ only while it's installed, and LG's home screen otherwise, so the Home button keeps working if Home+ is ever removed without **Remove Home+**. The Settings and Input buttons' keybinds (see [Using Home+](#using-home)) fall back to LG's Quick Settings and Input picker the same way.
 
-If LG Input Hook already has that keybind, it catches the Home button first, and Settings doesn't offer No Flash.
+If LG Input Hook already has that keybind, it catches the Home button before Home+'s key filter could, so Settings doesn't offer No Flash: you have it already.
 
 ## OLED protection
 
@@ -280,7 +284,7 @@ If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot s
 
 **Why do I need my own TMDB or Trakt key?** Home+ doesn't come with keys of its own, so each TV uses its own. Both are free, and you paste them on your phone from a QR code, with no typing on the TV. Plex, Jellyfin and Stremio need no key.
 
-**Does it work on my TV?** Maybe: only an LG C3 on webOS 9.2.1 has been tried so far, so other models and versions are unknown. [COMPATIBILITY.md](COMPATIBILITY.md) has the list, and a report from your TV, good or bad, adds to it.
+**Does it work on my TV?** Maybe. Besides the author's LG C3 (webOS 9.2.1), people have tried it on an LG C1 (webOS 6) and an LG C4 (webOS 26); other models and versions are untested. [COMPATIBILITY.md](COMPATIBILITY.md) has the list, and a report from your TV, good or bad, adds to it.
 
 ## Privacy and security
 
@@ -307,7 +311,7 @@ Every push is built and tested by GitHub Actions. Pushing a `v*` tag does the sa
 
 ## How Home+ is built and tested
 
-Home+ is designed by its author, who makes every decision about what it does and how it does it. Claude, an AI assistant, helps write its code and its documentation. Development checks have been run on the author's LG C3 (webOS 9.2.1, firmware 23.20.59); the individual pull requests record what was tried and what is still pending. The launcher is a native app, written in C. On every change CI runs the service's tests against the Node versions in webOS 22–26, drives the Control Center's QML, and builds and checks the package. The launcher's screens are rendered and checked locally.
+Home+ is designed by its author, who makes every decision about what it does and how it does it. Claude, an AI assistant, helps write its code and its documentation. Development checks have been run on the author's LG C3 (webOS 9.2.1, firmware 23.20.59); the individual pull requests record what was tried and what is still pending. The launcher is a native app, written in C. On every change CI runs the service's tests against the Node versions in webOS 5–26, drives the Control Center's QML, and builds and checks the package. The launcher's screens are rendered and checked locally.
 
 ## How it works
 
