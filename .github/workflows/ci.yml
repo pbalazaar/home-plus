@@ -1,7 +1,8 @@
 # Builds and tests every push to main and every pull request:
 # - build: the .ipk for the TV, checked, attached to the run as the "homeplus-ipk" artifact;
 # - service: the service's tests, on Linux (the Node versions in webOS 5–6 and 22–26) and on Windows;
-# - launcher: the launcher's own tests (native/test/), and the Control Center's QML, loaded and driven.
+# - launcher: the launcher's own tests (native/test/), as they are and under AddressSanitizer and UBSan,
+#   and the Control Center's QML, loaded and driven.
 #   Its screens are rendered on a desktop instead (tools/test.sh screens): here they took most of the
 #   run, and Mesa under Xvfb isn't the TV's GPU.
 # - compatibility: the package checked by webOSbrew's verifier against LG's firmware from webOS 5 on.

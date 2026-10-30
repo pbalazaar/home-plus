@@ -1,8 +1,8 @@
 #!/bin/sh
 # Runs Home+'s checks; CI runs all of them but the screens on every pull request.
 #   tools/test.sh            the service's tests: unit tests and its HTTP API (seconds; Node 18+)
-#   tools/test.sh native     the launcher's own tests (native/test/: its requests, pictures and media sources), on Linux
-#                            with the preview packages, else in Docker (seconds)
+#   tools/test.sh native     the launcher's own tests (native/test/: its requests, pictures and media sources), as they are
+#                            and under ASan and UBSan; on Linux with the preview packages, else in Docker (under a minute)
 #   tools/test.sh screens    renders every launcher screen and checks them; they land in build/screens/
 #                            (on Linux with the preview packages, else in Docker; about 6 minutes). Not in
 #                            CI: run it when a change touches what the launcher draws
@@ -21,7 +21,7 @@ service() {
 
 native() {
   echo "== the launcher's own tests"
-  run='make -s -C native test'
+  run='make -s -C native test sanitize'
   if [ "$(uname)" = Linux ] && [ -f /usr/include/SDL2/SDL.h ] && python3 -c 'import PIL' 2>/dev/null; then
     sh -c "$run"
   elif command -v docker >/dev/null; then
