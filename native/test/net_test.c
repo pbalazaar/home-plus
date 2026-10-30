@@ -34,7 +34,7 @@ static int failures;
 /* ------------------------------------------------------------------ the stand-in service */
 
 static SDL_mutex *slock;
-static char seen[64][64]; /* the paths asked for, in order */
+static char seen[64][256]; /* the paths asked for, in order */
 static int nseen, hung_up; /* hung_up: requests left hanging that the launcher closed */
 
 static void note(const char *path)
