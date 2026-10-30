@@ -459,7 +459,7 @@ static void decode_pixels(const Job *j, Result *r, const unsigned char *body, si
 static void decode_image(Job *j, Result *r, const unsigned char *body, size_t len)
 {
     int w = 0, h = 0, n, kw, kh;
-    if (!stbi_info_from_memory(body, (int)len, &w, &h, &n)) return; /* (not a picture) */
+    if (!stbi_info_from_memory(body, (int)len, &w, &h, &n) || w < 1 || h < 1) return; /* (not a picture: stb lets a GIF have no pixels) */
     if (w > MAX_SIDE || h > MAX_SIDE || (long)w * h > MAX_PIXELS) {
         SDL_LockMutex(lock);
         stats.refused++;
