@@ -93,6 +93,7 @@ void on_status(Result *r)
     snprintf(S.svc_version, sizeof S.svc_version, "%s", jstr(o, "version"));
     S.svc_elevated = elevated;
     S.home_asked = cJSON_IsTrue(cJSON_GetObjectItem(o, "homeAsked"));
+    S.tmdb_configured = cJSON_IsTrue(cJSON_GetObjectItem(o, "tmdbConfigured"));
     cJSON *ob = cJSON_GetObjectItem(o, "onboarded");
     S.onboarded = ob ? cJSON_IsTrue(ob) : S.home_asked;
     cJSON_Delete(o);
