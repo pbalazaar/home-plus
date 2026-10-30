@@ -351,19 +351,20 @@ static void drop_answered(void)
 
 static void not_pictures(void)
 {
-    puts("what isn't a picture, or is half of one, gives none");
+    puts("what isn't a picture, is half of one or has no pixels gives none");
     net_get_image("/img/garbage.bin", 70, 0, 1, 0, 0, 0, PRIO_NOW);
     net_get_image("/img/truncated.png", 70, 1, 1, 0, 0, 0, PRIO_NOW);
     net_get_image("/img/missing.png", 70, 2, 1, 0, 0, 0, PRIO_NOW);
+    net_get_image("/img/empty.gif", 70, 3, 1, 1, 0, 0, PRIO_NOW); /* (as an icon: sampled, had it pixels) */
     int n = 0;
     Result r;
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 4; i++)
         if (take(70, 3000, &r)) {
             n += !r.rgba;
             CHECK(r.index != 2 || r.status == 404, "a missing picture's status is %d", r.status);
             net_result_free(&r);
         }
-    CHECK(n == 3, "%d of 3 gave no picture", n);
+    CHECK(n == 4, "%d of 4 gave no picture", n);
 }
 
 int main(int argc, char **argv)

@@ -25,3 +25,5 @@ with open(os.path.join(out, 'truncated.png'), 'wb') as f:
     f.write(data[:len(data) // 2])
 with open(os.path.join(out, 'garbage.bin'), 'wb') as f:
     f.write(b'not a picture ' * 100)
+with open(os.path.join(out, 'empty.gif'), 'wb') as f:  # no pixels, which stb decodes: 0 x 0, with an image of 0 x 0
+    f.write(b'GIF89a' + bytes([0, 0, 0, 0, 0x80, 0, 0, 0, 0, 0, 255, 255, 255]) + b',' + bytes(9) + bytes([2, 2, 0x4c, 1, 0]) + b';')
