@@ -6,7 +6,7 @@ Approved by the owner in conversation on 2026-10-30:
 - the title is started through the Jellyfin server, in the app people already have;
 - the behaviour, the structure, the session rule and the failure handling below, with the two-TV gap accepted.
 
-Nothing here has been tried on a TV yet. What the server and the app do was read from Jellyfin's source. The experiments in section 6 come before any code: if the first ones fail, this approach is dead and the choice goes back to the owner.
+Tried on the owner's C3 on 2026-10-31, and the approach works: section 6 has the results. They changed how Home+ finds the TV's session (section 3) and how it confirms that a title started, and they removed the resend (section 2). The owner asked for the design to be updated with them. There's no code yet.
 
 ## Goal
 
@@ -20,10 +20,11 @@ OK on a Continue Watching card opens the app, and a toast says where to find the
 
 ## What was found
 
-- **Jellyfin's LG app reads no launch parameters.** [jellyfin-webos](https://github.com/jellyfin/jellyfin-webos) (`org.jellyfin.webos`, v1.2.2) loads the server's jellyfin-web in an iframe. It reports itself as client "Jellyfin for WebOS", device "LG Smart TV".
-- **The server can tell a connected client to play.** `POST /Sessions/{sessionId}/Playing` with `playCommand=PlayNow`, `itemIds` and `startPositionTicks` answers 204. It's the kind of command Jellyfin's own Play On sends.
+- **Jellyfin's LG app reads no launch parameters.** [jellyfin-webos](https://github.com/jellyfin/jellyfin-webos) (`org.jellyfin.webos`, v1.2.2) loads the server's jellyfin-web in an iframe. Its device name is "LG Smart TV"; its client name isn't fixed (below).
+- **The server can tell a connected client to play.** `POST /Sessions/{sessionId}/Playing` with `playCommand=PlayNow`, `itemIds` and `startPositionTicks` answers 204. It's the command Jellyfin's own Play On sends: on the C3, Resume in the browser sent the same call, plus `MediaSourceId` and `SubtitleStreamIndex`.
 - **jellyfin-web obeys it.** `onPlay()` in `src/scripts/serverNotifications.js` calls `playbackManager.play()` with the item and `StartPositionTicks`, and `capabilities()` in `src/utils/dashboard.js` reports `SupportsMediaControl: true` for every host.
-- **A closed app can't be mistaken for an open one.** `SupportsRemoteControl` is true only while the client's socket is open (`SessionInfo.cs`, `WebSocketController.cs`).
+- **The TV can appear under two client names.** Signed in on the app's first connection, the session with the socket is "Jellyfin for WebOS", but from the next start on, playback is reported on a second session, "Jellyfin Web", which can't be controlled and has another `DeviceId`. Signed in on a later launch, there's one session, "Jellyfin Web". `DeviceName` was "LG Smart TV" on all of them.
+- **A closed app can't be mistaken for an open one.** `SupportsRemoteControl` is true only while the client's socket is open (`SessionInfo.cs`, `WebSocketController.cs`). An app hidden behind Home+ keeps its socket for 40 to 50 s, and a PlayNow sent in that time waits until the app is opened.
 - **Only your own sessions can be controlled**, unless your Jellyfin user has `EnableRemoteControlOfOtherUsers` (`SessionManager.cs`).
 - **The launcher has room for this.** A long OK does nothing in the carousel today (`main.c` handles it only for tiles), and a `RailItem` already has the title's `id`.
 
@@ -49,11 +50,11 @@ OK on a card
             1. reads the list again, so the position is current
             2. asks the server for the TV's Jellyfin session, once a second, for up to 25 s
             3. POST /Sessions/<session>/Playing?playCommand=PlayNow&itemIds=<id>&startPositionTicks=<position>
-            4. watches that session's NowPlayingItem for up to 15 s, and sends it once more if nothing started
-            5. if it still hasn't started: today's toast
+            4. watches this TV's sessions for up to 15 s, until one has the title as its NowPlayingItem
+            5. if none does: today's toast
 ```
 
-The 25 s, the 15 s and the resend are first guesses, for the cold start experiment to settle.
+On the C3, with the server on the same network, the session took 4.5 s from a cold start and playback about 2.5 s more, so 25 s and 15 s leave room for a slower server. PlayNow worked the first time in all 10 tries, so it's sent once.
 
 **Launcher (`native/src`):**
 - `apps.c`: `resume_title(app, id, from_start)` posts `/api/resume` and sets `S.away`, as `launch_app()` does. `open_card_sheet()` sits next to `open_app_sheet()`.
@@ -71,16 +72,19 @@ Other features don't change: Jellyfin's "next episode" carries on as usual, and 
 
 ## 3. Finding the TV's session
 
-Jellyfin lists every client on the server, so Home+ has to pick this TV's. The rule: **the session of Jellyfin's webOS app that reaches the server from the same address Home+ does.**
+Jellyfin lists every client on the server, so Home+ has to pick this TV's. The rule: **the controllable session named "LG Smart TV" that reaches the server from the same address Home+ does.**
 
 - Home+ first registers itself with `POST /Sessions/Capabilities`. Jellyfin records a session and its address when that endpoint runs (`RequestHelpers.GetSession`). No media control is offered, so nothing can be sent to it.
-- Home+ then reads `GET /Sessions` once a second. That one list holds Home+'s own entry (its `DeviceId`), which shows how the server sees this TV, and the candidates: `Client` contains "webos" in any case, and `SupportsRemoteControl` is true.
+- Home+ then reads `GET /Sessions` once a second. That one list holds Home+'s own entry (its `DeviceId`), which shows how the server sees this TV, and the candidates: `DeviceName` is "LG Smart TV", and `SupportsRemoteControl` is true. `Client` can't be used: the TV's session may be "Jellyfin for WebOS" or "Jellyfin Web" (section 6).
 - The candidate must have the same `RemoteEndPoint` as Home+'s entry. Both are normalised the same way by the server.
 - If two candidates share that address, Home+ picks neither and carries on polling, so it ends in today's toast. It never guesses.
+- A title has started when any session with that name and that address, controllable or not, has it as `NowPlayingItem` (compared by `Id`). That's often not the session PlayNow was sent to, and the two don't share a `DeviceId`.
 
-Comparing with Home+'s own address, not the TV's LAN IP, also works when the server sees something else: Docker's NAT, a reverse proxy, or a server elsewhere.
+Comparing with Home+'s own address, not the TV's LAN IP, also works when the server sees something else: Docker's NAT, a reverse proxy, or a server elsewhere. Under OrbStack, every client showed the gateway, 192.168.215.1. Home+'s own entry hasn't been tried yet: it wasn't signed in to the test server.
 
 **Known gap, accepted:** with two LG TVs behind a proxy that hides their addresses, if the other TV's Jellyfin app is open and this one hasn't connected yet, the other TV looks like the only match and the title plays there.
+
+**Known gap, not yet accepted:** a TV renamed in Jellyfin's dashboard isn't found, because `DeviceName` takes the new name (tried on the test server). It gets today's toast.
 
 ## 4. What can go wrong
 
@@ -91,8 +95,10 @@ Comparing with Home+'s own address, not the TV's LAN IP, also works when the ser
 | Server unreachable | Today's toast right away |
 | Home+'s token is rejected | Signs out as it does now, then today's toast |
 | Two matching sessions | After 25 s, today's toast |
-| PlayNow sent but nothing plays in 15 s | Sends it once more, then today's toast |
+| The TV was renamed in Jellyfin's dashboard | After 25 s, today's toast |
+| PlayNow sent but nothing plays in 15 s | Today's toast |
 | You left Jellyfin after it came to the front | Stops quietly |
+| You leave Jellyfin just after PlayNow is sent | A hidden app holds the command, so the title may start the next time Jellyfin opens |
 | OK on another title | The new run replaces this one |
 | The launch itself fails | Answered like a failed `/api/launch`; nothing runs in the background |
 
@@ -100,13 +106,29 @@ Each step goes to the service log (`jellyfin: resume ...`), without tokens.
 
 ## 5. Tests
 
-- `test/jellyfin.test.js`: the session rule (same address, other address, other clients, closed socket, two at one address), PlayNow's parameters, From Beginning, waiting for the session, the one resend, giving up, and stopping when `stillWanted()` turns false. The timings are options, so the tests run fast.
+- `test/jellyfin.test.js`: the session rule (same address, other address, other clients, closed socket, two at one address, both of the TV's client names), PlayNow's parameters, From Beginning, waiting for the session, a title that starts on a different session from the one PlayNow went to, giving up, and stopping when `stillWanted()` turns false. The timings are options, so the tests run fast.
 - A new `test/resume.test.js`: `/api/resume` through the real service (`startService`), with a mock Jellyfin: an unknown title refused, the app opened, both toasts.
 - `tools/native-preview/harness.js`: mock `/Sessions`, `/Sessions/Capabilities` and `/Sessions/<id>/Playing` under `HOMEPLUS_PREVIEW_MEDIA`, and a preview scene for the sheet (`tools/test.sh screens`).
 
-## 6. TV experiments, before any code
+## 6. TV experiments
 
-The owner runs these, about 20 minutes in all. None uses ssh; they need the Mac and the TV on the same network. The commands haven't been run yet.
+Run on the owner's C3 on 2026-10-31, with Jellyfin 12.4.0 in OrbStack on the Mac, the app's 1.2.2, and the test movie below (H.264, a keyframe about every 10 s). All 10 PlayNows played on the first send, each from the keyframe before the position: asked for 5:00, it started at 4:51.
+
+| Experiment | Result | What it changed |
+|---|---|---|
+| 1: Play On | Resume in the browser played from about 10:00 | The approach stands |
+| 2: how the server sees the app | `Client` "Jellyfin for WebOS", `DeviceName` "LG Smart TV", `SupportsRemoteControl` true, `RemoteEndPoint` OrbStack's gateway | See the two rows on client names |
+| 3: PlayNow | 204, and playing in about 2 s | The approach stands |
+| 4: cold start, opened from Home+ | Session after 4.4 to 4.5 s, playing 2.3 to 2.7 s after PlayNow, 3 of 3 | The resend goes; 25 s and 15 s stay, for slower servers |
+| 5: the app in the background | Still running, but its session stops being controllable after 40 to 50 s. A PlayNow at 15 s didn't play behind Home+: it played about 1 s after the app was opened. Opened after the session had gone, the session was back in 1.4 to 1.8 s | Opening the app before sending is enough |
+| Added: OK on a card, app in the background | After 20 s: playing in 1.5 s. After 90 s: session in 1.8 s, playing 0.6 s later | Nothing extra to do |
+| Added: playback after a cold start | Reported on a second session, "Jellyfin Web", with another `DeviceId`; the controllable session's `NowPlayingItem` stayed empty | A start is looked for on every session with the TV's name and address. Watching the controllable session would have seen nothing, resent at 15 s, then shown today's toast over a title that was playing |
+| Added: signing in again on a later launch | One session, "Jellyfin Web": `Client` containing "webos" matched nothing. PlayNow to it played | The rule uses `DeviceName`, not `Client` |
+| Added: a device renamed, on the test server | `DeviceName` took the new name, `HasCustomDeviceName` turned true | A known gap in section 3 |
+
+Not covered: Home+'s own `/Sessions/Capabilities` entry and the same-address rule, a server on another machine, titles that need transcoding, and more than one TV.
+
+To run them again: about 20 minutes, no ssh, with the Mac and the TV on the same network.
 
 ### Setup
 
@@ -124,7 +146,7 @@ docker run -d --name jellyfin-test -p 8096:8096 -v jellyfin-test-config:/config 
 docker exec jellyfin-test /usr/lib/jellyfin-ffmpeg/ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=24 -t 1800 -c:v libx264 -preset veryfast -pix_fmt yuv420p "/media/Movies/Test Clock (2026).mkv"
 ```
 
-1. At <http://localhost:8096>, finish the setup wizard and add a Movies library on `/media/Movies`. Turn on **Dashboard → General → Enable Quick Connect**, and make a key under **Dashboard → API Keys**.
+1. At <http://localhost:8096>, finish the setup wizard and add a Movies library on `/media/Movies`. Check that **Dashboard → General → Enable Quick Connect** is on, and make a key under **Dashboard → API Keys**.
 2. Play the movie in the browser, jump to about 10 minutes, and stop. Keep this page open: the item's id is in the address bar (`details?id=…`).
 3. On the TV, install Jellyfin from LG's store or the Homebrew Channel. (The store version needs any Homebrew or developer copy removed first.) Give it `http://<the Mac's IP>:8096` and sign in as the same user.
 
@@ -150,7 +172,7 @@ Expected: the TV starts at about 10:00 on the pattern's clock.
 curl -s -H "$AUTH" "$JF/Sessions" | jq '.[] | {Id, Client, DeviceName, RemoteEndPoint, SupportsRemoteControl, Playing: .NowPlayingItem.Name}'
 ```
 
-Expected: an entry with `Client` "Jellyfin for WebOS" and `SupportsRemoteControl` true. Keep its `Id`. On Docker Desktop, `RemoteEndPoint` will probably be Docker's gateway, not the TV's IP: that's why the rule in section 3 compares with Home+'s own address.
+Expected: an entry with `DeviceName` "LG Smart TV" and `SupportsRemoteControl` true (its `Client` depends on when the app signed in). Keep its `Id`. Under Docker, `RemoteEndPoint` is the gateway, not the TV's IP: that's why the rule in section 3 compares with Home+'s own address.
 
 ### Experiment 3: PlayNow
 
@@ -165,7 +187,7 @@ Expected: `204`, and the TV plays from 5:00 (3,000,000,000 ticks).
 Close Jellyfin on the TV. Start this, then open Jellyfin with the remote:
 
 ```bash
-while :; do date +%T; curl -s -H "$AUTH" "$JF/Sessions" | jq -c '.[] | select(.SupportsRemoteControl) | select(.Client | test("webos"; "i")) | {Id, LastActivityDate}'; sleep 1; done
+while :; do date +%T; curl -s -H "$AUTH" "$JF/Sessions" | jq -c '.[] | select(.SupportsRemoteControl) | select(.DeviceName == "LG Smart TV") | {Id, LastActivityDate}'; sleep 1; done
 ```
 
 Note how many seconds pass until a session line appears, then stop it with Ctrl-C. Close the app and repeat, this time sending experiment 3's PlayNow with the new `Id` as soon as the line appears.
@@ -176,17 +198,7 @@ Expected: the session appears well inside 25 s, and the title plays on the first
 
 With Jellyfin open on its home page, go back to Home+ and wait a minute. Run experiment 2's command, and if the session is still there, send experiment 3's PlayNow. Listen for sound, then open Jellyfin.
 
-### What each result changes
-
-| Result | Change |
-|---|---|
-| Experiment 1 or 3 fails | The approach is dead. The owner chooses again: a deep link upstream, or a player of our own |
-| `Client` isn't "Jellyfin for WebOS" | The candidate filter in section 3 changes |
-| The session takes longer than 25 s | The wait gets longer |
-| The first PlayNow after a cold start is ignored | The resend stays, perhaps with a short pause before the first one |
-| The first PlayNow always works | The resend goes, and the code gets simpler |
-| In the background, the session survives and PlayNow plays behind Home+ | Home+ waits until the app is in front before sending it |
-| In the background, the session is gone | Opening a running app behaves like a cold start, and there's nothing extra to do |
+### Afterwards
 
 Keep the server for testing the feature itself. Home+'s network discovery won't get through Docker Desktop, so give Home+ the server's address as the README's Jellyfin section says (`jellyfinServer`). To clean up afterwards:
 
@@ -215,5 +227,5 @@ A Plex version would add a `playOnTV` to `plex.js` behind the same `/api/resume`
 ## 8. Docs to update
 
 - `README.md`: "Pressing **OK** on a card opens the app…" in Continue Watching, the Jellyfin section (the app must be signed in as the same user), and the keys table if Hold OK needs a line.
-- `CLAUDE.md`: a Known TV quirks entry for Jellyfin's app: no launch parameters, remote play through the server, and whatever the experiments find.
+- `CLAUDE.md`: a Known TV quirks entry for Jellyfin's app: no launch parameters, remote play through the server, and its two client names.
 - `docs/ARCHITECTURE.md`: `POST /api/resume` in the API table.
