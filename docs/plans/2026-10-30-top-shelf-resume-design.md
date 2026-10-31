@@ -6,7 +6,7 @@ Approved by the owner in conversation on 2026-10-30:
 - the title is started through the Jellyfin server, in the app people already have;
 - the behaviour, the structure, the session rule and the failure handling below, with the two-TV gap accepted.
 
-Tried on the owner's C3 on 2026-10-31, and the approach works: section 6 has the results. They changed how Home+ finds the TV's session (section 3) and how it confirms that a title started, and they removed the resend (section 2). The owner asked for the design to be updated with them. There's no code yet.
+Tried on the owner's C3 on 2026-10-31, and the approach works: section 6 has the results. They changed how Home+ finds the TV's session (section 3) and how it confirms that a title started, and they removed the resend (section 2). The owner asked for the design to be updated with them, and accepted the renamed-TV gap in section 3. There's no code yet.
 
 ## Goal
 
@@ -84,7 +84,7 @@ Comparing with Home+'s own address, not the TV's LAN IP, also works when the ser
 
 **Known gap, accepted:** with two LG TVs behind a proxy that hides their addresses, if the other TV's Jellyfin app is open and this one hasn't connected yet, the other TV looks like the only match and the title plays there.
 
-**Known gap, not yet accepted:** a TV renamed in Jellyfin's dashboard isn't found, because `DeviceName` takes the new name (tried on the test server). It gets today's toast.
+**Known gap, accepted:** a TV renamed in Jellyfin's dashboard isn't found, because `DeviceName` takes the new name (tried on the test server). It gets today's toast.
 
 ## 4. What can go wrong
 
