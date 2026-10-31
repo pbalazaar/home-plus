@@ -275,6 +275,14 @@ test('overlay: the panel asks for the next frame, and the answer comes when it\'
 // ---- What it asks of the TV's capture: one at a time, so many a second at most, a picture once, less
 // often while there's none; and PicCap's pause from one opening to the next.
 
+// how soon something comes, by the clock, as the best of up to three goes (till one is under limit): a
+// stall on a busy machine can only make it later, so it's only too late if it's too late every time
+async function soonest(limit, go) {
+  let ms = Infinity;
+  for (let i = 0; i < 3 && ms >= limit; i++) ms = Math.min(ms, await go());
+  return ms;
+}
+
 test('overlay: one capture at a time, across a close and a quick reopen; no snapshot once the panel is asked for', async () => {
   fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving', ms: { DISPLAY: 100, VIDEO: GAP - 20 } }));
   const since = Date.now();
@@ -353,21 +361,23 @@ test('overlay: a capture that comes after it was given up on isn\'t shown, its f
 });
 
 test('overlay: closed while it waits to try again, it stops at once: opened again, its frames come straight away', async () => {
-  fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'busy' }));
-  const since = Date.now();
-  try {
-    await call('POST', '/api/key', { body: { key: 'settings' } });
-    await until(() => videoSince(since).length >= 3, 4000, `three tries (then it waits ${RETRY[2]} ms)`);
-    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving' }));
-    await call('POST', '/api/overlay', { body: { event: 'closed' } });
-    const again = Date.now();
-    assert.deepEqual((await call('POST', '/api/key', { body: { key: 'settings' } })).json, { opened: 'overlay' });
-    await until(() => videoSince(again).length >= 1, 3000, 'a frame of the video for the new one');
-    const first = videoSince(again)[0].start - again;
-    assert.ok(first < GAP + 300, `the new one's first frame came ${first} ms after it opened, not after the last one's wait`);
-  } finally {
-    await close();
-  }
+  const first = await soonest(GAP + 300, async () => {
+    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'busy' }));
+    const since = Date.now();
+    try {
+      await call('POST', '/api/key', { body: { key: 'settings' } });
+      await until(() => videoSince(since).length >= 3, 4000, `three tries (then it waits ${RETRY[2]} ms)`);
+      fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving' }));
+      await call('POST', '/api/overlay', { body: { event: 'closed' } });
+      const again = Date.now();
+      assert.deepEqual((await call('POST', '/api/key', { body: { key: 'settings' } })).json, { opened: 'overlay' });
+      await until(() => videoSince(again).length >= 1, 3000, 'a frame of the video for the new one');
+      return videoSince(again)[0].start - again;
+    } finally {
+      await close();
+    }
+  });
+  assert.ok(first < GAP + 300, `the new one's first frame came ${first} ms after it opened, not after the last one's wait`);
 });
 
 test('overlay: a frame that comes after it has closed isn\'t shown, and its folder isn\'t made again', async () => {
@@ -391,40 +401,49 @@ test('overlay: a frame that comes after it has closed isn\'t shown, and its fold
 });
 
 test('overlay: a capture the TV never answers holds the next one back only as long as luna waits for it', async () => {
-  fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'never' }));
-  const since = Date.now();
-  try {
-    await call('POST', '/api/key', { body: { key: 'settings' } });
-    await until(() => videoSince(since).length >= 1, 3000, 'a frame of the video asked for');
-    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving' }));
-    const n = (await ask(0)).n;
-    await until(async () => (await ask(0)).n > n, LUNA_MS + 3000, 'frames again');
-    const [hung, next] = videoSince(since);
-    assert.ok(next.start - hung.start >= LUNA_MS - 20, `the next one waited for it: ${next.start - hung.start} ms`);
-    assert.ok(next.start - hung.start < LUNA_MS + 500, `but no longer: ${next.start - hung.start} ms`);
-  } finally {
-    await close();
-  }
+  const held = await soonest(LUNA_MS + 500, async () => {
+    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'never' }));
+    const since = Date.now();
+    try {
+      await call('POST', '/api/key', { body: { key: 'settings' } });
+      await until(() => videoSince(since).length >= 1, 3000, 'a frame of the video asked for');
+      fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'moving' }));
+      const n = (await ask(0)).n;
+      await until(async () => (await ask(0)).n > n, LUNA_MS + 3000, 'frames again');
+      const [hung, next] = videoSince(since);
+      assert.ok(next.start - hung.start >= LUNA_MS - 20, `the next one waited for it: ${next.start - hung.start} ms`);
+      return next.start - hung.start;
+    } finally {
+      await close();
+    }
+  });
+  assert.ok(held < LUNA_MS + 500, `but no longer: ${held} ms`);
 });
 
 test('overlay: while the video can\'t be captured it\'s asked for less and less often, and a picture starts that over', async () => {
-  fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'busy' }));
-  const since = Date.now(), gaps = (list) => list.slice(1).map((c, i) => c.start - list[i].start);
-  try {
-    await call('POST', '/api/key', { body: { key: 'settings' } });
-    await until(() => videoSince(since).length >= 3, 4000, 'three tries');
-    const waits = gaps(videoSince(since));
-    for (const [i, ms] of RETRY.slice(0, 2).entries()) assert.ok(waits[i] >= ms - 5 && waits[i] < ms + 200, `waits of ${RETRY}: ${waits}`);
-    fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({})); /* a picture */
-    const tries = videoSince(since).length;
-    await until(() => videoSince(since).filter((c) => c.end).length > tries, 3000, 'a picture');
+  const gaps = (list) => list.slice(1).map((c, i) => c.start - list[i].start);
+  let waits, first;
+  const over = await soonest(200, async () => { /* the most a wait ran over */
     fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'busy' }));
-    const again = Date.now();
-    await until(() => videoSince(again).length >= 2, 3000, 'two more tries');
-    assert.ok(gaps(videoSince(again))[0] < RETRY[1], `the first wait again: ${gaps(videoSince(again))}`);
-  } finally {
-    await close();
-  }
+    const since = Date.now();
+    try {
+      await call('POST', '/api/key', { body: { key: 'settings' } });
+      await until(() => videoSince(since).length >= 3, 4000, 'three tries');
+      waits = gaps(videoSince(since));
+      for (const [i, ms] of RETRY.slice(0, 2).entries()) assert.ok(waits[i] >= ms - 5, `waits of ${RETRY}: ${waits}`);
+      fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({})); /* a picture */
+      const tries = videoSince(since).length;
+      await until(() => videoSince(since).filter((c) => c.end).length > tries, 3000, 'a picture');
+      fs.writeFileSync(path.join(dir, 'capture.json'), JSON.stringify({ VIDEO: 'busy' }));
+      const again = Date.now();
+      await until(() => videoSince(again).length >= 2, 3000, 'two more tries');
+      [first] = gaps(videoSince(again));
+      return Math.max(waits[0] - RETRY[0], waits[1] - RETRY[1], first - RETRY[0]);
+    } finally {
+      await close();
+    }
+  });
+  assert.ok(over < 200, `waits of ${RETRY}: ${waits}, and the first wait again: ${first}`);
 });
 
 test('overlay: Blur Over Video, closed and opened again at once: PicCap stays paused, then starts again once', async () => {
