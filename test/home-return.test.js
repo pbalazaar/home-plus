@@ -127,6 +127,52 @@ describe('getting back to Home+', { concurrency: true }, () => {
     }
   });
 
+  test('waking from standby opens Home+ when Live TV appears', async () => {
+    const t = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [600, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      await until(() => t.launches().length, 2000, 'Home+ after wake');
+      const live = t.said('getForegroundAppInfo', 'com.webos.app.livetv');
+      assert.ok(t.launches()[0].t - live.t < 500, 'Home+ launched promptly after Live TV');
+      await sleep(800);
+      assert.equal(t.launches().length, 1);
+      assert.match(t.log(), /power wake Active Standby -> Active/);
+    } finally {
+      await t.stop();
+    }
+  });
+
+  test('waking to another app leaves that app in front', async () => {
+    const t = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[600, { appId: 'netflix' }]]
+    });
+    try {
+      await until(() => t.said('getForegroundAppInfo', 'netflix'), 2000, 'Netflix after wake');
+      await sleep(800);
+      assert.equal(t.launches().length, 0);
+    } finally {
+      await t.stop();
+    }
+  });
+
+  test('Home Button off leaves Live TV in front after wake', async () => {
+    const t = await start({
+      getPowerState: [[100, { state: 'Active' }], [700, { state: 'Active Standby' }], [950, { state: 'Active' }]],
+      getForegroundAppInfo: [[1050, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      assert.equal((await t.svc.call('POST', '/api/home', { body: { mode: 'off' } })).json.mode, 'off');
+      await until(() => t.said('getForegroundAppInfo', 'com.webos.app.livetv'), 2000, 'Live TV after wake');
+      await sleep(800);
+      assert.equal(t.launches().length, 0);
+    } finally {
+      await t.stop();
+    }
+  });
+
   test('Home+ not the home screen (Home Button off): not launched', async () => {
     const t = await start({ getForegroundAppInfo: [[3000, { appId: 'netflix' }], [3500, { appId: '' }]],
       getAppLifeEvents: [[3440, { event: 'stop', appId: 'netflix' }]] });

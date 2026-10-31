@@ -60,6 +60,7 @@ shot cc-gallery "UOHOLDDDDO" 5800
 shot settings "UODDDDRO" 4400
 shot recents "B" 3800
 shot settings-display "UODDDDRODO" 4600
+shot settings-shelf-details "UODDDDRODODDDDD" 5600
 # Settings: Right on a row changes it in place (Dim After, one step on), and About, at the end of its pages
 shot settings-step "UODDDDRODOR" 4800
 shot settings-about "UODDDDRODDDDDDD" 5200
@@ -95,9 +96,18 @@ shot plex "R" 4500
 # signing out asks first, and the question opens on Cancel: a stray OK keeps the sign-in (Up twice: Jellyfin's
 # Continue Watching, then the clock)
 shot signout-ask "UUODDDDRODDDDDOO" 6400
+# Stremio's Continue Watching enriched by TMDB, through the real service and launcher together.
+service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=1 HOMEPLUS_PREVIEW_TMDB=1
+shot stremio-details "RRUR" 5500
+service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=1 HOMEPLUS_PREVIEW_TMDB=1 HOMEPLUS_PREVIEW_PREFS='{"topShelfDetails":"off"}'
+shot stremio-details-off "RRUR" 5500
+service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=1 HOMEPLUS_PREVIEW_TMDB=1 HOMEPLUS_PREVIEW_PREFS='{"topShelfDetails":"compact"}'
+shot stremio-details-compact "RRUR" 5500
 # streaming apps: what's popular on them (a mock TMDB), turning, and stepping through with Up
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_TMDB=1
 shot popular "" 5200
+service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_TMDB=1 HOMEPLUS_PREVIEW_PREFS='{"topShelfDetails":"compact"}'
+shot popular-compact "" 5200
 shot popular-browse "URR" 5600
 # back from an app opened from Stremio's tile (the Home button, a moment later): as it was left, Stremio's tile
 # focused and its Continue Watching in the Top Shelf, in on the first frame back (kept while hidden), which comes

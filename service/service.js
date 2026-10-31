@@ -1015,6 +1015,7 @@ async function onForeground(appId) {
   closeOverlay();
   lastUsed.set(appId, Date.now());
   saveRecents();
+  maybeHomeAfterWake(appId);
   const cfg = readConfig();
   const target = homeTarget(cfg);
   if (appId === target) takeoverLanded = true;
@@ -1050,6 +1051,18 @@ const coming = new Map(); /* apps SAM is starting or bringing back to the front,
 const quit = new Map(); /* apps that closed, id -> when */
 let emptied = { app: '', at: 0 }; /* the app that left the front with nothing after it, and when */
 let tvOn = true;
+let powerState = '';
+let wakeUntil = 0;
+
+function maybeHomeAfterWake(appId) {
+  if (!wakeUntil || !tvOn || !appId || appId === NATIVE_ID) return;
+  const inTime = Date.now() <= wakeUntil;
+  wakeUntil = 0;
+  if (!inTime || (appId !== 'com.webos.app.livetv' && !/^com\.webos\.app\.hdmi[0-9]+$/.exec(appId))) return;
+  const cfg = readConfig();
+  if (homeMode(cfg) !== 'watch') return;
+  takeover(homeTarget(cfg), ' (power on)').catch((e) => log('home wake failed', e.message));
+}
 
 function onNoForeground() {
   const left = lastForeground;
@@ -1105,7 +1118,16 @@ function watchPower() {
     const sub = service.subscribe('luna://com.webos.service.tvpower/power/getPowerState', { subscribe: true });
     sub.on('response', (m) => {
       const p = m.payload || {};
-      if (p.state) tvOn = p.state === 'Active' && !p.processing; /* (not turning off, nor its screen) */
+      if (!p.state) return;
+      tvOn = p.state === 'Active' && !p.processing; /* (not turning off, nor its screen) */
+      const previous = powerState;
+      if (p.state !== 'Active' || !p.processing) powerState = p.state;
+      if (!tvOn || !['Active Standby', 'Suspend', 'Power Off'].includes(previous)) return;
+      log('power wake', previous, '-> Active');
+      wakeUntil = Date.now() + 5000;
+      const until = wakeUntil;
+      setTimeout(() => { if (wakeUntil === until) maybeHomeAfterWake(lastForeground); }, 650);
+      setTimeout(() => { if (wakeUntil === until) wakeUntil = 0; }, 5000);
     });
     sub.on('cancel', () => setTimeout(watchPower, 3000));
   } catch (e) {
@@ -1428,18 +1450,19 @@ async function tvRegion() {
   return tvCountry;
 }
 const tmdb = require('./tmdb')({ readConfig, writeConfig, log, region: tvRegion });
+const recommendations = require('./recommendations')({ luna, tmdb, log, region: tvRegion });
 // TMDB's and Trakt's keys, pasted on a phone: a page on the local network while the launcher shows its QR code
 const keysPage = require('./keys')({ tmdb, trakt, log, emit });
 const ambient = require('./ambient')({ luna, log });
 const control = require('./control')({ luna, log, readConfig, writeConfig, extra: ambient }); /* the Control Center's TV controls, and ambient light (HyperHDR, PicCap) */
 const picCapture = ambient.find((c) => c.id === 'screenCapture'); /* Blur Over Video pauses it */
 
-// What's popular on the service a streaming app is, or trending for an app with no picture,
+// An app's own clickable recommendations, or TMDB's popular/trending fallback,
 // for its Top Shelf (pictures through us).
 async function apiFeatured(id) {
   if (!titles[id]) await listApps();
   const hasArt = !!(images[id] && images[id].art && images[id].art.length); /* else: what's trending */
-  const f = await tmdb.featured(titles[id] ? { id, title: titles[id] } : null, hasArt);
+  const f = await recommendations.featured(id, titles[id]) || await tmdb.featured(titles[id] ? { id, title: titles[id] } : null, hasArt);
   return { kind: f.kind, provider: f.provider, items: f.items.map((it) => Object.assign({}, it, { background: proxied(it.background), logo: proxied(it.logo) })) };
 }
 // Media servers: each one's Continue Watching shows in its own app's Top Shelf.
@@ -1484,11 +1507,13 @@ async function apiContinue() {
     const prev = byId.get(it.id);
     if (!prev || String(it.lastWatched) > String(prev.lastWatched)) byId.set(it.id, it);
   }
-  const items = sortStable([...byId.values()], (a, b) => String(b.lastWatched).localeCompare(String(a.lastWatched)))
-    .slice(0, 16)
-    .map((it) => Object.assign({}, it, {
+  const selected = sortStable([...byId.values()], (a, b) => String(b.lastWatched).localeCompare(String(a.lastWatched))).slice(0, 16);
+  const items = await Promise.all(selected.map(async (it) => {
+    const details = cfg.prefs && cfg.prefs.topShelfDetails === 'off' ? null : await tmdb.detailsByImdb(it.id, it.type);
+    return Object.assign({}, it, details || {}, {
       background: proxied(it.background), thumbnail: proxied(it.thumbnail), logo: proxied(it.logo), poster: proxied(it.poster)
-    }));
+    });
+  }));
   const t = trakt.status();
   return {
     source: 'stremio', connected: !!cfg.stremioAuthKey || t.connected, stremio: !!cfg.stremioAuthKey, trakt: t, items,
@@ -1625,11 +1650,13 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/trakt/link' && req.method === 'POST') return sendJSON(res, 200, await trakt.startDevice());
     if (url.pathname === '/api/trakt/disconnect' && req.method === 'POST') return sendJSON(res, 200, trakt.disconnect());
     if (url.pathname === '/api/launch' && req.method === 'POST') {
-      const { id, params, toast } = await readBody(req);
+      const { id, params, toast, recommendationId } = await readBody(req);
       if (!id) return sendJSON(res, 400, { returnValue: false, errorText: 'id is required' });
-      const r = await luna(APPMGR + '/launch', params ? { id, params } : { id });
+      const direct = recommendationId ? await recommendations.launch(id, recommendationId) : null;
+      const openedTitle = direct && direct.returnValue !== false;
+      const r = openedTitle ? direct : await luna(APPMGR + '/launch', params ? { id, params } : { id });
       // a hint shown by the system, so it appears over the app that just opened
-      if (toast && r && r.returnValue !== false) {
+      if (toast && !openedTitle && r && r.returnValue !== false) {
         setTimeout(() => luna('luna://com.webos.notification/createToast', { sourceId: NATIVE_ID, message: String(toast).slice(0, 200) }), 1500);
       }
       return sendJSON(res, 200, r);
@@ -1674,7 +1701,8 @@ const imageServer = http.createServer(async (req, res) => {
     return sendJSON(res, 200, {
       id: pkg.name, /* (the launcher checks it's its own: the old Home+'s, still installed, takes the same port) */
       version: pkg.version, elevated: isRoot(), token: tokenWritten,
-      bootScript: fs.existsSync(INITD), homeAsked: !!cfg.homeAsked, homeMode: homeMode(cfg), onboarded: onboarded(cfg)
+      bootScript: fs.existsSync(INITD), homeAsked: !!cfg.homeAsked, homeMode: homeMode(cfg), onboarded: onboarded(cfg),
+      tmdbConfigured: !!cfg.tmdbKey
     });
   }
   /* the launcher just had Homebrew Channel elevate us: exit so the next start runs as root.

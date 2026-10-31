@@ -499,6 +499,22 @@ static int shape(const int *in, int n, int *out)
     return m;
 }
 
+/* Match text_render's shaping and line-box width without making a texture. */
+int text_width(Font *f, float px, const char *utf8)
+{
+    if (!f || !utf8 || !*utf8) return 0;
+    int src[MAX_CPS + 1], cps[MAX_CPS + 1], n = 0;
+    Glyph gl[MAX_CPS + 1];
+    float pos[MAX_CPS + 2];
+    for (const char *s = utf8; *s && n < MAX_CPS;) {
+        int c = utf8_next(&s);
+        if (!ignorable(c)) src[n++] = c;
+    }
+    if (!n) return 0;
+    int m = shape(src, n, cps);
+    return (int)ceilf(layout_line(f, px, cps, m, gl, pos)) + 4;
+}
+
 Tex *text_render(Font *f, float px, const char *utf8, int max_w,
                  int *out_w, int *out_h)
 {

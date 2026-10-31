@@ -163,6 +163,19 @@ void launch_app(const char *id, const char *params, const char *hint)
 
 void launch(const char *id, const char *hint) { launch_app(id, NULL, hint); }
 
+void launch_recommendation(const char *id, const char *recommendation_id, const char *hint)
+{
+    cJSON *o = cJSON_CreateObject();
+    cJSON_AddStringToObject(o, "id", id);
+    cJSON_AddStringToObject(o, "recommendationId", recommendation_id);
+    if (hint && hint[0]) cJSON_AddStringToObject(o, "toast", hint);
+    char *body = cJSON_PrintUnformatted(o);
+    net_post("/api/launch", body, TAG_LAUNCH);
+    free(body);
+    cJSON_Delete(o);
+    S.away = 1;
+}
+
 void close_apps(const char *id)
 {
     cJSON *o = cJSON_CreateObject();

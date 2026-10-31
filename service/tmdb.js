@@ -19,6 +19,7 @@ const API = process.env.HOMEPLUS_TMDB || 'https://api.themoviedb.org/3';
 const IMG = process.env.HOMEPLUS_TMDB_IMAGES || 'https://image.tmdb.org/t/p';
 const LIST_MS = 12 * 3600 * 1000;
 const PROVIDERS_MS = 24 * 3600 * 1000;
+const GENRE_RETRY_MS = 5 * 60 * 1000;
 const MIN_ITEMS = 3; // fewer than this, and the app keeps its glow
 
 // "Disney+" is "Disney Plus", "RaiPlay" is "Rai Play": compared without spaces
@@ -28,18 +29,25 @@ function norm(s) {
 
 module.exports = function createTmdb({ readConfig, writeConfig, log, region: tvRegion }) {
   let providers = { at: 0, region: '', list: [] }; // [{ id, name, key, priority }]
+  let providersBuilding = null;
   const lists = new Map(); // provider id (or 'trending') -> { at, items }
   const building = new Map(); // provider id -> Promise, so one list is fetched once at a time
+  const details = new Map(); // IMDb id and type -> { at, value }
+  const detailsBuilding = new Map();
+  const titleDetails = new Map(); // provider recommendation title -> { at, value }
+  const titleBuilding = new Map();
+  let genreLists = { until: 0, tv: new Map(), movie: new Map() };
+  let genreBuilding = null;
 
   function key() {
     return readConfig().tmdbKey || '';
   }
 
   // a Read Access Token is a JWT (three dot-separated parts); a v3 key goes in the query
-  function get(path, params = {}, k = key()) {
+  function get(path, params = {}, k = key(), timeout = 10000) {
     const bearer = k.split('.').length === 3;
     const q = new URLSearchParams(Object.assign({}, params, bearer ? {} : { api_key: k })).toString();
-    return requestJSON('GET', `${API}${path}${q ? `?${q}` : ''}`, { headers: bearer ? { Authorization: `Bearer ${k}` } : {} });
+    return requestJSON('GET', `${API}${path}${q ? `?${q}` : ''}`, { headers: bearer ? { Authorization: `Bearer ${k}` } : {}, timeout });
   }
 
   async function region() {
@@ -49,18 +57,27 @@ module.exports = function createTmdb({ readConfig, writeConfig, log, region: tvR
   async function loadProviders() {
     const reg = await region();
     if (providers.list.length && providers.region === reg && Date.now() - providers.at < PROVIDERS_MS) return;
-    const seen = new Map();
-    for (const kind of ['tv', 'movie']) {
-      const r = await get(`/watch/providers/${kind}`, { watch_region: reg });
-      if (r.status !== 200 || !r.json) throw new Error(`TMDB didn't list the streaming services (${r.status})`);
-      for (const p of r.json.results || []) {
-        if (seen.has(p.provider_id)) continue;
-        const prio = (p.display_priorities || {})[reg];
-        seen.set(p.provider_id, { id: p.provider_id, name: p.provider_name, key: norm(p.provider_name), priority: prio != null ? prio : 999 });
-      }
+    if (!providersBuilding) {
+      providersBuilding = (async () => {
+        const seen = new Map();
+        for (const kind of ['tv', 'movie']) {
+          const r = await get(`/watch/providers/${kind}`, { watch_region: reg });
+          if (r.status !== 200 || !r.json) throw new Error(`TMDB didn't list the streaming services (${r.status})`);
+          for (const p of r.json.results || []) {
+            if (seen.has(p.provider_id)) continue;
+            const prio = (p.display_priorities || {})[reg];
+            seen.set(p.provider_id, { id: p.provider_id, name: p.provider_name, key: norm(p.provider_name), priority: prio != null ? prio : 999 });
+          }
+        }
+        providers = { at: Date.now(), region: reg, list: [...seen.values()] };
+        log('tmdb:', providers.list.length, 'streaming services in', reg);
+      })();
     }
-    providers = { at: Date.now(), region: reg, list: [...seen.values()] };
-    log('tmdb:', providers.list.length, 'streaming services in', reg);
+    try {
+      await providersBuilding;
+    } finally {
+      providersBuilding = null;
+    }
   }
 
   // The services an app could be, best first: the same name, then names ending in
@@ -85,6 +102,27 @@ module.exports = function createTmdb({ readConfig, writeConfig, log, region: tvR
     } catch (e) {
       return '';
     }
+  }
+
+  async function genres() {
+    if (Date.now() < genreLists.until) return genreLists;
+    if (!genreBuilding) {
+      genreBuilding = Promise.all(['tv', 'movie'].map(async (kind) => {
+        const r = await get(`/genre/${kind}/list`, { language: 'en-US' });
+        if (r.status !== 200 || !r.json) throw new Error(`TMDB genres failed (${r.status})`);
+        return new Map((r.json.genres || []).map((g) => [g.id, g.name]));
+      })).then(([tv, movie]) => {
+        genreLists = { until: Date.now() + PROVIDERS_MS, tv, movie };
+        return genreLists;
+      }, (e) => {
+        log('tmdb:', e.message);
+        genreLists.until = Date.now() + GENRE_RETRY_MS;
+        return genreLists;
+      });
+    }
+    const result = await genreBuilding;
+    genreBuilding = null;
+    return result;
   }
 
   // the 10 most popular titles on a service (series and films by popularity), or
@@ -120,12 +158,16 @@ module.exports = function createTmdb({ readConfig, writeConfig, log, region: tvR
       for (const m of r.json.results || []) if (m.backdrop_path && (m.media_type === 'tv' || m.media_type === 'movie')) found.push({ kind: m.media_type, m });
     }
     const top = found.slice(0, 10);
+    const names = await genres();
     const logos = await Promise.all(top.map(({ kind, m }) => logoFor(kind, m.id)));
     return top.map(({ kind, m }, i) => ({
       id: `${kind}:${m.id}`,
       type: kind === 'tv' ? 'series' : 'movie',
       name: m.name || m.title || '',
+      genre: (Array.isArray(m.genre_ids) ? m.genre_ids : []).map((id) => names[kind].get(id)).filter(Boolean)[0] || '',
       year: parseInt(String(m.first_air_date || m.release_date || '').slice(0, 4), 10) || 0,
+      rating: Number(m.vote_average) > 0 && Number(m.vote_average) <= 10 ? Math.round(Number(m.vote_average) * 10) / 10 : 0,
+      overview: String(m.overview || '').replace(/\s+/g, ' ').trim(),
       background: `${IMG}/w1280${m.backdrop_path}`,
       logo: logos[i]
     }));
@@ -170,6 +212,139 @@ module.exports = function createTmdb({ readConfig, writeConfig, log, region: tvR
     return items.length >= MIN_ITEMS ? { kind: 'trending', provider: '', items } : none;
   }
 
+  // Stremio and Trakt know the IMDb id of a paused title, but not its synopsis.
+  // The find response has the same genre ids, date, rating and overview as discover.
+  async function detailsByImdb(id, type) {
+    if (!key() || !/^tt\d+$/.test(id) || (type !== 'movie' && type !== 'series')) return null;
+    const cacheId = `${type}:${id}`;
+    const c = details.get(cacheId);
+    if (c && Date.now() - c.at < LIST_MS) return c.value;
+    if (!detailsBuilding.has(cacheId)) {
+      detailsBuilding.set(cacheId, (async () => {
+        const kind = type === 'series' ? 'tv' : 'movie';
+        const r = await get(`/find/${id}`, { external_source: 'imdb_id', language: 'en-US' });
+        if (r.status !== 200 || !r.json) throw new Error(`TMDB find failed (${r.status})`);
+        const m = (r.json[`${kind}_results`] || [])[0];
+        if (!m) return null;
+        const names = await genres();
+        return {
+          genre: (Array.isArray(m.genre_ids) ? m.genre_ids : []).map((g) => names[kind].get(g)).filter(Boolean)[0] || '',
+          year: parseInt(String(m.first_air_date || m.release_date || '').slice(0, 4), 10) || 0,
+          rating: Number(m.vote_average) > 0 && Number(m.vote_average) <= 10 ? Math.round(Number(m.vote_average) * 10) / 10 : 0,
+          overview: String(m.overview || '').replace(/\s+/g, ' ').trim()
+        };
+      })().then((value) => {
+        details.set(cacheId, { at: Date.now(), value });
+        detailsBuilding.delete(cacheId);
+        return value;
+      }, (e) => {
+        log('tmdb: IMDb details', e.message);
+        details.set(cacheId, { at: Date.now() - LIST_MS + GENRE_RETRY_MS, value: c ? c.value : null });
+        detailsBuilding.delete(cacheId);
+        return c ? c.value : null;
+      }));
+    }
+    return detailsBuilding.get(cacheId);
+  }
+
+  // A provider card can add a season, release year, regional label or franchise
+  // name. These variants only nominate candidates; provider availability must
+  // confirm an inexact name before its details are shown.
+  function titleVariants(title) {
+    const variants = [title];
+    const afterColon = title.replace(/^[^:]{2,25}:\s*/, '');
+    const withoutRegion = title.replace(/\s+(?:USA|US)$/i, '');
+    if (afterColon !== title) variants.push(afterColon);
+    if (withoutRegion !== title) variants.push(withoutRegion);
+    return variants.map(norm).filter(Boolean);
+  }
+
+  function namesFor(m) {
+    return [m.name || m.title, m.original_name || m.original_title].map(norm).filter(Boolean);
+  }
+
+  function plausibleAlias(m, variants) {
+    return namesFor(m).some((name) => variants.some((v) => v === name ||
+      (v.length >= 12 && name.length >= 12 &&
+        ((v.includes(name) && name.length / v.length >= 0.65) ||
+         (name.endsWith(v) && v.length / name.length >= 0.65)))));
+  }
+
+  async function providerMatch(matches, providerTitle, reg) {
+    if (!providerTitle || !matches.length || matches.length > 8) return null;
+    try {
+      await loadProviders();
+      const provider = candidates(providerTitle)[0];
+      if (!provider || providers.region !== reg) return null;
+      const available = await Promise.all(matches.map(async (m) => {
+        const r = await get(`/${m.media_type}/${m.id}/watch/providers`, {}, key(), 3000);
+        if (r.status !== 200 || !r.json) throw new Error(`TMDB availability failed (${r.status})`);
+        const offers = (r.json.results || {})[reg] || {};
+        return ['flatrate', 'ads', 'free', 'rent', 'buy'].some((kind) =>
+          Array.isArray(offers[kind]) && offers[kind].some((p) => p.provider_id === provider.id));
+      }));
+      const offered = matches.filter((m, i) => available[i]);
+      return offered.length === 1 ? offered[0] : null;
+    } catch (e) {
+      log('tmdb: recommendation availability', e.message);
+      return null;
+    }
+  }
+
+  // Apps publish their own recommendations with title links, but no synopsis or
+  // rating. Keep exact or dominant matches; check the TV's provider availability
+  // when namesakes or a provider's wording make the title uncertain.
+  async function detailsByTitle(input, providerTitle = '') {
+    let title = String(input || '').trim();
+    const dated = /\s+\(((?:19|20)\d{2})\)$/.exec(title);
+    if (dated) title = title.slice(0, -dated[0].length).trim();
+    title = title.replace(/\s+-\s+Season\s+\d+$/i, '');
+    const titleKey = norm(title);
+    if (!key() || titleKey.length < 2) return null;
+    const reg = providerTitle ? await region() : '';
+    const cacheId = `${norm(providerTitle)}:${reg}:${titleKey}:${dated ? dated[1] : ''}`;
+    const c = titleDetails.get(cacheId);
+    if (c && Date.now() - c.at < LIST_MS) return c.value;
+    if (!titleBuilding.has(cacheId)) {
+      titleBuilding.set(cacheId, (async () => {
+        const r = await get('/search/multi', { query: title, include_adult: 'false', language: 'en-US', page: 1 });
+        if (r.status !== 200 || !r.json) throw new Error(`TMDB search failed (${r.status})`);
+        const choices = (r.json.results || []).filter((m) => (m.media_type === 'tv' || m.media_type === 'movie') &&
+          (!dated || parseInt(String(m.first_air_date || m.release_date || '').slice(0, 4), 10) === Number(dated[1])));
+        const matches = choices.filter((m) => namesFor(m).includes(titleKey))
+          .sort((a, b) => (Number(b.popularity) || 0) - (Number(a.popularity) || 0));
+        let m = matches[0];
+        if (matches.length > 1 && ((Number(m.popularity) || 0) < 20 ||
+          (Number(m.popularity) || 0) < 10 * (Number(matches[1].popularity) || 0))) {
+          m = await providerMatch(matches, providerTitle, reg);
+        } else if (!matches.length) {
+          m = await providerMatch(choices.filter((c) => plausibleAlias(c, titleVariants(title))), providerTitle, reg);
+        }
+        if (!m) return null;
+        const kind = m.media_type, names = await genres();
+        return {
+          type: kind === 'tv' ? 'series' : 'movie',
+          genre: (Array.isArray(m.genre_ids) ? m.genre_ids : []).map((g) => names[kind].get(g)).filter(Boolean)[0] || '',
+          year: parseInt(String(m.first_air_date || m.release_date || '').slice(0, 4), 10) || 0,
+          rating: Number(m.vote_average) > 0 && Number(m.vote_average) <= 10 ? Math.round(Number(m.vote_average) * 10) / 10 : 0,
+          overview: String(m.overview || '').replace(/\s+/g, ' ').trim(),
+          background: m.backdrop_path ? `${IMG}/w1280${m.backdrop_path}` : '',
+          logo: (await logoFor(kind, m.id)) || ''
+        };
+      })().then((value) => {
+        titleDetails.set(cacheId, { at: Date.now(), value });
+        titleBuilding.delete(cacheId);
+        return value;
+      }, (e) => {
+        log('tmdb: title details', e.message);
+        titleDetails.set(cacheId, { at: Date.now() - LIST_MS + GENRE_RETRY_MS, value: c ? c.value : null });
+        titleBuilding.delete(cacheId);
+        return c ? c.value : null;
+      }));
+    }
+    return titleBuilding.get(cacheId);
+  }
+
   function status() {
     return { configured: !!key(), region: readConfig().tmdbRegion || providers.region };
   }
@@ -183,6 +358,8 @@ module.exports = function createTmdb({ readConfig, writeConfig, log, region: tvR
     else delete cfg.tmdbRegion;
     writeConfig(cfg);
     lists.clear();
+    details.clear();
+    titleDetails.clear();
     providers = { at: 0, region: '', list: [] };
     return status();
   }
@@ -201,9 +378,11 @@ module.exports = function createTmdb({ readConfig, writeConfig, log, region: tvR
     }
     writeConfig(cfg);
     lists.clear();
+    details.clear();
+    titleDetails.clear();
     providers = { at: 0, region: '', list: [] };
     return status();
   }
 
-  return { featured, status, setKey, setRegion };
+  return { featured, detailsByImdb, detailsByTitle, status, setKey, setRegion };
 };

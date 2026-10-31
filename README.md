@@ -206,7 +206,9 @@ Home+ checks the key with TMDB before keeping it, and `{"key":""}` removes it. T
 
 ![Trending Now behind YouTube](docs/screenshots/trending.jpg)
 
-An app counts as a streaming service when its name is one TMDB lists for your TV's country (its LG store country). Its 10 most popular series and films are fetched every 12 hours. **OK** opens the app and names the title, ready to search for: LG's apps can't be sent to a title.
+Apps that publish clickable recommendations show those titles in Top Shelf. **OK** opens a recommendation in its app. Home+ adds TMDB details when the title is clear; for close namesakes, it checks the app's availability in your TV's country. Uncertain matches keep the app's own artwork and title. Availability data comes from [JustWatch](https://www.justwatch.com) through TMDB.
+
+For apps without compatible recommendations, Home+ shows the 10 most popular films and series TMDB lists for that service. These are refreshed every 12 hours; **OK** opens the app and names the title to search for.
 
 ## Home button
 
