@@ -1015,6 +1015,7 @@ async function onForeground(appId) {
   closeOverlay();
   lastUsed.set(appId, Date.now());
   saveRecents();
+  maybeHomeAfterWake(appId);
   const cfg = readConfig();
   const target = homeTarget(cfg);
   if (appId === target) takeoverLanded = true;
@@ -1050,6 +1051,18 @@ const coming = new Map(); /* apps SAM is starting or bringing back to the front,
 const quit = new Map(); /* apps that closed, id -> when */
 let emptied = { app: '', at: 0 }; /* the app that left the front with nothing after it, and when */
 let tvOn = true;
+let powerState = '';
+let wakeUntil = 0;
+
+function maybeHomeAfterWake(appId) {
+  if (!wakeUntil || !tvOn || !appId || appId === NATIVE_ID) return;
+  const inTime = Date.now() <= wakeUntil;
+  wakeUntil = 0;
+  if (!inTime || (appId !== 'com.webos.app.livetv' && !/^com\.webos\.app\.hdmi[0-9]+$/.exec(appId))) return;
+  const cfg = readConfig();
+  if (homeMode(cfg) !== 'watch') return;
+  takeover(homeTarget(cfg), ' (power on)').catch((e) => log('home wake failed', e.message));
+}
 
 function onNoForeground() {
   const left = lastForeground;
@@ -1105,7 +1118,16 @@ function watchPower() {
     const sub = service.subscribe('luna://com.webos.service.tvpower/power/getPowerState', { subscribe: true });
     sub.on('response', (m) => {
       const p = m.payload || {};
-      if (p.state) tvOn = p.state === 'Active' && !p.processing; /* (not turning off, nor its screen) */
+      if (!p.state) return;
+      tvOn = p.state === 'Active' && !p.processing; /* (not turning off, nor its screen) */
+      const previous = powerState;
+      if (p.state !== 'Active' || !p.processing) powerState = p.state;
+      if (!tvOn || !['Active Standby', 'Suspend', 'Power Off'].includes(previous)) return;
+      log('power wake', previous, '-> Active');
+      wakeUntil = Date.now() + 5000;
+      const until = wakeUntil;
+      setTimeout(() => { if (wakeUntil === until) maybeHomeAfterWake(lastForeground); }, 650);
+      setTimeout(() => { if (wakeUntil === until) wakeUntil = 0; }, 5000);
     });
     sub.on('cancel', () => setTimeout(watchPower, 3000));
   } catch (e) {
