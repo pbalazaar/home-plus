@@ -1428,18 +1428,20 @@ async function tvRegion() {
   return tvCountry;
 }
 const tmdb = require('./tmdb')({ readConfig, writeConfig, log, region: tvRegion });
+const recommendations = require('./recommendations')({ luna, tmdb, log });
 // TMDB's and Trakt's keys, pasted on a phone: a page on the local network while the launcher shows its QR code
 const keysPage = require('./keys')({ tmdb, trakt, log, emit });
 const ambient = require('./ambient')({ luna, log });
 const control = require('./control')({ luna, log, readConfig, writeConfig, extra: ambient }); /* the Control Center's TV controls, and ambient light (HyperHDR, PicCap) */
 const picCapture = ambient.find((c) => c.id === 'screenCapture'); /* Blur Over Video pauses it */
 
-// What's popular on the service a streaming app is, or trending for an app with no picture,
+// An app's own clickable recommendations, or TMDB's popular/trending fallback,
 // for its Top Shelf (pictures through us).
 async function apiFeatured(id) {
   if (!titles[id]) await listApps();
   const hasArt = !!(images[id] && images[id].art && images[id].art.length); /* else: what's trending */
-  const f = await tmdb.featured(titles[id] ? { id, title: titles[id] } : null, hasArt);
+  const detailsEnabled = (readConfig().prefs || {}).topShelfDetails !== 'off';
+  const f = await recommendations.featured(id, titles[id], detailsEnabled) || await tmdb.featured(titles[id] ? { id, title: titles[id] } : null, hasArt);
   return { kind: f.kind, provider: f.provider, items: f.items.map((it) => Object.assign({}, it, { background: proxied(it.background), logo: proxied(it.logo) })) };
 }
 // Media servers: each one's Continue Watching shows in its own app's Top Shelf.
@@ -1484,11 +1486,13 @@ async function apiContinue() {
     const prev = byId.get(it.id);
     if (!prev || String(it.lastWatched) > String(prev.lastWatched)) byId.set(it.id, it);
   }
-  const items = sortStable([...byId.values()], (a, b) => String(b.lastWatched).localeCompare(String(a.lastWatched)))
-    .slice(0, 16)
-    .map((it) => Object.assign({}, it, {
+  const selected = sortStable([...byId.values()], (a, b) => String(b.lastWatched).localeCompare(String(a.lastWatched))).slice(0, 16);
+  const items = await Promise.all(selected.map(async (it) => {
+    const details = cfg.prefs && cfg.prefs.topShelfDetails === 'off' ? null : await tmdb.detailsByImdb(it.id, it.type);
+    return Object.assign({}, it, details || {}, {
       background: proxied(it.background), thumbnail: proxied(it.thumbnail), logo: proxied(it.logo), poster: proxied(it.poster)
-    }));
+    });
+  }));
   const t = trakt.status();
   return {
     source: 'stremio', connected: !!cfg.stremioAuthKey || t.connected, stremio: !!cfg.stremioAuthKey, trakt: t, items,
@@ -1625,11 +1629,13 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/trakt/link' && req.method === 'POST') return sendJSON(res, 200, await trakt.startDevice());
     if (url.pathname === '/api/trakt/disconnect' && req.method === 'POST') return sendJSON(res, 200, trakt.disconnect());
     if (url.pathname === '/api/launch' && req.method === 'POST') {
-      const { id, params, toast } = await readBody(req);
+      const { id, params, toast, recommendationId } = await readBody(req);
       if (!id) return sendJSON(res, 400, { returnValue: false, errorText: 'id is required' });
-      const r = await luna(APPMGR + '/launch', params ? { id, params } : { id });
+      const direct = recommendationId ? await recommendations.launch(id, recommendationId) : null;
+      const openedTitle = direct && direct.returnValue !== false;
+      const r = openedTitle ? direct : await luna(APPMGR + '/launch', params ? { id, params } : { id });
       // a hint shown by the system, so it appears over the app that just opened
-      if (toast && r && r.returnValue !== false) {
+      if (toast && !openedTitle && r && r.returnValue !== false) {
         setTimeout(() => luna('luna://com.webos.notification/createToast', { sourceId: NATIVE_ID, message: String(toast).slice(0, 200) }), 1500);
       }
       return sendJSON(res, 200, r);
@@ -1674,7 +1680,8 @@ const imageServer = http.createServer(async (req, res) => {
     return sendJSON(res, 200, {
       id: pkg.name, /* (the launcher checks it's its own: the old Home+'s, still installed, takes the same port) */
       version: pkg.version, elevated: isRoot(), token: tokenWritten,
-      bootScript: fs.existsSync(INITD), homeAsked: !!cfg.homeAsked, homeMode: homeMode(cfg), onboarded: onboarded(cfg)
+      bootScript: fs.existsSync(INITD), homeAsked: !!cfg.homeAsked, homeMode: homeMode(cfg), onboarded: onboarded(cfg),
+      tmdbConfigured: !!cfg.tmdbKey
     });
   }
   /* the launcher just had Homebrew Channel elevate us: exit so the next start runs as root.

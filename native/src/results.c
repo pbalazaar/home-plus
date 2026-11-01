@@ -175,6 +175,9 @@ int handle_result(Result *r)
             S.orbit_off = o && cJSON_IsFalse(cJSON_GetObjectItem(o, "pixelShift"));
             S.vivid_covers = o && cJSON_IsFalse(cJSON_GetObjectItem(o, "calmColours"));
             S.shelf_still = o && cJSON_IsFalse(cJSON_GetObjectItem(o, "shelfTurns"));
+            const char *details = o ? jstr(o, "topShelfDetails") : "";
+            shelf_set_details(!strcmp(details, "off") ? SHELF_DETAILS_OFF :
+                              !strcmp(details, "compact") ? SHELF_DETAILS_COMPACT : SHELF_DETAILS_FULL);
             const char *look = o ? jstr(o, "iconLook") : "";
             S.icon_look = !strcmp(look, "dark") ? LOOK_DARK : !strcmp(look, "clear") ? LOOK_CLEAR : !strcmp(look, "tinted") ? LOOK_TINTED : LOOK_DEFAULT;
             const char *tint = o ? jstr(o, "iconTint") : "";
@@ -182,6 +185,14 @@ int handle_result(Result *r)
             for (int i = 0; i < NTINTS; i++)
                 if (!strcasecmp(tint, TINTS[i].name)) S.icon_tint = i;
             cJSON_Delete(o);
+            if (r->kind == JOB_POST && S.shelf_details != SHELF_DETAILS_OFF) {
+                App *a = shelf_app();
+                if (a && !media_source(a)) a->feat_refresh = 1;
+                else rail_request(SRC_STREMIO);
+            }
+        } else if (r->kind == JOB_POST) {
+            toast("Couldn\xE2\x80\x99t save Top Shelf Details", 3500);
+            net_get_json("/api/prefs", TAG_PREFS, 0, 0);
         }
         break;
     case TAG_MEDIA_LINK:

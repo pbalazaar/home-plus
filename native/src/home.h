@@ -58,6 +58,7 @@
 #define SKEL_MS 250                    /* a wait longer than this shows placeholders (a skeleton) */
 #define BACK_MS 700                    /* back from another app, the home screen comes into focus */
 #define MAX_DOTS 16                    /* its position, as dots */
+#define OVERVIEW_LINES 5               /* provider synopsis lines in the Top Shelf */
 #define BAR 56                         /* the clock capsule */
 #define TOP_Y 52                       /* where tvOS 26 has it */
 #define TOP_DOT (BAR - 10)             /* its circle: Settings, where tvOS shows the profile picture */
@@ -146,6 +147,7 @@ enum { ZONE_GRID, ZONE_RAIL, ZONE_TOP };
 /* how app tiles look (Settings -> App Tiles): their own colours; dark tiles;
  * glass with white logos; glass in a colour */
 enum { LOOK_DEFAULT, LOOK_DARK, LOOK_CLEAR, LOOK_TINTED };
+enum { SHELF_DETAILS_OFF, SHELF_DETAILS_COMPACT, SHELF_DETAILS_FULL };
 /* Tinted's colours: Apple's system colours, as on a dark screen */
 static const struct {
     const char *name;
@@ -175,6 +177,7 @@ typedef struct {
     float ink_tint;               /* its logo is grey or white on a coloured icon: on a dark tile it takes that colour */
     int icon_state, art_state; /* 0 idle, 1 loading, 2 ready, 3 failed */
     int feat; /* a streaming service with popular titles (TMDB): 0 not asked, 1 asking, 2 yes, 3 no */
+    int feat_refresh; /* saved detail preferences need fresh cards, after any request already on its way */
     int removable, deleted; /* it can be deleted from the TV; it was, and the app list hasn't caught up */
     int lw, lh, bw, bh;
     float s, sv; /* focus animation 0..1, and its spring velocity */
@@ -182,13 +185,13 @@ typedef struct {
 
 /* A title in the Top Shelf carousel: Continue Watching, or popular on a streaming service */
 typedef struct {
-    char id[64], type[16], name[200], bg[40], logo[40];
-    float progress;
+    char id[64], type[16], name[200], bg[40], logo[40], genre[64], overview[512];
+    float progress, rating;
     int season, episode, remaining, year;
-    Tex *bg_tex, *logo_tex, *title_tex, *meta_tex;
-    int texts_made; /* title_tex and meta_tex are made (either can be NULL: a name with nothing to draw) */
+    Tex *bg_tex, *logo_tex, *title_tex, *meta_tex, *resume_tex, *overview_tex[OVERVIEW_LINES];
+    int texts_made; /* title and detail textures are made (either can be NULL: a name with nothing to draw) */
     int bg_state, logo_state; /* 0 idle, 1 loading, 2 ready, 3 failed */
-    int tw, th, mw, mh, lw, lh;
+    int tw, th, mw, mh, rw, rh, ow[OVERVIEW_LINES], oh[OVERVIEW_LINES], lw, lh;
 } RailItem;
 
 /* A picture the Top Shelf can show: app i's artwork, its glow (its icon blurred, with its
@@ -199,7 +202,7 @@ typedef struct { int kind, i; } Pic;
 
 typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELETE, ACT_UNHIDE, ACT_UNHIDE_ALL, ACT_CANCEL,
                ACT_LAUNCH_ID, ACT_TRAKT_LINK, ACT_TRAKT_UNLINK, ACT_MEDIA_LINK, ACT_MEDIA_UNLINK, ACT_ACCOUNT_ASK, ACT_UP, ACT_KEYS, ACT_SHELF,
-               ACT_HOME_MODE, ACT_SOUNDS,
+               ACT_HOME_MODE, ACT_SOUNDS, ACT_SHELF_DETAILS,
                ACT_SETUP_RETRY, ACT_HOME_YES, ACT_HOME_NO, ACT_WELCOME_NEXT, ACT_WELCOME_SKIP, ACT_HOME_TOGGLE, ACT_REMOVE_ASK, ACT_REMOVE,
                ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY, ACT_CC_BLUR_VIDEO,
                ACT_PAGE, ACT_CLOCK, ACT_DIM, ACT_OFF, ACT_ORBIT, ACT_CALM, ACT_HIDDEN, ACT_SETTINGS_KEY, ACT_INPUT_KEY,
@@ -364,6 +367,7 @@ typedef struct {
     int reduce_motion, reduce_transparency; /* Settings -> Accessibility (tvOS's names) */
     int clock24, orbit_off, vivid_covers;    /* Settings: 24-hour clock, no pixel shift, brand-colour covers */
     int shelf_still;                         /* Settings: the Top Shelf doesn't turn pages by itself */
+    int shelf_details;                       /* Settings: original hint, metadata, or metadata and synopsis */
     int icon_look;                           /* Settings: how app tiles look (LOOK_*) */
     int icon_tint;                           /* ...and the colour Tinted gives them (TINTS) */
     int click_x;                             /* where the pointer last clicked (-1: the keys' OK) */
@@ -651,6 +655,7 @@ int rail_active(void);
 int rail_ready(int i);
 int carousel_coming(const App *a);
 void shelf_load(void);
+void shelf_set_details(int mode);
 int shelf_jump(void);
 int shelf_complete(void);
 void update_page(float dt, int *anim);
@@ -664,6 +669,7 @@ void parse_layout(const char *json);
 int parse_apps(const char *json);
 void request_icons(void);
 void launch_app(const char *id, const char *params, const char *hint);
+void launch_recommendation(const char *id, const char *recommendation_id, const char *hint);
 void launch(const char *id, const char *hint);
 void close_apps(const char *id);
 App *app_by_id(const char *id);

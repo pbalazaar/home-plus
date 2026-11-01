@@ -71,7 +71,7 @@ int settings_steps(Action act)
 {
     switch (act) {
     case ACT_HOME_TOGGLE: case ACT_HOME_MODE: case ACT_SETTINGS_KEY: case ACT_INPUT_KEY:
-    case ACT_DIM: case ACT_OFF: case ACT_ORBIT: case ACT_CALM: case ACT_SHELF:
+    case ACT_DIM: case ACT_OFF: case ACT_ORBIT: case ACT_CALM: case ACT_SHELF: case ACT_SHELF_DETAILS:
     case ACT_SOUNDS: case ACT_CLOCK: case ACT_REDUCE_MOTION: case ACT_REDUCE_TRANSPARENCY: case ACT_CC_BLUR_VIDEO:
         return 1;
     default:
@@ -140,6 +140,9 @@ void settings_page(int page, int index)
         row("Calm Colours", S.vivid_covers ? "Off" : "On", ACT_CALM, 0, 0, "Dark app backgrounds, so ambient lights stay calm.");
         row("Top Shelf", S.shelf_still ? "Stays Still" : "Turns Pages", ACT_SHELF, 0, 0,
             "A new title every 10 seconds, or only when you ask.");
+        row("Top Shelf Details", S.shelf_details == SHELF_DETAILS_OFF ? "Off" :
+            S.shelf_details == SHELF_DETAILS_COMPACT ? "Compact" : "Full", ACT_SHELF_DETAILS, 0, 0,
+            "Off: open hint. Compact: genre and rating. Full: synopsis.");
         break;
     case PAGE_ICONS: {
         static const char *const about[] = { "Each app\xE2\x80\x99s own colours.", "Each logo on a dark tile.",
@@ -204,7 +207,8 @@ void settings_page(int page, int index)
         char about[700];
         snprintf(about, sizeof about, "Home+ %s, %s\n%s\nMIT licence \xC2\xB7 github.com/pbalazaar/home-plus\n"
                  "Not affiliated with LG, Apple, Stremio, Trakt, Jellyfin or Plex.\n"
-                 "Uses the TMDB API but is not endorsed or certified by TMDB.",
+                 "Uses the TMDB API but is not endorsed or certified by TMDB.\n"
+                 "Streaming availability data from JustWatch.",
                  S.svc_version[0] ? S.svc_version : "\xE2\x80\x93",
                  S.svc_elevated ? "set up with Homebrew Channel" : "not set up yet", keys);
         sheet_body(about);

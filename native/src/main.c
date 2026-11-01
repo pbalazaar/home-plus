@@ -296,6 +296,7 @@ int main(int argc, char **argv)
     S.shelf_cur = S.page_app = S.prev_app = S.want_app = -1;
     S.page_rail = S.prev_rail = S.want_rail = -2;
     S.feat_req = -1;
+    S.shelf_details = SHELF_DETAILS_FULL;
     S.last_input = SDL_GetTicks();
     S.orbit_k = -1;
     setup_check(); /* loads the data once the service is up and elevated */
