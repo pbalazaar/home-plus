@@ -111,7 +111,7 @@ luna-send -n 1 luna://com.github.pbalazaar.homeplus.service/control '{"action":"
 | Section | What's there |
 |---|---|
 | **Remote** | Whether the Home button opens Home+ or LG's home screen, No Flash on TVs that support it, and what the Settings and Input buttons open (where Home+'s key filter or LG Input Hook can catch them) |
-| **Display & OLED** | Dim After, Turn Off After, Pixel Shift, Calm Colours (dark app backgrounds, so ambient lights don't flood the room), and whether the Top Shelf turns pages by itself |
+| **Display & OLED** | Dim After, Turn Off After, Pixel Shift, Calm Colours (dark app backgrounds, so ambient lights don't flood the room), whether the Top Shelf turns pages by itself, and Top Shelf Details (Off, Compact or Full) |
 | **App Tiles** | Default, Dark, Clear or Tinted, and Tinted's colour |
 | **Control Center** | Blur Over Video (with PicCap installed, where the Settings button opens the Control Center over other apps): pauses PicCap's capture while the Control Center is open over an app, so its glass can blur the video |
 | **General** | Focus sounds, a 12-hour or 24-hour clock, and Hidden Apps (once you've hidden one) |
@@ -288,7 +288,7 @@ If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot s
 
 ## Privacy and security
 
-- **What Home+ connects to:** only the services you sign in to: Stremio's and Trakt's APIs, `plex.tv` and your Plex server, your Jellyfin server, and TMDB (`api.themoviedb.org`, `image.tmdb.org`) if you add a key. Stremio artwork comes from `images.metahub.space`; Jellyfin and Plex artwork comes from your server. To find a Jellyfin server, Home+ sends one broadcast on your local network (UDP port 7359), only when you start a Jellyfin sign-in.
+- **What Home+ connects to:** only the services you sign in to: Stremio's and Trakt's APIs, `plex.tv` and your Plex server, your Jellyfin server, and TMDB (`api.themoviedb.org`, `image.tmdb.org`) if you add a key. With a TMDB key and Top Shelf Details enabled, Home+ sends IMDb IDs from Continue Watching to TMDB for genre, rating and synopsis. Stremio artwork comes from `images.metahub.space`; Jellyfin and Plex artwork comes from your server. To find a Jellyfin server, Home+ sends one broadcast on your local network (UDP port 7359), only when you start a Jellyfin sign-in.
 - **Signing out:** Settings → Accounts signs out of Stremio and ends Home+'s session on your Jellyfin server. Plex lists Home+ under your account's **Authorized Devices**; remove it there to revoke its access.
 - **What's stored:** sign-ins, your layout and preferences, in `/var/lib/homeplus/config.json`, and the Top Shelf's pictures, so they show at once the next time, in `/var/lib/homeplus/images` (up to 64 MB). Both are readable only by root, and **Remove Home+** deletes them.
 - **The local API:** the service runs as root and answers only on `127.0.0.1`. Every request needs a token the service writes into Home+'s app folder, and requests from web pages and other hosts are refused.

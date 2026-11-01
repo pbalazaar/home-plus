@@ -41,6 +41,7 @@ test('api: /api/status answers without the token (the launcher asks before it ha
   assert.equal(r.json.version, JSON.parse(fs.readFileSync(path.join(ROOT, 'service/package.json'), 'utf8')).version);
   assert.equal(r.json.token, true, 'the token file was written');
   assert.equal(r.json.id, 'com.github.pbalazaar.homeplus.service', 'which service this is: the old Home+\'s answers on the same port');
+  assert.equal(r.json.tmdbConfigured, true, 'the first status response lets the launcher load provider titles immediately');
 });
 
 test('api: the welcome steps: done once finished or skipped; an install that answered the Home question has had them', async () => {
@@ -77,9 +78,28 @@ test('api: Continue Watching from Stremio, with every account\'s state for Setti
   assert.ok(r.json.items.length > 0);
   assert.ok(r.json.items.every((it) => it.source === 'stremio' && it.name));
   assert.ok(r.json.items.every((it) => !it.background || it.background.startsWith('/img/')), 'pictures go through the service');
+  assert.ok(r.json.items.every((it) => it.genre && it.year && it.rating && it.overview), 'Stremio titles include TMDB details');
   assert.equal(r.json.tmdb.configured, true);
   assert.equal(typeof r.json.jellyfin.connected, 'boolean');
   assert.equal(typeof r.json.plex.connected, 'boolean');
+});
+
+test('api: Top Shelf detail preference keeps the original Stremio list when off', async () => {
+  try {
+    const off = await call('POST', '/api/prefs', { body: { topShelfDetails: 'off' } });
+    assert.equal(off.json.topShelfDetails, 'off');
+    const plain = (await call('GET', '/api/continue')).json.items.filter((it) => it.source === 'stremio');
+    assert.ok(plain.length > 0);
+    assert.ok(plain.every((it) => !it.genre && !it.rating && !it.overview));
+
+    const compact = await call('POST', '/api/prefs', { body: { topShelfDetails: 'compact' } });
+    assert.equal(compact.json.topShelfDetails, 'compact');
+    const enriched = (await call('GET', '/api/continue')).json.items.filter((it) => it.source === 'stremio');
+    assert.ok(enriched.every((it) => it.genre && it.rating && it.overview));
+  } finally {
+    await call('POST', '/api/prefs', { body: { topShelfDetails: 'full' } });
+  }
+  assert.equal((await call('GET', '/api/prefs')).json.topShelfDetails, 'full');
 });
 
 test('api: what\'s popular on a streaming app, and what\'s trending for an app with no picture', async () => {
