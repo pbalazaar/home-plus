@@ -1009,13 +1009,13 @@ function saveRecents() {
 }
 
 async function onForeground(appId) {
+  maybeHomeAfterWake(appId);
   if (!appId || appId === lastForeground) return;
   log('foreground', lastForeground || '-', '->', appId);
   lastForeground = appId;
   closeOverlay();
   lastUsed.set(appId, Date.now());
   saveRecents();
-  maybeHomeAfterWake(appId);
   const cfg = readConfig();
   const target = homeTarget(cfg);
   if (appId === target) takeoverLanded = true;
@@ -1053,15 +1053,27 @@ let emptied = { app: '', at: 0 }; /* the app that left the front with nothing af
 let tvOn = true;
 let powerState = '';
 let wakeUntil = 0;
+let homeBeforeStandby = false;
+let wakeTimer = null;
+
+function clearWake() {
+  wakeUntil = 0;
+  if (wakeTimer) clearTimeout(wakeTimer);
+  wakeTimer = null;
+}
 
 function maybeHomeAfterWake(appId) {
-  if (!wakeUntil || !tvOn || !appId || appId === NATIVE_ID) return;
-  const inTime = Date.now() <= wakeUntil;
-  wakeUntil = 0;
-  if (!inTime || (appId !== 'com.webos.app.livetv' && !/^com\.webos\.app\.hdmi[0-9]+$/.exec(appId))) return;
+  if (!wakeUntil || !tvOn || !appId) return;
+  if (Date.now() > wakeUntil) return clearWake();
   const cfg = readConfig();
-  if (homeMode(cfg) !== 'watch') return;
-  takeover(homeTarget(cfg), ' (power on)').catch((e) => log('home wake failed', e.message));
+  if (appId === homeTarget(cfg) || appId !== 'com.webos.app.livetv' || homeMode(cfg) !== 'watch') return clearWake();
+  if (wakeTimer) return;
+  wakeTimer = setTimeout(() => {
+    wakeTimer = null;
+    if (!wakeUntil || !tvOn || lastForeground !== 'com.webos.app.livetv') return;
+    clearWake();
+    takeover(homeTarget(readConfig()), ' (power on)').catch((e) => log('home wake failed', e.message));
+  }, 650);
 }
 
 function onNoForeground() {
@@ -1122,12 +1134,19 @@ function watchPower() {
       tvOn = p.state === 'Active' && !p.processing; /* (not turning off, nor its screen) */
       const previous = powerState;
       if (p.state !== 'Active' || !p.processing) powerState = p.state;
+      if (['Active Standby', 'Suspend', 'Power Off'].includes(p.state) &&
+          !['Active Standby', 'Suspend', 'Power Off'].includes(previous)) {
+        homeBeforeStandby = lastForeground === homeTarget(readConfig());
+        clearWake();
+      }
       if (!tvOn || !['Active Standby', 'Suspend', 'Power Off'].includes(previous)) return;
       log('power wake', previous, '-> Active');
+      if (!homeBeforeStandby) return;
+      homeBeforeStandby = false;
       wakeUntil = Date.now() + 5000;
       const until = wakeUntil;
-      setTimeout(() => { if (wakeUntil === until) maybeHomeAfterWake(lastForeground); }, 650);
-      setTimeout(() => { if (wakeUntil === until) wakeUntil = 0; }, 5000);
+      setTimeout(() => { if (wakeUntil === until && lastForeground === 'com.webos.app.livetv') maybeHomeAfterWake(lastForeground); }, 100);
+      setTimeout(() => { if (wakeUntil === until) clearWake(); }, 5000);
     });
     sub.on('cancel', () => setTimeout(watchPower, 3000));
   } catch (e) {
