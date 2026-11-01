@@ -226,7 +226,7 @@ test('jellyfin: the TV\'s session is found under either of its client names', as
   }
 });
 
-test('jellyfin: which session is this TV\'s', async (t) => {
+test('jellyfin: which session is this TV\'s', async () => {
   const elsewhere = { RemoteEndPoint: '192.168.1.51' };
   const cases = [
     ['another TV, at another address', [HOME, app(elsewhere)], null],
@@ -239,13 +239,11 @@ test('jellyfin: which session is this TV\'s', async (t) => {
     ['the session its playback is reported on can\'t be sent commands', [HOME, app(), app({ Id: 'reporting', DeviceId: 'b', SupportsRemoteControl: false })], '/Sessions/tv/Playing']
   ];
   for (const [what, list, path] of cases) {
-    await t.test(what, async () => {
-      server.hits.length = 0;
-      listing(list, list);
-      const { jf } = makeJellyfin(signedIn());
-      assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), false, 'nothing reports it playing here');
-      assert.deepEqual(sent().map((h) => h.path), path ? [path] : []);
-    });
+    server.hits.length = 0;
+    listing(list, list);
+    const { jf } = makeJellyfin(signedIn());
+    assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), false, `${what}: nothing reports it playing here`);
+    assert.deepEqual(sent().map((h) => h.path), path ? [path] : [], what);
   }
 });
 
