@@ -922,6 +922,7 @@ async function overlayEvent(p) {
     await (overlayList === 'inputs' ? inputPicker() : quickSettings());
   } else if (p.event === 'open' && p.app) {
     if (!overlayInputs.includes(p.app)) throw new Error(`not an input: ${p.app}`);
+    clearWake();
     await luna(APPMGR + '/launch', { id: p.app });
   } else if (p.event === 'open' && p.target === 'network') { /* as LG's Quick Settings open it */
     await luna(APPMGR + '/launch', { id: 'com.webos.app.firstuse-overlay', params: { target: 'network' } });
@@ -1066,7 +1067,7 @@ function maybeHomeAfterWake(appId) {
   if (!wakeUntil || !tvOn || !appId) return;
   if (Date.now() > wakeUntil) return clearWake();
   const cfg = readConfig();
-  if (appId === homeTarget(cfg) || appId !== 'com.webos.app.livetv' || homeMode(cfg) !== 'watch') return clearWake();
+  if (appId === homeTarget(cfg) || appId !== 'com.webos.app.livetv' || homeMode(cfg) === 'off') return clearWake();
   if (wakeTimer) return;
   wakeTimer = setTimeout(() => {
     wakeTimer = null;
@@ -1585,6 +1586,7 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/control') { /* the Control Center: GET its state, POST {action, value} */
       if (req.method === 'POST') {
         const b = await readBody(req);
+        if (b.action === 'input') clearWake();
         await control.act(String(b.action || ''), b.value, b);
         log('control:', b.action, b.value === undefined ? '' : b.value);
       }
@@ -1668,6 +1670,7 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/launch' && req.method === 'POST') {
       const { id, params, toast } = await readBody(req);
       if (!id) return sendJSON(res, 400, { returnValue: false, errorText: 'id is required' });
+      clearWake();
       const r = await luna(APPMGR + '/launch', params ? { id, params } : { id });
       // a hint shown by the system, so it appears over the app that just opened
       if (toast && r && r.returnValue !== false) {

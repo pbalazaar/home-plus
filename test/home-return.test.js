@@ -19,7 +19,7 @@ const CLOSED = [[1930, { event: 'close', appId: 'netflix' }], [1940, { event: 's
 /* the service, with subscriptions saying subs ({"<method>": [[ms, payload], ...]}, from when it subscribed) */
 async function start(subs) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-return-'));
-  fs.writeFileSync(path.join(dir, 'apps.txt'), 'netflix|Netflix,youtube|YouTube');
+  fs.writeFileSync(path.join(dir, 'apps.txt'), 'netflix|Netflix,youtube|YouTube,com.webos.app.livetv|Live TV');
   const luna = path.join(dir, 'luna.log');
   const svc = await startService(dir, {
     HOMEPLUS_PREVIEW_LUNA_LOG: luna,
@@ -144,6 +144,20 @@ describe('getting back to Home+', { concurrency: true }, () => {
     }
   });
 
+  test('No Flash also restores Home+ after standby', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [700, { state: 'Active Standby' }], [950, { state: 'Active' }]],
+      getForegroundAppInfo: [[500, { appId: HP }], [1050, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      assert.equal((await tv.svc.call('POST', '/api/home', { body: { mode: 'redirect' } })).json.mode, 'redirect');
+      await until(() => tv.launches().length, 2500, 'Home+ after wake with No Flash');
+      assert.equal(tv.launches().length, 1);
+    } finally {
+      await tv.stop();
+    }
+  });
+
   test('HDMI in front before standby stays in front after wake', async () => {
     const tv = await start({
       getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
@@ -180,6 +194,38 @@ describe('getting back to Home+', { concurrency: true }, () => {
     });
     try {
       await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.hdmi2'), 2000, 'HDMI selected after wake');
+      await sleep(1100);
+      assert.equal(tv.launches().length, 0);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('an explicit Live TV selection after wake cancels the return', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [600, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.livetv'), 2000, 'Live TV after wake');
+      const result = await tv.svc.call('POST', '/api/control', { body: { action: 'input', value: 'com.webos.app.livetv' } });
+      assert.equal(result.status, 200);
+      await sleep(1100);
+      assert.equal(tv.launches().length, 0);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('an app launch request after wake cancels the return', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [600, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.livetv'), 2000, 'Live TV after wake');
+      const result = await tv.svc.call('POST', '/api/launch', { body: { id: 'com.webos.app.livetv' } });
+      assert.equal(result.status, 200);
       await sleep(1100);
       assert.equal(tv.launches().length, 0);
     } finally {
