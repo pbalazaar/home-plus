@@ -149,7 +149,7 @@ Item {
             y: strip.cardY + 40 * (1 - strip.t) - fly * 760
             width: strip.cardW
             height: strip.cardH
-            opacity: (1 - fly) * (0.75 + 0.25 * s)
+            opacity: 1 - fly
 
             Text { // its name, above it
                 x: strip.cardW * (1 - card.size) / 2 + 4
@@ -157,7 +157,7 @@ Item {
                 width: strip.cardW * card.size - 8
                 text: model.title
                 color: "white"
-                opacity: 0.9
+                opacity: 0.9 * (0.75 + 0.25 * card.s)
                 font.family: strip.view.fontSemi
                 font.weight: Font.DemiBold
                 font.pixelSize: 24
@@ -203,6 +203,12 @@ Item {
                     font.weight: Font.DemiBold
                     font.pixelSize: 26
                     elide: Text.ElideRight
+                }
+                Rectangle { // not focused, it steps back as one: faded part by part, an icon's own square shows on its card
+                    anchors.fill: parent
+                    radius: strip.cardR
+                    color: "black"
+                    opacity: 0.25 * (1 - card.s)
                 }
                 Rectangle { // focused: a ring, over any picture
                     anchors.fill: parent
