@@ -684,6 +684,7 @@ async function openOverlay(list = '') {
     const prefs = readConfig().prefs || {}; /* the launcher's: its clock, Settings -> Control Center and Accessibility */
     frames = prefs.reduceTransparency ? '' : framesDir(); /* solid panels: no frames */
     framePicture = false;
+    frameBlur = !!prefs.ccBlurVideo;
     // what's on screen now (DISPLAY: the app's own screen too), before the panel is drawn over it:
     // the glass's first picture, and the one it keeps over an app with no video. The TV takes it as
     // the call starts (seen on the C3), so it isn't waited for: the panel isn't on screen yet. If the
@@ -708,7 +709,7 @@ async function openOverlay(list = '') {
       return false;
     }
     overlayOpen = opened = true;
-    if (frames) framesLoop = framesLoop.then(() => captureFrames(gen, frames, snapshot, !!prefs.ccBlurVideo));
+    if (frames) framesLoop = framesLoop.then(() => captureFrames(gen, frames, snapshot));
     return true;
   } finally {
     overlayBusy = false;
@@ -827,25 +828,36 @@ async function grab(dir, method, go, live) {
 // again at first (the video was dark a moment, or PicCap is letting go of the capture), then less and
 // less often.
 let framesLoop = Promise.resolve();
+let frameBlur = false; /* Blur Over Video, as it is now: it can change in the panel's Settings */
 const CAPTURE_MS = 1000 / (Number(process.env.HOMEPLUS_CAPTURE_RATE) || 3); /* tests: more */
 const RETRY_MS = (process.env.HOMEPLUS_CAPTURE_RETRY_MS || '1500,3000,5000').split(',').map(Number); /* tests: shorter */
 
-// waits ms, or less if live() says it has closed (looked at every 100 ms)
+// waits ms, or less if live() says it's over: closed, or there's something else to do (looked at every 100 ms)
 async function nap(ms, live) {
   for (const end = Date.now() + ms; live() && Date.now() < end;) await sleep(Math.min(end - Date.now(), 100));
 }
 
-async function captureFrames(gen, dir, snapshot, blurVideo) {
+async function captureFrames(gen, dir, snapshot) {
   const live = () => overlayOpen && gen === overlayGen;
   const until = Date.now() + 5 * 60000; /* in case it's never said to have closed */
   let video = false; /* the frame on show is the video's, not the snapshot */
-  let paused = false; /* PicCap's capture, for Blur Over Video */
+  let blur = false, paused = false; /* Blur Over Video, as it's been acted on; PicCap's capture, for it */
+  let pausedAt = 0; /* the try it was paused before */
   let wait = 0, none = 0, slow = 0; /* before the next try; tries in a row with no picture, and long waits after them */
   try {
     const screen = await snapshot;
-    if (blurVideo && picCapture && live()) paused = await picCapture.pause();
     for (let n = 0; ; n++) {
-      await nap(Math.max(wait, captureAt + CAPTURE_MS - Date.now()), live);
+      if (blur !== frameBlur && live()) { /* (and whenever it's changed in the panel's Settings) */
+        blur = frameBlur;
+        if (blur && picCapture) paused = await picCapture.pause();
+        else if (paused) {
+          picCapture.resume();
+          paused = false;
+        }
+        pausedAt = n;
+        wait = 0;
+      }
+      await nap(Math.max(wait, captureAt + CAPTURE_MS - Date.now()), () => live() && blur === frameBlur);
       if (!live() || Date.now() > until) break;
       const got = await grab(dir, 'VIDEO', live, live); /* none (no video playing): the snapshot stays */
       if (!live()) break;
@@ -862,7 +874,7 @@ async function captureFrames(gen, dir, snapshot, blurVideo) {
         video = false;
       }
       none++;
-      wait = (got === 'dark' && none <= 3) || (paused && n < 10) ? 300 : RETRY_MS[Math.min(slow++, RETRY_MS.length - 1)];
+      wait = (got === 'dark' && none <= 3) || (paused && n - pausedAt < 10) ? 300 : RETRY_MS[Math.min(slow++, RETRY_MS.length - 1)];
     }
   } catch (e) {
     log('control center frames:', e.message);
@@ -906,12 +918,31 @@ function closeOverlay() {
   luna(SYSUI + '/closeByAppId', { appId: OVERLAY_ID });
 }
 
-// What it asks for (POST /api/overlay): {"event": "open", "target": "network" | "recents" |
-// "accessibility" | "settings"}, or {"event": "open", "app"} for an input it offered; {"event":
-// "opened"} (on screen) and {"event": "closed"}; and {"event": "failed", "error"}, when its panel
-// didn't load: LG's Quick Settings instead.
+// Recents, as the panel shows them: each app's icon as a file (an Image there can't send the API's token)
+async function overlayRecents() {
+  const apps = await Promise.all((await apiRunning()).apps.map(async (a) => {
+    const icon = a.icon && await imageFile('icon', a.id);
+    return { id: a.id, title: a.title, color: a.color, icon: icon ? `file://${encodeURI(icon)}` : '' };
+  }));
+  return { returnValue: true, apps, front: lastForeground };
+}
+
+// What it may open: what it offers, which are the inputs, LG's settings apps and Recents
+async function overlayOffers(id) {
+  return overlayInputs.includes(id) || SETTINGS_APPS.some(([app]) => app === id) || (await apiRunning()).apps.some((a) => a.id === id);
+}
+
+// What it leaves to Home+: all of a menu if its own panel didn't load, or a page of Settings, for a row
+// that can't be done over an app
+const HOME_TARGETS = ['recents', 'accessibility', 'settings', 'general', 'accounts', 'about'];
+
+// What it asks for (POST /api/overlay): {"event": "open", "target": "network" or one of HOME_TARGETS}, or
+// {"event": "open", "app"} for an app it offered; {"event": "recents"}, the apps for its Recents;
+// {"event": "opened"} (on screen) and {"event": "closed"}; and {"event": "failed", "error"}, when its
+// panel didn't load: LG's Quick Settings instead.
 async function overlayEvent(p) {
   if (p.event === 'frame') return nextFrame(Number(p.after) || 0); /* (answered when there's a newer one) */
+  if (p.event === 'recents') return overlayRecents();
   if (p.event === 'opened') {
     if (overlayAsked) log('control center overlay: on screen', Date.now() - overlayAsked, 'ms after the key');
     overlayAsked = 0;
@@ -922,12 +953,12 @@ async function overlayEvent(p) {
     log('control center overlay failed:', String(p.error || '').replace(/\s+/g, ' ').slice(0, 300));
     await (overlayList === 'inputs' ? inputPicker() : quickSettings());
   } else if (p.event === 'open' && p.app) {
-    if (!overlayInputs.includes(p.app)) throw new Error(`not an input: ${p.app}`);
+    if (!(await overlayOffers(p.app))) throw new Error(`not an app it offered: ${p.app}`);
     clearWake();
     await luna(APPMGR + '/launch', { id: p.app });
   } else if (p.event === 'open' && p.target === 'network') { /* as LG's Quick Settings open it */
     await luna(APPMGR + '/launch', { id: 'com.webos.app.firstuse-overlay', params: { target: 'network' } });
-  } else if (p.event === 'open' && ['recents', 'accessibility', 'settings'].includes(p.target)) {
+  } else if (p.event === 'open' && HOME_TARGETS.includes(p.target)) {
     emit(p.target); /* the launcher opens it once it's in front */
     await luna(APPMGR + '/launch', { id: NATIVE_ID });
   } else {
@@ -1610,6 +1641,54 @@ async function playInBackground(m, app, item, fromStart, run) {
   tellInstead(`“${item.name}” is in ${titles[app] || app}’s Continue Watching`);
 }
 
+// What Settings' Remote page changes: the Home button's mode, and the Settings and Input buttons. cfg is
+// saved here, and left as it's saved
+async function setHome(b, cfg = readConfig()) {
+  if (typeof b.settingsKey === 'boolean' || typeof b.inputKey === 'boolean') {
+    const was = { settingsKey: cfg.settingsKey, inputKey: cfg.inputKey };
+    if (typeof b.settingsKey === 'boolean') setKeyBind(SETTINGS_KEY, b.settingsKey, cfg); /* the Settings key's bind */
+    if (typeof b.inputKey === 'boolean') setKeyBind(INPUT_KEY, b.inputKey, cfg); /* the Input key's */
+    const took = await applyKeyFilter();
+    if (took !== true && !fs.existsSync(path.dirname(INPUTHOOK_BINDS))) { /* the key filter is all that catches them: as they were */
+      Object.assign(cfg, was);
+      writeConfig(cfg);
+      await applyKeyFilter();
+      throw new Error(`the TV didn't take Home+'s key filter: ${took}`); /* (Settings says so) */
+    }
+  }
+  if (typeof b.onboarded === 'boolean') { /* the welcome steps: false while they're on, true once done or skipped */
+    cfg.onboarded = b.onboarded;
+    if (b.mode === undefined && !b.asked) writeConfig(cfg);
+  }
+  if (b.mode !== undefined || b.asked) {
+    if (['redirect', 'watch'].includes(b.mode)) { cfg.homeMode = b.mode; cfg.homeOverride = true; }
+    if (b.mode === 'off') cfg.homeOverride = false;
+    if (b.asked) cfg.homeAsked = true;
+    writeConfig(cfg);
+    await unmountRedirect();
+    await applyHomeMode();
+  }
+}
+
+async function homeState(cfg = readConfig()) {
+  return { mode: homeMode(cfg), noFlashActive: !!redirectTarget || keyFilter.takes('home'), noFlashAvailable: await noFlashAvailable(), settingsKey: settingsKeyState(), inputKey: keyState(INPUT_KEY),
+    piccap: !!picCapture && await picCapture.available() }; /* Settings -> Control Center offers Blur Over Video */
+}
+
+function setPrefs(b) {
+  const cfg = readConfig();
+  cfg.prefs = Object.assign({}, cfg.prefs, b);
+  writeConfig(cfg);
+  if (typeof b.ccBlurVideo === 'boolean') frameBlur = b.ccBlurVideo; /* (the panel open now too) */
+  return cfg.prefs;
+}
+
+const settings = require('./settings')({
+  log, readConfig, setPrefs, home: homeState, setHome, apps: apiApps, tvApps: async () => (await apiSystem()).settings,
+  accounts: () => ({ stremio: stremioStatus(), trakt: trakt.status(), jellyfin: media.jellyfin.status(), plex: media.plex.status(), tmdb: tmdb.status() }),
+  version: pkg.version, elevated: isRoot
+});
+
 async function handleApi(req, res) {
   const url = new URL(req.url, 'http://127.0.0.1');
   try {
@@ -1661,34 +1740,13 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/home') { /* (the config is read once the body is in: a sign-in may save it meanwhile) */
       const b = req.method === 'POST' ? await readBody(req) : null;
       const cfg = readConfig();
-      if (b) {
-        if (typeof b.settingsKey === 'boolean' || typeof b.inputKey === 'boolean') {
-          const was = { settingsKey: cfg.settingsKey, inputKey: cfg.inputKey };
-          if (typeof b.settingsKey === 'boolean') setKeyBind(SETTINGS_KEY, b.settingsKey, cfg); /* the Settings key's bind */
-          if (typeof b.inputKey === 'boolean') setKeyBind(INPUT_KEY, b.inputKey, cfg); /* the Input key's */
-          const took = await applyKeyFilter();
-          if (took !== true && !fs.existsSync(path.dirname(INPUTHOOK_BINDS))) { /* the key filter is all that catches them: as they were */
-            Object.assign(cfg, was);
-            writeConfig(cfg);
-            await applyKeyFilter();
-            throw new Error(`the TV didn't take Home+'s key filter: ${took}`); /* (Settings says so) */
-          }
-        }
-        if (typeof b.onboarded === 'boolean') { /* the welcome steps: false while they're on, true once done or skipped */
-          cfg.onboarded = b.onboarded;
-          if (b.mode === undefined && !b.asked) writeConfig(cfg);
-        }
-        if (b.mode !== undefined || b.asked) {
-          if (['redirect', 'watch'].includes(b.mode)) { cfg.homeMode = b.mode; cfg.homeOverride = true; }
-          if (b.mode === 'off') cfg.homeOverride = false;
-          if (b.asked) cfg.homeAsked = true;
-          writeConfig(cfg);
-          await unmountRedirect();
-          await applyHomeMode();
-        }
-      }
-      return sendJSON(res, 200, { mode: homeMode(cfg), noFlashActive: !!redirectTarget || keyFilter.takes('home'), noFlashAvailable: await noFlashAvailable(), settingsKey: settingsKeyState(), inputKey: keyState(INPUT_KEY),
-        piccap: !!picCapture && await picCapture.available() }); /* Settings -> Control Center offers Blur Over Video */
+      if (b) await setHome(b, cfg);
+      return sendJSON(res, 200, await homeState(cfg));
+    }
+    if (url.pathname === '/api/settings' && req.method === 'POST') { /* Settings over other apps: its pages, {row, dir} changes one first */
+      const b = await readBody(req);
+      if (b.row) await settings.act(String(b.row), b.dir === -1 || b.dir === 'next' ? b.dir : 1);
+      return sendJSON(res, 200, await settings.state());
     }
     if (url.pathname === '/api/events') return listen(req, res);
     if (url.pathname === '/api/key' && req.method === 'POST') return sendJSON(res, 200, await remoteKey(String((await readBody(req)).key || '')));
@@ -1732,12 +1790,7 @@ async function handleApi(req, res) {
     }
     if (url.pathname === '/api/prefs') { // launcher preferences, e.g. {"sounds": false}
       const b = req.method === 'POST' ? await readBody(req) : null;
-      const cfg = readConfig();
-      if (b) {
-        cfg.prefs = Object.assign({}, cfg.prefs, b);
-        writeConfig(cfg);
-      }
-      return sendJSON(res, 200, cfg.prefs || {});
+      return sendJSON(res, 200, b ? setPrefs(b) : readConfig().prefs || {});
     }
     if (url.pathname === '/api/log' && req.method === 'POST') {
       const b = await readBody(req);

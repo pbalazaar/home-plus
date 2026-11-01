@@ -48,6 +48,7 @@ const framesFolder = () => path.dirname(fileURLToPath(calls(LAUNCH).at(-1).param
 test.before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-overlay-'));
   fs.writeFileSync(path.join(dir, 'apps.txt'), 'netflix|Netflix,youtube|YouTube');
+  fs.copyFileSync(path.join(ROOT, 'docs/icon.png'), path.join(dir, 'netflix.png')); /* (the stand-in's apps have their icons here) */
   const app = path.join(dir, 'app'); /* the installed app folder, with the Control Center's QML */
   fs.mkdirSync(path.join(app, 'qml'), { recursive: true });
   for (const f of ['ControlCenter.qml', 'ControlCenterView.qml']) fs.copyFileSync(path.join(ROOT, 'native/qml', f), path.join(app, 'qml', f));
@@ -111,9 +112,63 @@ test('overlay: it asks for what it can\'t do itself, and nothing else', async ()
   assert.deepEqual(calls('luna://com.webos.applicationManager/launch').at(-1).params, { id: 'com.github.pbalazaar.homeplus' });
   const r = await call('POST', '/api/overlay', { body: { event: 'open', app: 'com.example.anything' } });
   assert.equal(r.status, 500);
-  assert.match(r.json.errorText, /not an input/, 'only the inputs it offered');
+  assert.match(r.json.errorText, /not an app it offered/, 'only what it offered');
   assert.equal((await call('POST', '/api/overlay', { body: { event: 'open', target: '../../etc' } })).status, 500);
   assert.equal((await call('POST', '/api/overlay', { body: { event: 'whatever' } })).status, 500);
+});
+
+test('overlay: Settings: its pages over the API, and a row changed where the launcher keeps it', async () => {
+  assert.equal((await call('POST', '/api/settings', { body: {}, auth: false })).status, 403, 'the token');
+  assert.equal((await call('GET', '/api/settings')).status, 404, 'it asks with POST, as it asks for everything');
+  const { json } = await call('POST', '/api/settings', { body: {} });
+  assert.ok(json.pages.some((p) => p.id === 'accessibility'), 'the pages');
+  try {
+    const r = await call('POST', '/api/settings', { body: { row: 'clock', dir: 1 } });
+    assert.equal(r.json.prefs.clock24, true, 'the answer has the prefs, for the panel to follow');
+    assert.equal(r.json.pages.find((p) => p.id === 'general').rows.find((c) => c.id === 'clock').value, '24-Hour', 'and the pages as they are now');
+    assert.equal((await call('GET', '/api/prefs')).json.clock24, true, 'kept where the launcher reads it');
+  } finally {
+    await call('POST', '/api/prefs', { body: { clock24: false } });
+  }
+  const bad = await call('POST', '/api/settings', { body: { row: 'nothing' } });
+  assert.equal(bad.status, 500);
+  assert.match(bad.json.errorText, /not a setting/);
+});
+
+test('overlay: Settings: the Home button changes as it does from Home+', async () => {
+  try {
+    await call('POST', '/api/settings', { body: { row: 'homeButton' } });
+    assert.equal((await call('GET', '/api/home')).json.mode, 'off');
+    await call('POST', '/api/settings', { body: { row: 'homeButton' } });
+    assert.notEqual((await call('GET', '/api/home')).json.mode, 'off');
+  } finally {
+    await call('POST', '/api/home', { body: { mode: 'watch', asked: true } });
+  }
+});
+
+test('overlay: a row that can\'t be done over an app opens Home+, and tells the launcher which page', async () => {
+  for (const target of ['general', 'accounts', 'about']) {
+    assert.equal((await call('POST', '/api/overlay', { body: { event: 'open', target } })).status, 200);
+    assert.deepEqual(calls('luna://com.webos.applicationManager/launch').at(-1).params, { id: 'com.github.pbalazaar.homeplus' });
+    assert.ok((await call('GET', '/api/events')).json.events.includes(target), target);
+  }
+});
+
+test('overlay: Recents: the apps you opened, the one in front first, each icon a file', { skip: windows }, async () => {
+  const { json } = await call('POST', '/api/overlay', { body: { event: 'recents' } });
+  assert.equal(json.front, 'netflix');
+  assert.deepEqual(json.apps.map((a) => a.id), ['netflix', 'youtube'], 'most recent first');
+  assert.equal(fileURLToPath(json.apps[0].icon), fs.realpathSync(path.join(dir, 'netflix.png')), 'a panel\'s Image can\'t send the token');
+  assert.equal(json.apps[1].icon, '', 'one with no icon says so');
+  assert.equal(json.apps[0].title, 'Netflix');
+});
+
+test('overlay: it may open the apps it offered: Recents, and LG\'s settings apps', async () => {
+  assert.equal((await call('POST', '/api/overlay', { body: { event: 'open', app: 'youtube' } })).status, 200);
+  assert.deepEqual(calls('luna://com.webos.applicationManager/launch').at(-1).params, { id: 'youtube' });
+  assert.equal((await call('POST', '/api/overlay', { body: { event: 'open', app: 'com.palm.app.settings' } })).status, 200);
+  assert.deepEqual(calls('luna://com.webos.applicationManager/launch').at(-1).params, { id: 'com.palm.app.settings' });
+  assert.equal((await call('POST', '/api/overlay', { body: { event: 'open', app: 'spotify' } })).status, 500, 'not one of the apps on this TV\'s list: not offered');
 });
 
 test('overlay: once it has closed, the frames stop and are deleted', async () => {
@@ -249,6 +304,23 @@ test('overlay: Blur Over Video pauses PicCap while it\'s open, for frames of the
     await close();
     await until(() => calls('luna://org.webosbrew.piccap.service/start').length > started, 3000, 'PicCap to start again');
   } finally {
+    await call('POST', '/api/prefs', { body: { ccBlurVideo: false } });
+  }
+});
+
+test('overlay: Blur Over Video changed while it\'s open applies at once, and back', async () => {
+  const piccap = (what) => calls(`luna://org.webosbrew.piccap.service/${what}`).length;
+  const stops = piccap('stop'), starts = piccap('start');
+  try {
+    const frames = await openWith({ DISPLAY: 'piccap', VIDEO: 'piccap' });
+    assert.equal(piccap('stop'), stops, 'off: PicCap is left alone');
+    await call('POST', '/api/prefs', { body: { ccBlurVideo: true } });
+    await until(() => piccap('stop') === stops + 1, 2000, 'PicCap to pause');
+    await until(() => fs.existsSync(path.join(frames, 'frame.png')), 3000, 'a frame of the video');
+    await call('POST', '/api/prefs', { body: { ccBlurVideo: false } });
+    await until(() => piccap('start') === starts + 1, 3000, 'PicCap to start again');
+  } finally {
+    await close();
     await call('POST', '/api/prefs', { body: { ccBlurVideo: false } });
   }
 });

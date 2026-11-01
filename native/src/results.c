@@ -121,7 +121,8 @@ int handle_result(Result *r)
         if (r->body && strstr(r->body, "\"keys\"")) net_get_json("/api/keys", TAG_KEYS_STATUS, 0, 0); /* pasted on a phone */
         if (r->body) { /* asked for from the Control Center over another app, which brings Home+ to the front */
             int want = strstr(r->body, "\"settings\"") ? OPEN_SETTINGS : strstr(r->body, "\"recents\"") ? OPEN_RECENTS
-                     : strstr(r->body, "\"accessibility\"") ? OPEN_ACCESSIBILITY : 0;
+                     : strstr(r->body, "\"accessibility\"") ? OPEN_ACCESSIBILITY : strstr(r->body, "\"general\"") ? OPEN_GENERAL
+                     : strstr(r->body, "\"accounts\"") ? OPEN_ACCOUNTS : strstr(r->body, "\"about\"") ? OPEN_ABOUT : 0;
             if (want) open_asked(want); /* (while hidden too: coming back leaves it open) */
         }
         break;
@@ -173,7 +174,11 @@ int handle_result(Result *r)
             int c24 = o && cJSON_IsTrue(cJSON_GetObjectItem(o, "clock24"));
             if (c24 != S.clock24) S.clock24 = c24, S.clock_min = -1;
             S.orbit_off = o && cJSON_IsFalse(cJSON_GetObjectItem(o, "pixelShift"));
-            S.vivid_covers = o && cJSON_IsFalse(cJSON_GetObjectItem(o, "calmColours"));
+            int vivid = o && cJSON_IsFalse(cJSON_GetObjectItem(o, "calmColours"));
+            if (vivid != S.vivid_covers) { /* (changed in Settings over another app: covers are made from the icons) */
+                S.vivid_covers = vivid;
+                request_icons();
+            }
             S.shelf_still = o && cJSON_IsFalse(cJSON_GetObjectItem(o, "shelfTurns"));
             const char *details = o ? jstr(o, "topShelfDetails") : "";
             shelf_set_details(!strcmp(details, "off") ? SHELF_DETAILS_OFF :

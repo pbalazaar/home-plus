@@ -36,6 +36,9 @@ void open_asked(int what)
     if (what == OPEN_SETTINGS) open_settings_sheet();
     else if (what == OPEN_RECENTS) sw_open();
     else if (what == OPEN_ACCESSIBILITY) settings_page(PAGE_ACCESS, 0);
+    else if (what == OPEN_GENERAL) settings_page(PAGE_GENERAL, 0);
+    else if (what == OPEN_ACCOUNTS) settings_page(PAGE_ACCOUNTS, 0);
+    else if (what == OPEN_ABOUT) settings_page(PAGE_ABOUT, 0);
 }
 
 /* Advances every animated value once per frame. Drawing only reads them: the

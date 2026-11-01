@@ -7,7 +7,8 @@ import QtQuick 2.4
 // where it faces the light (the top left), with a faint glint opposite and the far side of the bevel
 // in shade: like tvOS's, it has no tint of its own, and takes its look from what's behind it. With
 // no picture (none yet, or video the TV can't capture) it's clear, a light tint with the rim, the
-// picture fading in over it when it comes; with Reduce Transparency, a solid panel, as Home+'s.
+// picture fading in over it when it comes; with Reduce Transparency, a solid panel, as Home+'s. Past the
+// bevel the edge changes nothing, so the inside of a big panel takes a short way through the shader.
 Item {
     id: glass
     property variant sourceA      // the blurred pictures: textures standing for the whole 1920 x 1080 screen
@@ -47,24 +48,30 @@ Item {
                 highp vec2 q = abs(p) - (h - vec2(r));
                 return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - r;
             }
+            lowp vec3 picture(highp vec2 sp) {
+                highp vec2 uv = area.xy + (sp / box + 0.5) * area.zw;
+                return mix(texture2D(srcA, uv).rgb, texture2D(srcB, uv).rgb, fade) * (1.0 - dim);
+            }
+            lowp vec3 dimmed(lowp vec3 col) {
+                return col * (1.0 - 0.60 * smoothstep(0.35, 0.75, dot(col, vec3(0.299, 0.587, 0.114))));
+            }
             void main() {
                 highp vec2 h = box * 0.5;
                 highp vec2 p = qt_TexCoord0 * box - h;
                 highp float d = sdRound(p, h, radius);
+                highp float depth = -d;
+                highp float band = clamp(min(h.x, h.y) * 0.9, 6.0, 24.0);
+                if (depth >= band) {
+                    gl_FragColor = vec4(dimmed(picture(p)), 1.0) * qt_Opacity;
+                    return;
+                }
                 lowp float mask = clamp(0.5 - d, 0.0, 1.0);
                 highp vec2 n = vec2(sdRound(p + vec2(1.0, 0.0), h, radius) - sdRound(p - vec2(1.0, 0.0), h, radius),
                                     sdRound(p + vec2(0.0, 1.0), h, radius) - sdRound(p - vec2(0.0, 1.0), h, radius));
                 n /= max(length(n), 0.0001);
-                highp float depth = -d;
-                highp float band = clamp(min(h.x, h.y) * 0.9, 6.0, 24.0);
                 highp float t = clamp(1.0 - depth / band, 0.0, 1.0);
                 highp float bevel = t * t;
-                highp vec2 sp = p - n * (bevel * band * 0.9);
-                highp vec2 uv = area.xy + (sp / box + 0.5) * area.zw;
-                lowp vec3 col = mix(texture2D(srcA, uv).rgb, texture2D(srcB, uv).rgb, fade) * (1.0 - dim);
-                col *= 1.0 - 0.10 * bevel;
-                lowp float lum = dot(col, vec3(0.299, 0.587, 0.114));
-                col *= 1.0 - 0.60 * smoothstep(0.35, 0.75, lum);
+                lowp vec3 col = dimmed(picture(p - n * (bevel * band * 0.9)) * (1.0 - 0.10 * bevel));
                 lowp float facing = dot(n, vec2(-0.6, -0.8));
                 lowp float rim = 1.0 - smoothstep(0.0, 2.5, depth);
                 lowp float lit = max(facing, 0.0), back = max(-facing, 0.0);
