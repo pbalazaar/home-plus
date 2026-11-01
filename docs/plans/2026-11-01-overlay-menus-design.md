@@ -50,6 +50,11 @@ since it closes what's playing too.
   Video to its frames. The launcher re-reads prefs when it comes back; Calm Colours also needs its covers
   remade then.
 - Home+'s own Settings doesn't change. The words now live in both C and JS, so a test compares them.
+- The panel sends one change at a time: two requests at once needn't reach the service in the order they were
+  sent, and each change is made from what the last one left.
+- The pointer takes focus only after real travel, as in Home+: Qt sends hover to whatever appears under a pointer
+  that's lying still, and a panel this big in the middle of the screen is often under it. Sheets do the same, so
+  a pointer lying still can't move Close All's question off Cancel.
 
 ## Glass
 

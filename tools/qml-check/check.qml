@@ -50,12 +50,12 @@ Item {
     }
 
     function next() {
-        var w = win.item, v = w ? w.view : null;
+        var w = win.item, v = w ? w.view : null, s = v ? v.settings : null, r = v ? v.recents : null;
         switch (step++) {
         case 0:
             expect(win.status === Loader.Ready, "ControlCenter.qml loads: " + win.sourceComponent);
             if (!w) return finish();
-            for (var f of ["ControlCenterView.qml", "Glass.qml", "Tint.qml", "Marquee.qml", "Sounds.qml"]) {
+            for (var f of ["ControlCenterView.qml", "SettingsPanel.qml", "RecentsStrip.qml", "Glass.qml", "Tint.qml", "Marquee.qml", "Sounds.qml"]) {
                 var c = Qt.createComponent(Qt.resolvedUrl("../../native/qml/" + f));
                 expect(c.status === Component.Ready, f + " compiles: " + c.errorString());
             }
@@ -219,8 +219,186 @@ Item {
             break;
         case 33:
             expect(win.item.exited, "and its window goes");
+            relaunch({}); // Settings over the video
             break;
         case 34:
+            v.activate(v.find("settings"));
+            break;
+        case 35:
+            expect(!!s, "Settings' panel is made");
+            if (!s) return finish();
+            expect(v.listKind === 4 && v.menu() === s, "it takes the controls' place");
+            expect(s.side && s.cat === 0 && s.pages.length === 6, "on its list of pages: " + s.pages.length);
+            expect(s.hint.indexOf("Back closes Settings") >= 0, "the hint says what Back does: " + s.hint);
+            s.move(0, 1); expect(s.cat === 1 && s.side, "Down shows the next page");
+            s.move(0, -1); expect(s.cat === 0, "Up the one before");
+            s.move(0, -1); expect(s.cat === 0, "Up at the top: nothing that way");
+            s.move(-1, 0); expect(s.side, "Left on the list: nothing");
+            s.move(1, 0); expect(!s.side && s.index === 0, "Right goes into the page");
+            var first = s.rowItems.itemAt(0);
+            expect(!!first && first.width > 900 && first.visible && first.opacity === 1, "its rows are drawn: " + (first ? first.width + " wide, opacity " + first.opacity : "none"));
+            expect(s.hint.indexOf("change") >= 0, "the hint says Left and Right change it: " + s.hint);
+            s.move(1, 0); // Right: a step on
+            break;
+        case 36:
+            expect(s.row.value === "6 min", "Right changes the row: " + s.row.value);
+            s.move(-1, 0); s.ok(); // Left, then OK: back and on again
+            break;
+        case 37:
+            expect(!s.side, "changing a row stays on it");
+            log(function (got) {
+                var rows = got.filter(function (g) { return g.url === "/api/settings" && g.body.row; }).map(function (g) { return g.body.row + ":" + g.body.dir; });
+                expect(rows.join() === "dimAfter:1,dimAfter:-1,dimAfter:1", "the panel asks for the row by its id: " + rows.join());
+            });
+            for (var i = 0; i < 7; i++) s.move(0, 1);
+            expect(s.index === 7 && s.first > 0, "a long page scrolls: row " + s.index + ", first " + s.first);
+            s.move(0, 1); expect(s.index === 7, "Down on the last row: nothing");
+            break;
+        case 38:
+            s.move(-1, 0); // (it's a stepper: this changes it, and doesn't leave the page)
+            expect(!s.side, "Left on a row that steps stays in the page");
+            v.back(); expect(s.side, "Back: the list of pages");
+            s.showPage(1); s.ok(); expect(!s.side && s.row.kind === "check", "App Tiles: into its looks");
+            s.move(-1, 0); expect(s.side, "Left on a row that doesn't step: the list");
+            s.ok(); s.move(0, 1); s.ok(); // Tinted
+            break;
+        case 39:
+            expect(s.rows.length === 3 && s.row.id === "look-tinted" && s.row.on, "picking Tinted ticks it, and its colours come: " + s.rows.length);
+            s.move(0, 1); expect(s.row.kind === "tint", "its colours are a row");
+            s.showPage(0); s.change({ id: "refused" }, 1);
+            break;
+        case 40:
+            expect(s.problem === "The TV didn’t do that", "what the TV refused says so: " + s.problem);
+            s.move(0, 1); expect(s.problem === "", "and that goes with the focus");
+            v.keysTakeOver();
+            expect(!v.pointerMoved(v, 100, 100), "a pointer lying still takes no focus");
+            expect(!v.pointerMoved(v, 110, 110), "nor one that trembles");
+            expect(v.pointerMoved(v, 180, 100), "one that really moves does");
+            expect(v.pointerMoved(v, 181, 100), "and keeps it");
+            v.keysTakeOver(); expect(!v.pointerMoved(v, 181, 100), "until an arrow takes it back");
+            v.back(); expect(v.listKind === 0 && !v.closing, "Back from the list: the controls");
+            v.back(); expect(v.closing, "Back again closes it");
+            break;
+        case 41:
+        case 42:
+            break; // it animates out
+        case 43:
+            expect(w.exited, "closed");
+            relaunch({}); // the Accessibility tile: that page, with what it changes following at once
+            break;
+        case 44:
+            v.openSettings("accessibility");
+            break;
+        case 45:
+            expect(v.listKind === 4 && !s.side && s.page.id === "accessibility", "Accessibility opens on its page: " + s.page.id);
+            s.ok(); s.move(0, 1); s.ok();
+            break;
+        case 46:
+            expect(v.still, "Reduce Motion applies at once");
+            expect(v.solid, "and Reduce Transparency");
+            expect(v.cc.reduceMotion === true, "and it's kept for the panel's next answers");
+            s.ok(); s.move(0, -1); s.ok(); // and back
+            break;
+        case 47:
+            expect(!v.still && !v.solid, "turned off again too");
+            s.showPage(3); s.ok();
+            expect(s.row.kind === "home" && s.hint.indexOf("OK opens Home+") >= 0, "a row that leaves the video says so: " + s.hint);
+            expect(s.page.body.split("\n").length === 2, "the page's words");
+            s.ok();
+            expect(v.closing, "it closes");
+            break;
+        case 48:
+        case 49:
+            break;
+        case 50:
+            expect(w.exited, "closed");
+            log(function (got) {
+                expect(got.some(function (g) { return g.body.event === "open" && g.body.target === "accounts"; }), "and Home+ opens on that page");
+            });
+            relaunch({}); // LG's settings apps
+            break;
+        case 51:
+            v.openSettings("");
+            break;
+        case 52:
+            s.showPage(4); s.ok(); s.ok();
+            expect(v.closing, "OK on an app closes it");
+            break;
+        case 53:
+        case 54:
+            break;
+        case 55:
+            log(function (got) {
+                expect(got.some(function (g) { return g.body.event === "open" && g.body.app === "com.palm.app.settings"; }), "and opens the app");
+            });
+            relaunch({}); // Recents
+            break;
+        case 56:
+            v.openRecents();
+            break;
+        case 57:
+            expect(!!r, "Recents' strip is made");
+            if (!r) return finish();
+            expect(v.listKind === 5 && v.menu() === r, "it takes the controls' place");
+            expect(r.index === 1, "the focus starts on the app before the one in front: " + r.index);
+            r.move(1, 0); expect(r.index === 2, "Right picks the next");
+            r.move(1, 0); expect(r.index === 2, "Right on the last: nothing");
+            r.move(0, -1); // Up closes it
+            break;
+        case 58:
+            break; // it flies off
+        case 59:
+            expect(r.index === 1, "closed, the focus moves on: " + r.index);
+            log(function (got) {
+                expect(got.some(function (g) { return g.url === "/api/close" && g.body.id === "hdmi1"; }), "Up closes that app");
+            });
+            r.move(0, 1); expect(r.closeAll, "Down reaches Close All");
+            r.move(1, 0); expect(r.closeAll, "and stays there");
+            r.ok(); expect(!!v.sheet && v.sheet.items[0].act === "closeAll" && v.sheetIndex === 1, "Close All asks first, on Cancel");
+            v.back(); expect(!v.sheet && v.listKind === 5, "Back: Recents again");
+            r.ok(); v.sheetIndex = 0; v.ok();
+            break;
+        case 60:
+            break; // they fly off
+        case 61:
+            log(function (got) {
+                expect(got.some(function (g) { return g.url === "/api/close" && g.body.all === true; }), "Close All closes them all");
+            });
+            break;
+        case 62:
+            break; // nothing left to show
+        case 63:
+            expect(v.listKind === 0, "with none left, the controls again");
+            v.openRecents();
+            break;
+        case 64:
+            expect(r.index === 1, "open again: " + r.index);
+            r.ok();
+            expect(v.closing, "OK on an app closes it");
+            break;
+        case 65:
+        case 66:
+            break;
+        case 67:
+            log(function (got) {
+                expect(got.some(function (g) { return g.body.event === "open" && g.body.app === "stremio"; }), "and opens the app");
+            });
+            relaunch({}); // the app in front: OK only closes the strip
+            break;
+        case 68:
+            v.openRecents();
+            break;
+        case 69:
+            r.move(-1, 0); r.ok();
+            expect(v.closing, "OK on the app in front closes it");
+            break;
+        case 70:
+        case 71:
+            break;
+        case 72:
+            log(function (got) {
+                expect(!got.some(function (g) { return g.body.event === "open" && g.body.app === "youtube"; }), "and asks nothing of the service");
+            });
             finish();
             break;
         }

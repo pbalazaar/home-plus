@@ -8,6 +8,8 @@ import QtGraphicalEffects 1.0
 // screen's right edge, and back out.
 // Editing works as Home+'s: hold OK for Edit Controls; then OK picks one up and puts it down,
 // holding OK gives its sizes and Remove, the + slot adds one, Reset starts over.
+// Settings and Recents open here too, over what's playing, in panels of their own (SettingsPanel.qml,
+// RecentsStrip.qml), each made the first time it's wanted.
 FocusScope {
     id: view
     anchors.fill: parent
@@ -61,7 +63,7 @@ FocusScope {
     readonly property bool solid: !!cc.reduceTransparency // ... and Reduce Transparency
 
     property int focusIndex: 0     // a control (0..n-1); while editing, the + slot (n) and Reset (n + 1)
-    property int listKind: 0       // in the Control Center's place: 1 picture modes, 2 inputs, 3 the gallery
+    property int listKind: 0       // in the Control Center's place: 1 picture modes, 2 inputs, 3 the gallery, 4 Settings, 5 Recents
     property bool listOnly: false  // opened by the Input key on the inputs alone: Back closes it (cc.c: list_only)
     property int listIndex: 0
     property var listItems: []
@@ -103,6 +105,8 @@ FocusScope {
 
     FontLoader { id: medium; source: "../assets/fonts/Inter-Medium.ttf" }
     FontLoader { id: semi; source: "../assets/fonts/Inter-SemiBold.ttf" }
+    readonly property string fontMedium: medium.name // (for the panels of their own)
+    readonly property string fontSemi: semi.name
 
     // ---- the picture behind, for the glass: the service's frames of the video while this is open
     // (see the service: three a second at most, and only a picture that changed), loaded in
@@ -118,9 +122,11 @@ FocusScope {
     property var asking: ({ on: true }) // off once it closes: an answer that comes later is let be
     Component.onDestruction: asking.on = false
     function askFrame() {
-        if (closing || solid || !cc.frame) return;
+        if (closing || solid || !cc.frame || asking.waiting) return;
         var a = asking;
+        a.waiting = true;
         host.call("overlay", { event: "frame", after: frameN }, function (r) {
+            a.waiting = false;
             if (!a.on) return;
             if (r.n === undefined) { askAgain.start(); return; } // (no answer: in a moment)
             if (r.n !== frameN) {
@@ -131,6 +137,7 @@ FocusScope {
         });
     }
     Timer { id: askAgain; interval: 500; onTriggered: view.askFrame() }
+    onSolidChanged: askFrame() // (Reduce Transparency turned off in Settings)
     function loadFrame() {
         if (fade > 0.001 && fade < 0.999) { frameDue = true; return; } // after this fade
         frameDue = false;
@@ -157,6 +164,8 @@ FocusScope {
     FastBlur { id: blurB; width: 160; height: 90; source: frameB; radius: 32; visible: false }
     ShaderEffectSource { id: glassA; sourceItem: blurA; width: 160; height: 90; visible: false; smooth: true }
     ShaderEffectSource { id: glassB; sourceItem: blurB; width: 160; height: 90; visible: false; smooth: true }
+    readonly property Item pictureA: glassA // (for the panels of their own)
+    readonly property Item pictureB: glassB
 
     // frames a second, for tuning (cc.debugFps): a running animation changes its value once a frame
     property int fps: 0
@@ -264,11 +273,31 @@ FocusScope {
     onListIndexChanged: if (sounds) sounds.tick()
     onSheetIndexChanged: if (sounds) sounds.tick()
 
-    Component.onCompleted: {
-        if (cc.sounds !== false) {
+    function tick() { if (sounds) sounds.tick(); }
+    function soundsOn(on) {
+        if (on && !sounds) {
             var sc = Qt.createComponent("Sounds.qml");
             if (sc.status === Component.Ready) sounds = sc.createObject(view);
+        } else if (!on && sounds) {
+            sounds.destroy();
+            sounds = null;
         }
+    }
+
+    // what changing a setting in Settings changes here too; p: the service's prefs
+    function follow(p) {
+        var c = {};
+        for (var k in cc) c[k] = cc[k];
+        c.clock24 = !!p.clock24;
+        c.reduceMotion = !!p.reduceMotion;
+        c.reduceTransparency = !!p.reduceTransparency;
+        cc = c;
+        time.text = Qt.formatTime(new Date(), cc.clock24 ? "hh:mm" : "h:mm AP");
+        soundsOn(p.sounds !== false);
+    }
+
+    Component.onCompleted: {
+        soundsOn(cc.sounds !== false);
         load(cc);
         var net = find("network"); // nearest the clock, and harmless (unlike Power Off)
         if (net >= 0) focusIndex = net;
@@ -318,6 +347,7 @@ FocusScope {
     function ok() {
         if (sounds) sounds.select();
         if (sheet) sheetOk();
+        else if (menu()) menu().ok();
         else if (listKind === 3) galleryOk();
         else if (listKind) listOk();
         else if (editing) editOk();
@@ -336,10 +366,13 @@ FocusScope {
         case "screenOff": run({ action: "screenOff" }); close(); return;
         case "pictureMode": openList(1); return;
         case "inputs": openList(2); return;
-        case "network": case "recents": case "accessibility": case "settings":
+        case "network":
             overlay({ event: "open", target: t.cid });
             close();
             return;
+        case "recents": openRecents(); return;
+        case "accessibility": openSettings("accessibility"); return;
+        case "settings": openSettings(""); return;
         }
         if (t.kind === "stepper" || t.kind === "switch") {
             run({ action: "run", value: t.cid }, function () {
@@ -489,6 +522,8 @@ FocusScope {
             save();
         } else if (it.act === "reset") {
             run({ action: "reset" });
+        } else if (it.act === "closeAll") {
+            recents.closeEverything();
         }
     }
 
@@ -572,6 +607,56 @@ FocusScope {
         if (it) add(it.entry);
     }
 
+    // ---- Settings and Recents: each in a panel of its own, made the first time it's wanted. If one can't
+    // be, its tile does what it did before they opened here: Home+ comes to the front and opens it.
+
+    property var settings: null    // SettingsPanel.qml
+    property var recents: null     // RecentsStrip.qml
+    function make(file) {
+        var c = Qt.createComponent(file), o = c.status === Component.Ready ? c.createObject(panels, { "view": view }) : null;
+        if (!o) console.warn("[Home+] Control Center: " + c.errorString());
+        return o;
+    }
+    function menu() { return listKind === 4 ? settings : listKind === 5 ? recents : null; }
+
+    function openSettings(page) {
+        if (!settings) settings = make("SettingsPanel.qml");
+        if (settings) {
+            settings.open(page);
+            return;
+        }
+        overlay({ event: "open", target: page || "settings" });
+        close();
+    }
+
+    function openRecents() {
+        if (!recents) recents = make("RecentsStrip.qml");
+        if (recents) {
+            recents.open();
+            return;
+        }
+        overlay({ event: "open", target: "recents" });
+        close();
+    }
+
+    // The Magic Remote's pointer, as in Home+ (input.c: pointer_moved): an arrow hands control to the keys, and
+    // the pointer takes it back after real travel, so one left lying where a panel opens takes no focus from them
+    readonly property int ptrTakePx: 40
+    property bool pointing: false
+    property real pointerX: -1     // where it was when the keys took over
+    property real pointerY: -1
+    function keysTakeOver() { pointing = false; pointerX = pointerY = -1; }
+    function pointerMoved(item, x, y) {
+        var p = item.mapToItem(view, x, y), dx = p.x - pointerX, dy = p.y - pointerY;
+        if (!pointing && pointerX < 0) { // first sighting: only remembered
+            pointerX = p.x;
+            pointerY = p.y;
+        } else if (dx * dx + dy * dy >= ptrTakePx * ptrTakePx) {
+            pointing = true;
+        }
+        return pointing;
+    }
+
     // ---- moving: the nearest thing that way, as tvOS's focus moves: something beside it, or within
     // 45 degrees of the way (cc.c: cc_move); -1: nothing that way
 
@@ -624,6 +709,7 @@ FocusScope {
 
     function back() {
         if (sheet) sheet = null;
+        else if (menu()) menu().back();
         else if (listKind && listOnly) close();
         else if (listKind) listKind = 0;
         else if (picked >= 0) { picked = -1; save(); }
@@ -648,8 +734,11 @@ FocusScope {
         } else if (k === 0x1200003 || k === Qt.Key_Escape || k === Qt.Key_Back) { // LG's Back (0x1200003)
             back();
         } else if (dx || dy) {
+            keysTakeOver();
             if (sheet) {
                 if (dy) sheetIndex = Math.max(0, Math.min(sheet.items.length - 1, sheetIndex + dy));
+            } else if (menu()) {
+                menu().move(dx, dy);
             } else if (listKind === 3) {
                 var g = nearest(gallery.length, galleryRect, listIndex, dx, dy);
                 if (g >= 0) listIndex = g;
@@ -1247,6 +1336,9 @@ FocusScope {
         }
     }
 
+    // where Settings and Recents go: over the controls, and under a sheet
+    Item { id: panels; anchors.fill: parent }
+
     // ---- a sheet, as Home+'s (sheet.c: draw_sheet, draw_sheet_button): in the middle, over the rest
     // stepped back; its title, its words a line at a time, then its buttons, each label in the middle
 
@@ -1367,7 +1459,7 @@ FocusScope {
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
-                    onEntered: view.sheetIndex = index
+                    onPositionChanged: if (view.pointerMoved(parent, mouse.x, mouse.y)) view.sheetIndex = index
                     onClicked: { view.sheetIndex = index; view.sheetOk(); }
                 }
             }

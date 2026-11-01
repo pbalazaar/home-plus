@@ -8,7 +8,8 @@ import SystemUIComponent 1.0
 // remote's Input key opens it on its inputs alone ({list: "inputs"}); again ({again: "input"}), it
 // turns an open panel to its inputs, or closes it if they're on show.
 // The panel itself is ControlCenterView.qml, loaded here so that a mistake in it can't take
-// anything else down: it's reported, and the service opens LG's Quick Settings instead.
+// anything else down: it's reported, and the service opens LG's Quick Settings instead. Settings and
+// Recents open in it, over what's playing too.
 StarfishSystemUIWindow {
     id: root
 
@@ -37,8 +38,10 @@ StarfishSystemUIWindow {
     function open(params) {
         if (params.preload) { // compiled now, so the first time it opens is as quick as the rest
             if (view) return; // (it's open: leave it be)
-            var p = Qt.createComponent("ControlCenterView.qml");
-            if (p.status !== Component.Ready) console.warn("[Home+] Control Center: " + p.errorString());
+            ["ControlCenterView.qml", "SettingsPanel.qml", "RecentsStrip.qml"].forEach(function (file) {
+                var p = Qt.createComponent(file);
+                if (p.status !== Component.Ready) console.warn("[Home+] Control Center: " + p.errorString());
+            });
             root.exit();
             return;
         }

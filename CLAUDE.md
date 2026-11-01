@@ -36,7 +36,10 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   system UI, as it runs LG's Quick Settings, opened by the service on the Settings key when Home+ isn't in
   front (`systemUIManager/launch` with our own `main` and `windowType: _WEBOS_SYSTEM_UI_TYPE_OVERLAY`; the
   video keeps playing). `ControlCenter.qml` is the window (lifecycle, the API calls), `ControlCenterView.qml`
-  the panel (Home+'s sizes, editing, lists, gallery, sheets), `Glass.qml` its glass, `Tint.qml` a glyph's
+  the panel (Home+'s sizes, editing, lists, gallery, sheets), `SettingsPanel.qml` Settings' two panes and
+  `RecentsStrip.qml` Recents, over the video too (made the first time they're wanted; if one can't be, its tile
+  opens Home+ as before), `service/settings.js` the pages they draw (the launcher's words: `test/qml-sizes.test.js`
+  compares them; what needs Home+'s own screen, like a sign-in's QR code, opens it on that page), `Glass.qml` its glass, `Tint.qml` a glyph's
   colour, `Marquee.qml` a long name; `glyphs/` are Home+'s icons as PNGs (`tools/make-glyphs.sh`), `sounds/` its
   focus sounds (`tools/make-sounds.py`). Found on the C3:
   - The compositor keeps every QML file it has loaded, by URL, until the TV restarts: the service opens it
@@ -58,6 +61,9 @@ PicCap and HyperHDR run on the TV, so keep GPU/CPU use low.
   - It can't post a notification that leaves the remote to the app: an overlay keeps the keys even when it
     doesn't take them (tried), so Home+'s hints stay LG's toasts.
   - Sounds play through QtMultimedia's `SoundEffect` (`Sounds.qml`, loaded on its own in case it can't).
+  - In a Repeater's delegate, a name is looked up on the delegate's own item before the file's ids, so an id
+    such as `right` or a property such as `top` is an anchor line there (a width of undefined, and no error):
+    `tools/qml-check` only drives the logic, so render a panel too when its layout changes.
   - No logs: to debug, put a `Text` on screen and take a screenshot. `touch /tmp/homeplus-cc-fps` shows its
     frame rate and the last key code. A failure to load is reported to the service (`overlay failed:` in its log).
 - `native/` — the launcher (`com.github.pbalazaar.homeplus`): C, SDL2 + our own GLES2 renderer

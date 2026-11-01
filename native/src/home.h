@@ -458,7 +458,7 @@ static const char *const SRC_ID[SRC_COUNT] = { "", "stremio", "jellyfin", "plex"
 static const char *const SRC_NAME[SRC_COUNT] = { "", "Stremio", "Jellyfin", "Plex" };
 
 /* what the Control Center over another app can ask Home+ to open */
-enum { OPEN_SETTINGS = 1, OPEN_RECENTS, OPEN_ACCESSIBILITY };
+enum { OPEN_SETTINGS = 1, OPEN_RECENTS, OPEN_ACCESSIBILITY, OPEN_GENERAL, OPEN_ACCOUNTS, OPEN_ABOUT };
 
 /* OK on a card: an app can't be sent to its title, so a toast over it says where the title is (its name, the app's) */
 #define CONTINUE_HINT "\xE2\x80\x9C%s\xE2\x80\x9D is in %s\xE2\x80\x99s Continue Watching"
