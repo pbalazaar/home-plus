@@ -1484,11 +1484,13 @@ async function apiContinue() {
     const prev = byId.get(it.id);
     if (!prev || String(it.lastWatched) > String(prev.lastWatched)) byId.set(it.id, it);
   }
-  const items = sortStable([...byId.values()], (a, b) => String(b.lastWatched).localeCompare(String(a.lastWatched)))
-    .slice(0, 16)
-    .map((it) => Object.assign({}, it, {
+  const selected = sortStable([...byId.values()], (a, b) => String(b.lastWatched).localeCompare(String(a.lastWatched))).slice(0, 16);
+  const items = await Promise.all(selected.map(async (it) => {
+    const details = cfg.prefs && cfg.prefs.topShelfDetails === 'off' ? null : await tmdb.detailsByImdb(it.id, it.type);
+    return Object.assign({}, it, details || {}, {
       background: proxied(it.background), thumbnail: proxied(it.thumbnail), logo: proxied(it.logo), poster: proxied(it.poster)
-    }));
+    });
+  }));
   const t = trakt.status();
   return {
     source: 'stremio', connected: !!cfg.stremioAuthKey || t.connected, stremio: !!cfg.stremioAuthKey, trakt: t, items,
@@ -1674,7 +1676,8 @@ const imageServer = http.createServer(async (req, res) => {
     return sendJSON(res, 200, {
       id: pkg.name, /* (the launcher checks it's its own: the old Home+'s, still installed, takes the same port) */
       version: pkg.version, elevated: isRoot(), token: tokenWritten,
-      bootScript: fs.existsSync(INITD), homeAsked: !!cfg.homeAsked, homeMode: homeMode(cfg), onboarded: onboarded(cfg)
+      bootScript: fs.existsSync(INITD), homeAsked: !!cfg.homeAsked, homeMode: homeMode(cfg), onboarded: onboarded(cfg),
+      tmdbConfigured: !!cfg.tmdbKey
     });
   }
   /* the launcher just had Homebrew Channel elevate us: exit so the next start runs as root.

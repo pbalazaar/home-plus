@@ -275,6 +275,16 @@ void run_action(Action act, int arg, const char *id)
         net_post("/api/prefs", S.shelf_still ? "{\"shelfTurns\":false}" : "{\"shelfTurns\":true}", 0);
         settings_again();
         break;
+    case ACT_SHELF_DETAILS: {
+        static const char *const pref[] = { "off", "compact", "full" };
+        int next = (S.shelf_details + (arg < 0 ? 2 : 1)) % 3;
+        char body[48];
+        shelf_set_details(next);
+        snprintf(body, sizeof body, "{\"topShelfDetails\":\"%s\"}", pref[next]);
+        net_post("/api/prefs", body, TAG_PREFS);
+        settings_again();
+        break;
+    }
     case ACT_ORBIT:
         S.orbit_off = !S.orbit_off;
         net_post("/api/prefs", S.orbit_off ? "{\"pixelShift\":false}" : "{\"pixelShift\":true}", 0);

@@ -32,5 +32,6 @@ void font_free(Font *f);
 /* Renders UTF-8 text in white at the given pixel height. max_w > 0 truncates
  * with an ellipsis. Returns NULL for empty text. */
 Tex *text_render(Font *f, float px, const char *utf8, int max_w, int *out_w, int *out_h);
+int text_width(Font *f, float px, const char *utf8);
 
 #endif
