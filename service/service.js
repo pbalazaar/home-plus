@@ -266,6 +266,7 @@ const NATIVE_ID = 'com.github.pbalazaar.homeplus'; // the launcher; this service
 // the app list, and Remove Home+ takes what it left too.
 const OLD_ID = 'com.github.pmiraka.homeplus';
 let lastForeground = '';
+let resumeRun = null; // the title OK last asked to play: { app, seen }, seen once its app has been in front
 let lastTakeover = 0;
 let takeoverLanded = true; // did the launcher reach the front after our last takeover?
 
@@ -1014,6 +1015,7 @@ async function onForeground(appId) {
   if (!appId || appId === lastForeground) return;
   log('foreground', lastForeground || '-', '->', appId);
   lastForeground = appId;
+  if (resumeRun && resumeRun.app === appId) resumeRun.seen = true;
   closeOverlay();
   lastUsed.set(appId, Date.now());
   saveRecents();
@@ -1576,6 +1578,37 @@ async function apiRunning() {
   return { apps: opened.map((id) => byId.get(id)) };
 }
 
+const showToast = (message) => luna('luna://com.webos.notification/createToast', { sourceId: NATIVE_ID, message: String(message).slice(0, 200) });
+let hint = null; /* the toast waiting for its app to open: { message, timer } */
+
+// Opens an app. toast: a hint shown by the system, so it appears over the app that just opened.
+async function openApp(id, params, toast) {
+  clearWake();
+  const r = await luna(APPMGR + '/launch', params ? { id, params } : { id });
+  if (toast && r && r.returnValue !== false) {
+    if (hint) clearTimeout(hint.timer);
+    const h = hint = { message: toast, timer: setTimeout(() => { hint = null; showToast(h.message); }, 1500) };
+  }
+  return r;
+}
+
+// What happened since: the hint says this instead, or, gone already, this follows it.
+function tellInstead(message) {
+  if (hint) hint.message = message;
+  else showToast(message);
+}
+
+// OK on a title in the Top Shelf: its app has opened, and now its server has it play the title. The launcher has
+// its answer by then: this takes seconds, and is all that polls, only after an OK. A new run replaces the last, and
+// once the app has been in front any other app there ends it (right after the launch Home+ still is, which doesn't
+// count), so nothing starts behind your back. If it can't be done, the toast OK has always shown.
+async function playInBackground(m, app, item, fromStart, run) {
+  const stillWanted = () => run === resumeRun && !(run.seen && lastForeground && lastForeground !== app);
+  if (await m.playOnTV({ id: item.id, fromStart }, stillWanted) || !stillWanted()) return;
+  if (!titles[app]) await listApps();
+  tellInstead(`“${item.name}” is in ${titles[app] || app}’s Continue Watching`);
+}
+
 async function handleApi(req, res) {
   const url = new URL(req.url, 'http://127.0.0.1');
   try {
@@ -1675,12 +1708,16 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/launch' && req.method === 'POST') {
       const { id, params, toast } = await readBody(req);
       if (!id) return sendJSON(res, 400, { returnValue: false, errorText: 'id is required' });
-      clearWake();
-      const r = await luna(APPMGR + '/launch', params ? { id, params } : { id });
-      // a hint shown by the system, so it appears over the app that just opened
-      if (toast && r && r.returnValue !== false) {
-        setTimeout(() => luna('luna://com.webos.notification/createToast', { sourceId: NATIVE_ID, message: String(toast).slice(0, 200) }), 1500);
-      }
+      return sendJSON(res, 200, await openApp(id, params, toast));
+    }
+    if (url.pathname === '/api/resume' && req.method === 'POST') { /* OK on a Jellyfin card: { app, source, id, fromStart } */
+      const { app, source, id, fromStart } = await readBody(req);
+      const m = media[source], run = resumeRun = { app, seen: false };
+      if (!app || !m || !m.playOnTV) return sendJSON(res, 400, { returnValue: false, errorText: 'app and a source that can play are required' });
+      const item = (await m.items()).find((it) => it.id === id);
+      if (!item) return sendJSON(res, 404, { returnValue: false, errorText: 'that title isn\'t in the list' });
+      const r = await openApp(app, null, `${item.positionTicks && !fromStart ? 'Resuming' : 'Playing'} “${item.name}”`);
+      if (r && r.returnValue !== false) playInBackground(m, app, item, !!fromStart, run).catch((e) => log('resume failed', e.message));
       return sendJSON(res, 200, r);
     }
     if (url.pathname === '/api/layout') {

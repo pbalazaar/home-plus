@@ -93,6 +93,12 @@ shot cc-gallery-groups "UOHOLDDDDRO" 6000
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=1
 shot jellyfin "" 4500
 shot plex "R" 4500
+# Up into Jellyfin's Continue Watching (a moment first, for the carousel): what OK does on a title, hold OK on one
+# you've started and on a next episode, which has nothing to start over, and OK
+shot jellyfin-card "......U" 4500
+shot jellyfin-card-sheet "......UH" 4800
+shot jellyfin-next-sheet "......URRH" 5200
+shot jellyfin-card-ok "......UO" 3400
 # signing out asks first, and the question opens on Cancel: a stray OK keeps the sign-in (Up twice: Jellyfin's
 # Continue Watching, then the clock)
 shot signout-ask "UUODDDDRODDDDDOO" 6400

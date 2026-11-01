@@ -103,6 +103,11 @@ if (process.env.HOMEPLUS_PREVIEW_MEDIA) {
     { ratingKey: '202', type: 'movie', title: 'Paper Planes', viewOffset: 3100000, duration: 6400000,
       thumb: '/library/metadata/202/thumb', art: '/library/metadata/202/art', lastViewedAt: 1760900000 }
   ];
+  // Jellyfin's sessions: Home+ once it has registered, and the TV's app, whose playback is reported on a second
+  // session it can't be sent commands on (as on the C3)
+  const TV = { DeviceName: 'LG Smart TV', Client: 'Jellyfin Web', RemoteEndPoint: '127.0.0.1' };
+  let jfHome = null, jfPlaying = null;
+  const noContent = (res) => { res.writeHead(204); res.end(); };
   http.createServer((req, res) => {
     const u = new URL(req.url, BASE);
     const p = u.pathname;
@@ -112,6 +117,19 @@ if (process.env.HOMEPLUS_PREVIEW_MEDIA) {
     if (p === '/Users/AuthenticateWithQuickConnect') return json(res, 200, { AccessToken: 'jf-token', User: { Id: 'u1', Name: 'Paolo' }, ServerId: 's1' });
     if (p === '/UserItems/Resume') return json(res, 200, { Items: JF.slice(0, 2) });
     if (p === '/Shows/NextUp') return json(res, 200, { Items: JF.slice(2) });
+    if (p === '/Sessions/Capabilities') {
+      jfHome = { Id: 'home', DeviceName: 'LG TV', Client: 'Home+', RemoteEndPoint: '127.0.0.1', SupportsRemoteControl: false,
+        DeviceId: (/DeviceId="([^"]*)"/.exec(req.headers.authorization) || [])[1] };
+      return noContent(res);
+    }
+    if (p === '/Sessions') {
+      return json(res, 200, [jfHome, Object.assign({ Id: 'tv', DeviceId: 'tv-1', SupportsRemoteControl: true }, TV),
+        Object.assign({ Id: 'tv-playing', DeviceId: 'tv-2', SupportsRemoteControl: false, NowPlayingItem: jfPlaying }, TV)].filter(Boolean));
+    }
+    if (/^\/Sessions\/[^/]+\/Playing$/.test(p)) {
+      jfPlaying = { Id: u.searchParams.get('itemIds') };
+      return noContent(res);
+    }
     if (/^\/Items\/[^/]+\/Images\//.test(p)) return image(res, `show${pick(p)}.jpg`, 'image/jpeg');
     // Plex: plex.tv, clients.plex.tv and the server, all here
     if (p === '/api/v2/pins' && req.method === 'POST') return json(res, 201, { id: 7, code: 'QGVR', qr: `${BASE}/qr-plex.png`, expiresIn: 900 });

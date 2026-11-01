@@ -163,6 +163,29 @@ void launch_app(const char *id, const char *params, const char *hint)
 
 void launch(const char *id, const char *hint) { launch_app(id, NULL, hint); }
 
+/* Plays a Jellyfin title in its app (from_start: from its start, else from where it stopped): the service opens the
+ * app and has the server start it there. A title the service doesn't know gets what OK does on any card (results.c). */
+void resume_title(const App *a, const char *id, int from_start)
+{
+    cJSON *o = cJSON_CreateObject();
+    cJSON_AddStringToObject(o, "app", a->id);
+    cJSON_AddStringToObject(o, "source", SRC_ID[SRC_JELLYFIN]);
+    cJSON_AddStringToObject(o, "id", id);
+    cJSON_AddBoolToObject(o, "fromStart", from_start);
+    char *body = cJSON_PrintUnformatted(o);
+    net_post("/api/resume", body, TAG_RESUME);
+    free(body);
+    cJSON_Delete(o);
+    S.away = 1;
+    copy_id(S.resume_app, a->id);
+    S.resume_hint[0] = 0;
+    for (int i = 0; i < S.nrail; i++)
+        if (!strcmp(S.rail[i].id, id)) snprintf(S.resume_hint, sizeof S.resume_hint, CONTINUE_HINT, S.rail[i].name, a->title);
+    char msg[200];
+    snprintf(msg, sizeof msg, "Opening %s\xE2\x80\xA6", a->title);
+    toast(msg, 6000);
+}
+
 void close_apps(const char *id)
 {
     cJSON *o = cJSON_CreateObject();
@@ -197,6 +220,21 @@ void open_app_sheet(void)
     }
     sheet_add("Hide App", ACT_HIDE, 0, 0); /* not red: Hidden gives it back */
     if (a->removable) sheet_add_app("Delete App", ACT_DELETE_ASK, a->id, 1); /* from the TV, like tvOS's */
+    sheet_add("Cancel", ACT_CANCEL, 0, 0);
+}
+
+/* Hold OK on a Jellyfin card. Its button keeps the title's id: the carousel can change behind the sheet. */
+void open_card_sheet(void)
+{
+    App *a = item_app(S.focus);
+    if (!a || S.rail_index >= S.nrail) return;
+    const RailItem *it = &S.rail[S.rail_index];
+    char name[ID_LEN], t[ID_LEN + 8];
+    sheet_open(it->name);
+    if (it->progress > 0) sheet_add_app("Play From Beginning", ACT_PLAY_START, it->id, 0); /* (a next episode starts there anyway) */
+    short_title(a, name, sizeof name);
+    snprintf(t, sizeof t, "Open %s", name);
+    sheet_add_app(t, ACT_LAUNCH_ID, a->id, 0);
     sheet_add("Cancel", ACT_CANCEL, 0, 0);
 }
 

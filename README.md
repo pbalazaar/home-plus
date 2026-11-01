@@ -72,7 +72,7 @@ Updates install the same way. An update resets the service's root access, and Ho
 
 | Key | What it does |
 |---|---|
-| Arrows, **OK** | Move and open. Hold **OK** for an app's options. |
+| Arrows, **OK** | Move and open. Hold **OK** for an app's options, or a Jellyfin title's. |
 | **Back** | Closes a menu, steps out of Continue Watching or the clock, then jumps to the first app. On the first app it opens Recents. It never leaves Home+. |
 | **Red** | Recents |
 | **Green** | Settings |
@@ -138,7 +138,7 @@ Sign in under **Settings → Accounts**, or hold **OK** on the app and choose **
 
 ![Signing in to Plex with a QR code](docs/screenshots/plex-signin.jpg)
 
-Pressing **OK** on a card opens the app. Apps on LG TVs can't be opened at a specific title from outside, so a notification names the title, ready to pick from the app's own Continue Watching.
+Pressing **OK** on a Jellyfin card plays the title in the Jellyfin app ([how](#jellyfin)). On other cards it opens the app: apps on LG TVs can't be opened at a specific title from outside, so a notification names the title, ready to pick from the app's own Continue Watching.
 
 ### Stremio
 
@@ -176,6 +176,10 @@ Sign-in uses Jellyfin's Quick Connect, so the server needs it turned on (**Dashb
 2. In a Jellyfin app where you're signed in, open **Settings → Quick Connect** and enter the code.
 
 The titles are what you're partway through, then the next episode of each show you're watching. The Accounts row appears once the Jellyfin app is installed.
+
+Press **Up** to reach the titles, then **OK** on one: the Jellyfin app opens and plays it from where you stopped (a next episode, from its start). Hold **OK** on a title for **Play From Beginning** and **Open Jellyfin**.
+
+Home+ asks your server to tell the app what to play, so the app must be signed in to that server as the same user as Home+ (or Home+ as an admin allowed to control other users). A TV renamed in Jellyfin's dashboard isn't found. If the app can't be reached in time, it stays open and a notification names the title, ready to pick from its Continue Watching.
 
 **A server Home+ can't find** (on another network, or behind a reverse proxy): give it the address over SSH, then sign in as above.
 

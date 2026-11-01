@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const dgram = require('dgram');
 const http = require('http');
 const { EventEmitter } = require('events');
-const { mockServer, configStore, quiet, last, until } = require('./helpers');
+const { mockServer, configStore, quiet, last, sleep, until } = require('./helpers');
 const createJellyfin = require('../service/jellyfin');
 
 const MIN = 600000000; /* Jellyfin times are 100 ns ticks: one minute */
@@ -39,14 +39,20 @@ test.before(async () => {
     }
     if (mode.down) return { status: 500, json: {} };
     if (mode.expired || !signedIn) return { status: 401, json: {} };
-    if (url.pathname === '/UserItems/Resume') return mode.oldServer ? { status: 404, json: {} } : { json: { Items: [EPISODE, MOVIE] } };
+    if (url.pathname === '/UserItems/Resume') return mode.oldServer ? { status: 404, json: {} } : { json: { Items: mode.resume || [EPISODE, MOVIE] } };
     if (url.pathname === '/Users/u1/Items/Resume') return { json: { Items: [EPISODE, MOVIE] } };
     if (url.pathname === '/Shows/NextUp') return { json: { Items: [EPISODE, NEXT] } };
+    if (url.pathname === '/Sessions/Capabilities') return { status: 204, body: '' };
+    if (url.pathname === '/Sessions') return { json: mode.sessions() };
+    if (/^\/Sessions\/[^/]+\/Playing$/.test(url.pathname)) return { status: mode.playRefused ? 400 : 204, body: '' };
     return null;
   });
 });
 test.after(() => server.close());
-test.beforeEach(() => { mode = {}; });
+test.beforeEach(() => {
+  mode = { sessions: () => [] };
+  server.hits.length = 0;
+});
 
 const signedIn = () => ({ jellyfin: { url: server.base, name: 'Home', userId: 'u1', user: 'Ann', token: 'tok' }, jellyfinDevice: 'dev1' });
 function makeJellyfin(cfg) {
@@ -159,4 +165,183 @@ test('jellyfin: a server address must be http or https', () => {
   assert.equal(store.get().jellyfinServer, 'http://host:8096');
   jf.setServer('');
   assert.equal(store.get().jellyfinServer, undefined);
+});
+
+/* OK on a title: as the C3 and the test server showed them, Home+'s entry (once it has registered) and the TV's app */
+const AT = '192.168.1.50';
+const HOME = { Id: 'home', DeviceId: 'dev1', DeviceName: 'LG TV', Client: 'Home+', RemoteEndPoint: AT, SupportsRemoteControl: false };
+const app = (more) => Object.assign({ Id: 'tv', DeviceId: 'TW96aWxsYQ1', DeviceName: 'LG Smart TV', Client: 'Jellyfin Web', RemoteEndPoint: AT, SupportsRemoteControl: true }, more);
+const FAST = { sessionMs: 150, startMs: 150, pollMs: 10 }; /* (25 s, 15 s and 1 s on the TV) */
+const wanted = () => true;
+const sent = () => server.hits.filter((h) => /\/Playing$/.test(h.path));
+const asked = (p) => server.hits.filter((h) => h.path === p);
+/* the server's list: this before PlayNow, and from then on this and whatever the app reports */
+function listing(before, after = []) {
+  mode.sessions = () => (sent().length ? after : before);
+}
+
+test('jellyfin: OK plays the title on this TV, from where it stopped', async () => {
+  listing([HOME, app()], [HOME, app({ NowPlayingItem: { Id: 'm1' } })]);
+  const { jf } = makeJellyfin(signedIn());
+  assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), true);
+  assert.deepEqual(sent().map((h) => h.path), ['/Sessions/tv/Playing']);
+  const [play] = sent();
+  assert.equal(play.method, 'POST');
+  assert.equal(play.query.get('playCommand'), 'PlayNow');
+  assert.equal(play.query.get('itemIds'), 'm1');
+  assert.equal(play.query.get('startPositionTicks'), String(25 * MIN));
+  assert.match(play.headers.authorization, /Token="tok"/);
+  const paths = server.hits.map((h) => h.path);
+  assert.ok(paths.indexOf('/Sessions/Capabilities') >= 0 && paths.indexOf('/Sessions/Capabilities') < paths.indexOf('/Sessions'), 'it registers before it reads the list');
+  assert.equal(asked('/Sessions/Capabilities')[0].method, 'POST');
+  assert.equal(asked('/Sessions/Capabilities').length, 1);
+});
+
+test('jellyfin: From Beginning and a next episode start at 0', async () => {
+  for (const item of [{ id: 'm1', fromStart: true }, { id: 'e2' }]) {
+    server.hits.length = 0;
+    listing([HOME, app()], [HOME, app({ NowPlayingItem: { Id: item.id } })]);
+    const { jf } = makeJellyfin(signedIn());
+    assert.equal(await jf.playOnTV(item, wanted, FAST), true, item.id);
+    assert.equal(sent()[0].query.get('startPositionTicks'), '0', item.id);
+  }
+});
+
+test('jellyfin: the position is the server\'s as of now, not the list\'s', async () => {
+  listing([HOME, app()], [HOME, app({ NowPlayingItem: { Id: 'm1' } })]);
+  const { jf } = makeJellyfin(signedIn());
+  await jf.items();
+  mode.resume = [Object.assign({}, MOVIE, { UserData: { PlaybackPositionTicks: 40 * MIN } })];
+  assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), true);
+  assert.equal(sent()[0].query.get('startPositionTicks'), String(40 * MIN));
+});
+
+test('jellyfin: the TV\'s session is found under either of its client names', async () => {
+  for (const Client of ['Jellyfin for WebOS', 'Jellyfin Web']) {
+    server.hits.length = 0;
+    listing([HOME, app({ Client })], [HOME, app({ Client, NowPlayingItem: { Id: 'm1' } })]);
+    const { jf } = makeJellyfin(signedIn());
+    assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), true, Client);
+  }
+});
+
+test('jellyfin: which session is this TV\'s', async (t) => {
+  const elsewhere = { RemoteEndPoint: '192.168.1.51' };
+  const cases = [
+    ['another TV, at another address', [HOME, app(elsewhere)], null],
+    ['another kind of client', [HOME, app({ DeviceName: 'Chrome', Client: 'Jellyfin Web' })], null],
+    ['a closed socket', [HOME, app({ SupportsRemoteControl: false })], null],
+    ['two at this address: it picks neither', [HOME, app({ Id: 'a' }), app({ Id: 'b', DeviceId: 'other' })], null],
+    ['Home+\'s own entry missing', [app()], null],
+    ['neither has an address yet (just signed in)', [Object.assign({}, HOME, { RemoteEndPoint: null }), app({ RemoteEndPoint: null })], null],
+    ['one here, one elsewhere', [HOME, app({ Id: 'there', ...elsewhere }), app({ Id: 'here' })], '/Sessions/here/Playing'],
+    ['the session its playback is reported on can\'t be sent commands', [HOME, app(), app({ Id: 'reporting', DeviceId: 'b', SupportsRemoteControl: false })], '/Sessions/tv/Playing']
+  ];
+  for (const [what, list, path] of cases) {
+    await t.test(what, async () => {
+      server.hits.length = 0;
+      listing(list, list);
+      const { jf } = makeJellyfin(signedIn());
+      assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), false, 'nothing reports it playing here');
+      assert.deepEqual(sent().map((h) => h.path), path ? [path] : []);
+    });
+  }
+});
+
+test('jellyfin: it waits for the app to connect, then sends PlayNow once', async () => {
+  let reads = 0;
+  mode.sessions = () => (sent().length ? [HOME, app({ NowPlayingItem: { Id: 'm1' } })] : ++reads > 3 ? [HOME, app()] : [HOME]);
+  const { jf } = makeJellyfin(signedIn());
+  assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), true);
+  assert.ok(reads > 3);
+  assert.equal(sent().length, 1);
+});
+
+test('jellyfin: a title that starts on another of this TV\'s sessions has started', async () => {
+  const reporting = app({ Id: 'reporting', DeviceId: 'second', SupportsRemoteControl: false, NowPlayingItem: { Id: 'm1' } });
+  listing([HOME, app()], [HOME, app(), reporting]);
+  const { jf } = makeJellyfin(signedIn());
+  assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), true);
+  assert.deepEqual(sent().map((h) => h.path), ['/Sessions/tv/Playing'], 'PlayNow went to the one that can take it');
+});
+
+test('jellyfin: another TV playing the title, or this one playing another title, isn\'t it starting', async () => {
+  for (const other of [app({ Id: 'x', RemoteEndPoint: '192.168.1.51', NowPlayingItem: { Id: 'm1' } }), app({ Id: 'x', SupportsRemoteControl: false, NowPlayingItem: { Id: 'e1' } })]) {
+    server.hits.length = 0;
+    listing([HOME, app()], [HOME, app(), other]);
+    const { jf } = makeJellyfin(signedIn());
+    assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), false);
+    assert.equal(sent().length, 1, 'PlayNow isn\'t sent again');
+  }
+});
+
+test('jellyfin: it stops as soon as the title is no longer wanted, and sends nothing after', async () => {
+  listing([HOME]);
+  const { jf } = makeJellyfin(signedIn());
+  let wants = true;
+  setTimeout(() => {
+    wants = false;
+    listing([HOME, app()]); /* (the app connects too late) */
+  }, 40);
+  assert.equal(await jf.playOnTV({ id: 'm1' }, () => wants, { sessionMs: 5000, startMs: 150, pollMs: 10 }), false);
+  await sleep(30);
+  assert.equal(sent().length, 0);
+});
+
+test('jellyfin: no longer wanted while the title starts, it stops watching', async () => {
+  listing([HOME, app()], [HOME, app()]);
+  const { jf } = makeJellyfin(signedIn());
+  let wants = true;
+  const run = jf.playOnTV({ id: 'm1' }, () => wants, { sessionMs: 150, startMs: 5000, pollMs: 10 });
+  await until(() => sent().length, 2000, 'PlayNow');
+  wants = false;
+  const stopped = Date.now();
+  assert.equal(await run, false);
+  assert.ok(Date.now() - stopped < 1000);
+});
+
+test('jellyfin: a title that has left the list isn\'t played', async () => {
+  listing([HOME, app()]);
+  const { jf } = makeJellyfin(signedIn());
+  assert.equal(await jf.playOnTV({ id: 'gone' }, wanted, FAST), false);
+  assert.equal(asked('/Sessions/Capabilities').length, 0);
+});
+
+test('jellyfin: a server that can\'t be reached is given up on right away', async () => {
+  const { jf } = makeJellyfin(signedIn());
+  await jf.items();
+  mode.down = true; /* (the list stays, as for the shelf: the next call says so) */
+  const slow = { sessionMs: 5000, startMs: 5000, pollMs: 10 }, began = Date.now();
+  assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, slow), false);
+  assert.ok(Date.now() - began < 1000, 'it doesn\'t wait for the session');
+  const nothing = makeJellyfin(signedIn()).jf; /* no list at all */
+  assert.equal(await nothing.playOnTV({ id: 'm1' }, wanted, slow), false);
+});
+
+test('jellyfin: PlayNow refused: given up on right away', async () => {
+  mode.playRefused = true;
+  listing([HOME, app()]);
+  const { jf } = makeJellyfin(signedIn());
+  assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, { sessionMs: 150, startMs: 5000, pollMs: 10 }), false);
+});
+
+test('jellyfin: a rejected token signs out', async () => {
+  const { jf, store } = makeJellyfin(signedIn());
+  await jf.items();
+  mode.expired = true;
+  assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), false);
+  assert.equal(store.get().jellyfin, undefined);
+});
+
+test('jellyfin: playing a title logs each step, without tokens', async () => {
+  listing([HOME, app()], [HOME, app({ NowPlayingItem: { Id: 'm1' } })]);
+  const lines = [];
+  const store = configStore(signedIn());
+  const jf = createJellyfin({ ...store, log: (...a) => lines.push(a.join(' ')), version: 'test' });
+  assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), true);
+  mode.down = true;
+  assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, FAST), false);
+  assert.ok(lines.some((l) => /^jellyfin: resume m1 .*PlayNow/.test(l)), lines.join('\n'));
+  assert.ok(lines.some((l) => /^jellyfin: resume m1 .*playing on/.test(l)), lines.join('\n'));
+  assert.ok(!lines.some((l) => /tok/.test(l.replace(/token/g, ''))), lines.join('\n'));
 });

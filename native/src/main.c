@@ -446,6 +446,9 @@ int main(int argc, char **argv)
             } else if (S.cc.open && !S.sheet.open) {
                 snd_play(SND_SELECT);
                 cc_long_press();
+            } else if (!S.sheet.open && !S.recents.open && S.zone == ZONE_RAIL && S.rail_source == SRC_JELLYFIN) {
+                snd_play(SND_SELECT);
+                open_card_sheet();
             }
             dirty = 1;
         }

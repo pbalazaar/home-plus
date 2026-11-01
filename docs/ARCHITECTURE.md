@@ -12,6 +12,7 @@ The launcher talks to the service over a local HTTP API on `127.0.0.1:47823`. It
 | `GET /api/status` | Version, whether the service is root, setup state (no token needed) |
 | `GET /api/apps` | App list |
 | `POST /api/launch` | Open an app |
+| `POST /api/resume` | Play a Jellyfin title in its app: `{"app", "source": "jellyfin", "id", "fromStart"}`. Opens the app and answers as `/api/launch` does; the server is told what to play after that |
 | `GET` / `POST /api/layout` | Tile order and hidden apps |
 | `GET /api/continue` | Continue Watching from Stremio and Trakt, or with `?source=jellyfin` or `plex` |
 | `GET /api/featured?app=<id>` | What's popular on a streaming app (TMDB), for its Top Shelf |
