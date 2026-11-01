@@ -201,7 +201,7 @@ typedef struct { int kind, i; } Pic;
 
 typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELETE, ACT_UNHIDE, ACT_UNHIDE_ALL, ACT_CANCEL,
                ACT_LAUNCH_ID, ACT_PLAY_START, ACT_TRAKT_LINK, ACT_TRAKT_UNLINK, ACT_MEDIA_LINK, ACT_MEDIA_UNLINK, ACT_ACCOUNT_ASK, ACT_UP, ACT_KEYS, ACT_SHELF,
-               ACT_HOME_MODE, ACT_SOUNDS, ACT_SHELF_DETAILS,
+               ACT_HOME_MODE, ACT_DEFAULT_HOME, ACT_STARTUP, ACT_SOUNDS, ACT_SHELF_DETAILS,
                ACT_SETUP_RETRY, ACT_HOME_YES, ACT_HOME_NO, ACT_WELCOME_NEXT, ACT_WELCOME_SKIP, ACT_HOME_TOGGLE, ACT_REMOVE_ASK, ACT_REMOVE,
                ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY, ACT_CC_BLUR_VIDEO,
                ACT_PAGE, ACT_CLOCK, ACT_DIM, ACT_OFF, ACT_ORBIT, ACT_CALM, ACT_HIDDEN, ACT_SETTINGS_KEY, ACT_INPUT_KEY,
@@ -287,7 +287,11 @@ typedef struct {
     Uint32 media_poll;                /* and when to ask again whether it was approved */
     Tex *connect_tex[SRC_COUNT];      /* "Connect … to see Continue Watching" */
     int connect_w[SRC_COUNT], connect_h[SRC_COUNT];
-    char home_mode[16]; /* "redirect" (no-flash), "watch" or "off" */
+    char home_mode[16]; /* "system", "redirect" (no-flash), "watch" or "off" */
+    int default_home_enabled, default_home_available, startup_enabled;
+    char default_home_reason[256];
+    char home_error[400];
+    int home_pending, home_welcome_next; /* Home changes wait for the service before changing the rows */
     int sounds_off; /* focus sounds switched off in Settings (saved by the service) */
     Uint32 idle_dim_ms, idle_off_ms; /* OLED idle stages (0 = default) */
     int noflash_active, noflash_available; /* available: LG's home page can be replaced, or the key filter can take Home */

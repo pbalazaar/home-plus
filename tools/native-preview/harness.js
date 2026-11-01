@@ -20,6 +20,18 @@ const COLORS = { netflix: '#E50914', prime: '#00A8E1', disney: '#113CCF', hdmi1:
 const CONFIG_DIR = process.env.HOMEPLUS_CONFIG_DIR || '/var/lib/homeplus';
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 mkdirSync(CONFIG_DIR);
+// A modeled newer TV for the default-Home scenes and API integration checks. No production switch.
+const HOME_MODEL = process.env.HOMEPLUS_PREVIEW_DEFAULT_HOME;
+const HOME_APP = 'com.github.pbalazaar.homeplus', STOCK_HOME = 'com.webos.app.home';
+if (HOME_MODEL) {
+  process.env.HOMEPLUS_APP_DIR = process.env.HOMEPLUS_APP_DIR || path.join(CONFIG_DIR, 'app');
+  process.env.HOMEPLUS_DEFAULT_HOME_DIR = process.env.HOMEPLUS_DEFAULT_HOME_DIR || path.join(CONFIG_DIR, 'default-home');
+  process.env.HOMEPLUS_INITD_DIR = process.env.HOMEPLUS_INITD_DIR || path.join(CONFIG_DIR, 'init.d');
+  process.env.HOMEPLUS_RUNTIME_DIR = process.env.HOMEPLUS_RUNTIME_DIR || path.join(CONFIG_DIR, 'runtime');
+  mkdirSync(process.env.HOMEPLUS_APP_DIR); mkdirSync(process.env.HOMEPLUS_RUNTIME_DIR);
+  fs.writeFileSync(path.join(process.env.HOMEPLUS_APP_DIR, 'appinfo.json'), JSON.stringify({ id: HOME_APP, appCategory: ['home'] }));
+  fs.writeFileSync(path.join(process.env.HOMEPLUS_APP_DIR, 'homeplus'), 'preview native app');
+}
 // HOMEPLUS_PREVIEW_FRESH: a first install (the welcome steps not done yet)
 fs.writeFileSync(CONFIG_FILE, JSON.stringify(
   process.env.HOMEPLUS_PREVIEW_FRESH ? { stremioAuthKey: 'preview' } : { stremioAuthKey: 'preview', homeAsked: true, homeMode: 'watch' }));
@@ -331,6 +343,36 @@ global.__stubLuna = (uri, params) => {
   if (uri.endsWith('/running')) return { returnValue: true, running: ['netflix', 'youtube', 'spotify', 'disney'].map((id) => ({ id })) };
   return null;
 };
+if (HOME_MODEL) {
+  const home = { defaults: { home: STOCK_HOME, browser: 'browser' }, foreground: HOME_APP };
+  global.__stubHomeCall = (uri, params, service) => {
+    const front = (id) => {
+      home.foreground = id;
+      if (service.front) setImmediate(() => service.front.emit('response', { payload: { appId: id } }));
+      return { returnValue: true };
+    };
+    if (uri === 'luna://com.webos.service.systemprofile/getProfiles') return {
+      returnValue: true, profiles: { defaultApps: { support: HOME_MODEL !== 'unsupported', categories: { home: STOCK_HOME } } }
+    };
+    if (uri.endsWith('/getAppInfo') && [HOME_APP, STOCK_HOME].includes(params.id)) return {
+      returnValue: true, appInfo: { id: params.id, appCategory: ['home'] }
+    };
+    if (uri.endsWith('/getSystemSettings') && (params.keys || []).includes('defaultApps')) return {
+      returnValue: true, settings: { defaultApps: Object.assign({}, home.defaults) }
+    };
+    if (uri.endsWith('/setSystemSettings') && params.settings.defaultApps) {
+      home.defaults = Object.assign({}, params.settings.defaultApps); return { returnValue: true };
+    }
+    if (uri.endsWith('/setDefaultApp')) {
+      if (HOME_MODEL === 'failure') return { returnValue: false, errorText: 'This TV refused the default Home change' };
+      home.defaults.home = params.appId; return { returnValue: true };
+    }
+    if (uri.endsWith('/getForegroundAppInfo')) return { returnValue: true, appId: home.foreground };
+    if (uri.endsWith('/launchDefaultApp')) return front(home.defaults.home || STOCK_HOME);
+    if (uri.endsWith('/launch')) return front(params.id);
+    return null;
+  };
+}
 if (!process.env.HOMEPLUS_RECENTS_FILE) { /* (tests may give one of their own) */
   process.env.HOMEPLUS_RECENTS_FILE = path.join(CONFIG_DIR, 'recents.json');
   fs.writeFileSync(process.env.HOMEPLUS_RECENTS_FILE, JSON.stringify({ youtube: Date.now() - 60000, netflix: Date.now() - 120000, spotify: Date.now() - 600000 }));

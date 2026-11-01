@@ -3,6 +3,7 @@
   "version": "0.24.0",
   "vendor": "pbalazaar",
   "type": "native",
+  "appCategory": ["home"],
   "main": "homeplus",
   "title": "Home+",
   "icon": "icon.png",

@@ -27,6 +27,8 @@ module.exports = class Service {
     }
     // tests: services that never answer, the calls to them matching this regular expression
     if (process.env.HOMEPLUS_PREVIEW_LUNA_SILENT && new RegExp(process.env.HOMEPLUS_PREVIEW_LUNA_SILENT).test(uri)) return;
+    const home = global.__stubHomeCall && global.__stubHomeCall(uri, params, this);
+    if (home) return cb({ payload: home });
     if (uri.endsWith('/launch')) {
       // tests: HOMEPLUS_PREVIEW_LAUNCH_REFUSED, an app that won't open; HOMEPLUS_PREVIEW_LAUNCH_FRONT, an app that
       // opens comes to the front (a test can leave one by opening another)

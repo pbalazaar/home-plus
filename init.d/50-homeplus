@@ -36,4 +36,7 @@ LOG=/var/lib/webosbrew/homeplus-boot.log
     i=$((i + 1))
     sleep 2
   done
+  if [ $i -lt 30 ]; then
+    luna-send -n 1 -w 30000 "luna://$SVC/startup" '{}' 2>/dev/null
+  fi
 ) >"$LOG" 2>&1 &

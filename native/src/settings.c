@@ -70,7 +70,7 @@ static int cat_of(int page)
 int settings_steps(Action act)
 {
     switch (act) {
-    case ACT_HOME_TOGGLE: case ACT_HOME_MODE: case ACT_SETTINGS_KEY: case ACT_INPUT_KEY:
+    case ACT_HOME_TOGGLE: case ACT_HOME_MODE: case ACT_DEFAULT_HOME: case ACT_STARTUP: case ACT_SETTINGS_KEY: case ACT_INPUT_KEY:
     case ACT_DIM: case ACT_OFF: case ACT_ORBIT: case ACT_CALM: case ACT_SHELF: case ACT_SHELF_DETAILS:
     case ACT_SOUNDS: case ACT_CLOCK: case ACT_REDUCE_MOTION: case ACT_REDUCE_TRANSPARENCY: case ACT_CC_BLUR_VIDEO:
         return 1;
@@ -119,7 +119,12 @@ void settings_page(int page, int index)
     case PAGE_HOME:
         row("Home Button", home_on ? "Opens Home+" : "Opens LG Home", ACT_HOME_TOGGLE, 0, 0,
             "Home+ in place of LG\xE2\x80\x99s home screen, after apps too.");
-        if (home_on && S.noflash_available)
+        row("Default Home App", S.default_home_enabled ? "Home+" : "LG Home", ACT_DEFAULT_HOME, 0, 0,
+            !S.default_home_available ? (S.default_home_reason[0] ? S.default_home_reason :
+            "Default Home+ isn\xE2\x80\x99t available on this TV.") : "Use Home+ as the TV\xE2\x80\x99s default Home app. LG Home stays available.");
+        row("Open Home+ at Startup", S.startup_enabled ? "On" : "Off", ACT_STARTUP, 0, 0,
+            "Open Home+ after the TV starts. Off follows the TV\xE2\x80\x99s own startup behaviour.");
+        if (home_on && S.noflash_available && !S.default_home_enabled)
             row("No Flash", S.noflash_active ? "On" : "Off", ACT_HOME_MODE, 0, 0, "LG\xE2\x80\x99s home screen never shows, not even for a moment.");
         if (S.settings_key_available) { /* Home+'s key filter or LG Input Hook catches the keys */
             row("Settings Button", S.settings_key ? "Control Center" : "LG Quick Settings", ACT_SETTINGS_KEY, 0, 0,
@@ -235,6 +240,7 @@ void settings_enter(void)
     if (!S.sheet.split || !S.sheet.side || !S.sheet.n) return;
     int page = S.sheet.cat_page[S.sheet.cat];
     settings_page(page, page == PAGE_ICONS ? S.icon_look : 0);
+    if (page == PAGE_HOME) net_get_json("/api/home", TAG_HOME, 0, 0);
 }
 
 /* Left or Right on a row that steps: as OK would, a step back for Left */
