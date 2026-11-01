@@ -24,6 +24,7 @@ const TV_DEVICE = 'LG Smart TV'; // what Jellyfin's web client calls a webOS TV
 // On the C3, with the server on the same network, the app's session came 4.5 s after a cold start and
 // playback about 2.5 s after PlayNow: these leave room for a slower server
 const SESSION_WAIT_MS = 25000, START_WAIT_MS = 15000, POLL_MS = 1000;
+const REGISTER_MS = 4000; // how long a server that takes the call but doesn't answer (it's asleep) is given
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 module.exports = function createJellyfin({ readConfig, writeConfig, log, version }) {
@@ -229,8 +230,8 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
     };
   }
 
-  async function call(method, a, path) {
-    const r = await requestJSON(method, a.url + path, { headers: auth(a.token) });
+  async function call(method, a, path, timeout) {
+    const r = await requestJSON(method, a.url + path, { headers: auth(a.token), timeout });
     if (r.status === 401) {
       log('jellyfin: token rejected; sign in again');
       forget();
@@ -274,6 +275,12 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
     return cache.items;
   }
 
+  // A title as the list has it now. OK doesn't wait on the server before its app opens: it may be asleep, and
+  // playOnTV reads the list again anyway. Only with no list yet (the service has just started) is it asked.
+  async function known(id) {
+    return (cache.items || await items()).find((it) => it.id === id);
+  }
+
   async function sessions(a) {
     const r = await get(a, '/Sessions');
     if (!r) throw new Error('signed out');
@@ -295,19 +302,24 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
   // OK on a title (item: { id, fromStart }): tells Jellyfin's app on this TV to play it, from where it stopped.
   // The app has just been opened: a hidden one doesn't play, it holds the command till it's opened. Answers
   // whether the title started; stillWanted() going false ends it at once, and it stays quiet about that.
-  async function playOnTV(item, stillWanted, { sessionMs = SESSION_WAIT_MS, startMs = START_WAIT_MS, pollMs = POLL_MS } = {}) {
+  async function playOnTV(item, stillWanted, { sessionMs = SESSION_WAIT_MS, startMs = START_WAIT_MS, pollMs = POLL_MS, registerMs = REGISTER_MS } = {}) {
     const began = Date.now();
     const say = (...what) => log(`jellyfin: resume ${item.id} (${((Date.now() - began) / 1000).toFixed(1)} s):`, ...what);
     try {
-      const title = (await items(true)).find((it) => it.id === item.id); /* its position, as of now */
       const a = account();
-      if (!title || !a) {
+      if (!a) {
+        say('signed out');
+        return false;
+      }
+      // First, so a server that isn't there is found out at once. It notes where it sees Home+ from when Home+
+      // registers, whatever entry it may have had
+      const registered = await call('POST', a, '/Sessions/Capabilities', registerMs);
+      if (!registered || registered.status >= 300) throw new Error(`registering failed (${registered ? registered.status : 'signed out'})`);
+      const title = (await items(true)).find((it) => it.id === item.id); /* its position, as of now */
+      if (!title) {
         say('it has left the list');
         return false;
       }
-      // the server notes where it sees Home+ from when Home+ registers, whatever the entry it may have had
-      const registered = await call('POST', a, '/Sessions/Capabilities');
-      if (!registered || registered.status >= 300) throw new Error(`registering failed (${registered ? registered.status : 'signed out'})`);
       const end = Date.now() + sessionMs;
       let session, doubled = false;
       for (;;) {
@@ -350,5 +362,5 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
     }
   }
 
-  return { status, startLink, setServer, disconnect, items, playOnTV };
+  return { status, startLink, setServer, disconnect, items, known, playOnTV };
 };
