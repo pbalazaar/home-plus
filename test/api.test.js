@@ -10,7 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
-const { mockServer, startService, until } = require('./helpers');
+const { mockServer, startService, sleep, until } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
 let svc, dir;
@@ -110,6 +110,43 @@ test('api: what\'s popular on a streaming app, and what\'s trending for an app w
   assert.ok(netflix.json.items.every((it) => it.background.startsWith('/img/')));
   assert.equal((await call('GET', '/api/featured?app=youtube')).json.kind, 'trending');
   assert.equal((await call('GET', '/api/featured?app=nothing.installed')).json.items.length, 0);
+});
+
+test('api: recommendation launches open the title without a search hint, or fall back to the app with its hint', async () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-recommendation-api-'));
+  fs.writeFileSync(path.join(d, 'apps.txt'), 'netflix|Netflix');
+  const log = path.join(d, 'luna.log');
+  const s = await startService(d, { HOMEPLUS_PREVIEW_RECOMMENDATIONS: '1', HOMEPLUS_PREVIEW_LUNA_LOG: log });
+  const lines = () => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const launches = () => lines().filter((l) => l.uri === 'luna://com.webos.applicationManager/launch');
+  const toasts = () => lines().filter((l) => l.uri.endsWith('/createToast'));
+  try {
+    const shelf = (await s.call('GET', '/api/featured?app=netflix')).json;
+    assert.equal(shelf.kind, 'recommendations');
+    const direct = await s.call('POST', '/api/launch', { body: {
+      id: 'netflix', recommendationId: shelf.items[0].id, toast: 'Search for Northern Lights'
+    } });
+    assert.equal(direct.json.returnValue, true);
+    assert.deepEqual(launches().map((l) => l.params), [{
+      id: 'netflix', replaceParams: { deeplinkingParams: { target: '$CONTENTID', value: 'preview-title-0' } }
+    }]);
+    await sleep(1800);
+    assert.equal(toasts().length, 0, 'a successful title launch needs no search hint');
+
+    const fallback = await s.call('POST', '/api/launch', { body: {
+      id: 'netflix', recommendationId: 'rec:invalid', params: { fallback: true }, toast: 'Search for the title'
+    } });
+    assert.equal(fallback.json.returnValue, true);
+    assert.deepEqual(launches().map((l) => l.params), [
+      { id: 'netflix', replaceParams: { deeplinkingParams: { target: '$CONTENTID', value: 'preview-title-0' } } },
+      { id: 'netflix', params: { fallback: true } }
+    ]);
+    await until(() => toasts().length, 5000, 'the fallback search hint');
+    assert.deepEqual(toasts().map((l) => l.params.message), ['Search for the title']);
+  } finally {
+    await s.stop();
+    fs.rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+  }
 });
 
 test('api: a title\'s picture comes through the service, and is kept for next time', async () => {
