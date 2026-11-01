@@ -144,6 +144,33 @@ describe('getting back to Home+', { concurrency: true }, () => {
     }
   });
 
+  test('the foreground clearing just before standby still counts as Home+ in front', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [300, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [250, { appId: '' }], [600, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      await until(() => tv.launches().length, 2000, 'Home+ after foreground cleared for standby');
+      assert.equal(tv.launches().length, 1);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('an old empty foreground does not count as Home+ before standby', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [2500, { state: 'Active Standby' }], [2750, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [250, { appId: '' }], [2850, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.livetv'), 3500, 'Live TV after wake');
+      await sleep(1100);
+      assert.equal(tv.launches().length, 0);
+    } finally {
+      await tv.stop();
+    }
+  });
+
   test('No Flash also restores Home+ after standby', async () => {
     const tv = await start({
       getPowerState: [[100, { state: 'Active' }], [700, { state: 'Active Standby' }], [950, { state: 'Active' }]],

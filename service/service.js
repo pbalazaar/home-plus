@@ -1137,7 +1137,10 @@ function watchPower() {
       if (p.state !== 'Active' || !p.processing) powerState = p.state;
       if (['Active Standby', 'Suspend', 'Power Off'].includes(p.state) &&
           !['Active Standby', 'Suspend', 'Power Off'].includes(previous)) {
-        homeBeforeStandby = lastForeground === homeTarget(readConfig());
+        const target = homeTarget(readConfig());
+        // webOS may clear the foreground just before reporting standby.
+        homeBeforeStandby = lastForeground === target ||
+          (!lastForeground && emptied.app === target && Date.now() - emptied.at < 2000);
         clearWake();
       }
       if (!tvOn || !['Active Standby', 'Suspend', 'Power Off'].includes(previous)) return;
