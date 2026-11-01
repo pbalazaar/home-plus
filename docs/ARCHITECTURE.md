@@ -18,7 +18,7 @@ The launcher talks to the service over a local HTTP API on `127.0.0.1:47823`. It
 | `GET /api/featured?app=<id>` | What's popular on a streaming app (TMDB), for its Top Shelf |
 | `GET` / `POST /api/control` | The Control Center: network, sound output, sleep timer and inputs; `{action, value}` acts |
 | `POST /api/overlay` | The Control Center over other apps asks for what it can't do itself: `{"event": "open", "target": "network"}`, or a menu or Settings page for Home+ to open (`"recents"`, `"accessibility"`, `"settings"`, `"general"`, `"accounts"`, `"about"`); `{"event": "open", "app"}` (an app it offered); `{"event": "recents"}` (the apps for its Recents, each icon a `file://` path); `{"event": "closed"}`, `{"event": "failed"}` |
-| `POST /api/settings` | Settings over other apps (`service/settings.js`): the launcher's pages as data, for the panel to draw; `{"row", "dir"}` changes a row first |
+| `POST /api/settings` | Settings over other apps (`service/settings.js`): the launcher's pages as data, for the panel to draw; `{"row", "dir"}` changes a row first; `frame`: where the open panel's frames are, as they can start with it open |
 | `GET /api/<account>/status`, `POST .../link`, `POST .../disconnect` | Accounts (`stremio`, `trakt`, `jellyfin`, `plex`): state, a sign-in code, signing out |
 | `POST /api/jellyfin/server` | A Jellyfin server's address, for one Home+ can't find |
 | `GET /api/system` | LG's settings apps |

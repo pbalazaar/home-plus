@@ -284,13 +284,15 @@ FocusScope {
         }
     }
 
-    // what changing a setting in Settings changes here too; p: the service's prefs
-    function follow(p) {
+    // what changing a setting in Settings changes here too; p: the service's prefs, frame: where its
+    // frames are, which it may have only now (Reduce Transparency turned off)
+    function follow(p, frame) {
         var c = {};
         for (var k in cc) c[k] = cc[k];
         c.clock24 = !!p.clock24;
         c.reduceMotion = !!p.reduceMotion;
         c.reduceTransparency = !!p.reduceTransparency;
+        if (frame) c.frame = frame;
         cc = c;
         time.text = Qt.formatTime(new Date(), cc.clock24 ? "hh:mm" : "h:mm AP");
         soundsOn(p.sounds !== false);

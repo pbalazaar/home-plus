@@ -301,6 +301,7 @@ Item {
             break;
         case 47:
             expect(!v.still && !v.solid, "turned off again too");
+            expect(v.cc.frame !== "", "and frames it opened without start: the glass shows the picture again");
             s.showPage(3); s.ok();
             expect(s.row.kind === "home" && s.hint.indexOf("OK opens Home+") >= 0, "a row that leaves the video says so: " + s.hint);
             expect(s.page.body.split("\n").length === 2, "the page's words");
@@ -335,11 +336,13 @@ Item {
             break;
         case 56:
             v.openRecents();
+            v.back(); v.openRecents(); // Back and open again, before the first answer
             break;
         case 57:
             expect(!!r, "Recents' strip is made");
             if (!r) return finish();
             expect(v.listKind === 5 && v.menu() === r, "it takes the controls' place");
+            expect(r.count === 3, "an older opening's answer adds no cards of its own: " + r.count);
             expect(r.index === 1, "the focus starts on the app before the one in front: " + r.index);
             r.move(1, 0); expect(r.index === 2, "Right picks the next");
             r.move(1, 0); expect(r.index === 2, "Right on the last: nothing");

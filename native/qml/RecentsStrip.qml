@@ -16,6 +16,8 @@ Item {
     property bool loading: false
     property bool failed: false
     property string problem: ""   // what went wrong, in the hint's place
+    property int openings: 0      // an answer to an older opening is let be: it would add its cards to this one's
+    readonly property int count: cards.count
 
     readonly property int cardW: 320
     readonly property int cardH: 180
@@ -32,6 +34,7 @@ Item {
     ListModel { id: cards }
 
     function open() {
+        var mine = ++openings;
         cards.clear();
         index = 0;
         closeAll = failed = false;
@@ -39,6 +42,7 @@ Item {
         loading = true;
         view.listKind = 5;
         view.host.call("overlay", { event: "recents" }, function (a) {
+            if (mine !== openings) return;
             loading = false;
             if (a.returnValue === false || !a.apps) {
                 failed = true;

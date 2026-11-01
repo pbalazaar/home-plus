@@ -68,7 +68,7 @@ Item {
                 return;
             }
             pages = a.pages;
-            view.follow(a.prefs);
+            view.follow(a.prefs, a.frame);
             problem = "";
             showPage(Math.max(0, pageOf(to)));
             if (pageOf(to) >= 0) enter();
@@ -90,7 +90,7 @@ Item {
     function load(a) {
         var was = page.id, at = row.id;
         pages = a.pages;
-        view.follow(a.prefs);
+        view.follow(a.prefs, a.frame);
         cat = Math.max(0, pageOf(was));
         index = rowOf(at) >= 0 ? rowOf(at) : Math.max(0, Math.min(index, rows.length - 1));
         keep();

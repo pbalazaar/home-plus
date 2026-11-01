@@ -47,8 +47,9 @@ since it closes what's playing too.
   more kinds of list, so everything that already stands aside for a list does for these too. They're compiled
   with the rest while the service preloads the panel.
 - Reduce Motion, Reduce Transparency, Sounds and the Clock apply to the open panel at once, and Blur Over
-  Video to its frames. The launcher re-reads prefs when it comes back; Calm Colours also needs its covers
-  remade then.
+  Video to its frames. A panel that opened with Reduce Transparency on has no frames, so they start when it's
+  turned off, and the panel hears where they are. The launcher re-reads prefs when it comes back; Calm Colours
+  also needs its covers remade then.
 - Home+'s own Settings doesn't change. The words now live in both C and JS, so a test compares them.
 - The panel sends one change at a time: two requests at once needn't reach the service in the order they were
   sent, and each change is made from what the last one left.

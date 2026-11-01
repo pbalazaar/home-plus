@@ -66,7 +66,8 @@ http.createServer((req, res) => {
     if (req.url === '/api/settings') {
       if (b.row === 'refused') { res.statusCode = 500; return res.end('{"returnValue":false,"errorText":"refused"}'); }
       if (b.row) changeSetting(b.row, b.dir);
-      return res.end(JSON.stringify({ returnValue: true, pages: pages(), prefs }));
+      const frame = b.row === 'reduceTransparency' && !prefs.reduceTransparency ? GLYPH : ''; /* (frames start, as the service's do) */
+      return res.end(JSON.stringify({ returnValue: true, pages: pages(), prefs, frame }));
     }
     if (req.url !== '/api/control') return res.end('{"returnValue":true}');
     if (b.action === 'layout') controls = b.controls;
