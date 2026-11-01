@@ -42,6 +42,7 @@ test.before(async () => {
     if (url.pathname === '/UserItems/Resume') return mode.oldServer ? { status: 404, json: {} } : { json: { Items: mode.resume || [EPISODE, MOVIE] } };
     if (url.pathname === '/Users/u1/Items/Resume') return { json: { Items: [EPISODE, MOVIE] } };
     if (url.pathname === '/Shows/NextUp') return { json: { Items: [EPISODE, NEXT] } };
+    if (mode.silent) return { hang: true };
     if (url.pathname === '/Sessions/Capabilities') return { status: 204, body: '' };
     if (url.pathname === '/Sessions') return { json: mode.sessions() };
     if (/^\/Sessions\/[^/]+\/Playing$/.test(url.pathname)) return { status: mode.playRefused ? 400 : 204, body: '' };
@@ -304,7 +305,33 @@ test('jellyfin: a title that has left the list isn\'t played', async () => {
   listing([HOME, app()]);
   const { jf } = makeJellyfin(signedIn());
   assert.equal(await jf.playOnTV({ id: 'gone' }, wanted, FAST), false);
-  assert.equal(asked('/Sessions/Capabilities').length, 0);
+  assert.equal(sent().length, 0);
+});
+
+test('jellyfin: a server that takes the call and never answers (it\'s asleep) is given up on soon', async () => {
+  const { jf } = makeJellyfin(signedIn());
+  await jf.items();
+  mode.silent = true;
+  const began = Date.now();
+  assert.equal(await jf.playOnTV({ id: 'm1' }, wanted, { sessionMs: 5000, startMs: 5000, pollMs: 10, registerMs: 100 }), false);
+  assert.ok(Date.now() - began < 1000, 'not the 25 s a session gets');
+  assert.equal(asked('/Sessions').length, 0);
+});
+
+test('jellyfin: OK knows a title from the list as it stands, however old, without asking the server', async (t) => {
+  const { jf } = makeJellyfin(signedIn());
+  await jf.items();
+  const now = Date.now(), before = server.hits.length;
+  t.mock.method(Date, 'now', () => now + 61 * 1000); /* past the minute the list is kept */
+  mode.silent = true;
+  assert.equal((await jf.known('m1')).name, 'Film');
+  assert.equal(await jf.known('gone'), undefined);
+  assert.equal(server.hits.length, before);
+});
+
+test('jellyfin: with no list yet, OK asks the server for one', async () => {
+  const { jf } = makeJellyfin(signedIn());
+  assert.equal((await jf.known('m1')).name, 'Film');
 });
 
 test('jellyfin: a server that can\'t be reached is given up on right away', async () => {

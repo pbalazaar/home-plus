@@ -1714,7 +1714,7 @@ async function handleApi(req, res) {
       const { app, source, id, fromStart } = await readBody(req);
       const m = media[source], run = resumeRun = { app, seen: false };
       if (!app || !m || !m.playOnTV) return sendJSON(res, 400, { returnValue: false, errorText: 'app and a source that can play are required' });
-      const item = (await m.items()).find((it) => it.id === id);
+      const item = await m.known(id);
       if (!item) return sendJSON(res, 404, { returnValue: false, errorText: 'that title isn\'t in the list' });
       const r = await openApp(app, null, `${item.positionTicks && !fromStart ? 'Resuming' : 'Playing'} “${item.name}”`);
       if (r && r.returnValue !== false) playInBackground(m, app, item, !!fromStart, run).catch((e) => log('resume failed', e.message));

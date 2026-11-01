@@ -20,12 +20,13 @@ const TV = { Id: 'tv', DeviceId: 'app', DeviceName: 'LG Smart TV', Client: 'Jell
 const TODAY = '“Film” is in Jellyfin’s Continue Watching';
 
 /* the service, signed in to a stand-in Jellyfin; state: what that says (connected: the TV's app has its session;
- * broken: the session list fails) */
+ * broken: the session list fails; silent: it takes every call and answers none, as one that's asleep does) */
 async function start(env = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-resume-'));
   fs.writeFileSync(path.join(dir, 'apps.txt'), `${JF}|Jellyfin,youtube|YouTube,broken|Broken`);
-  const state = { connected: true, broken: false, unregistered: false, playing: null };
+  const state = { connected: true, broken: false, unregistered: false, silent: false, playing: null };
   const server = await mockServer((req, url) => {
+    if (state.silent) return { hang: true };
     if (url.pathname === '/UserItems/Resume') return { json: { Items: [MOVIE] } };
     if (url.pathname === '/Shows/NextUp') return { json: { Items: [NEXT] } };
     if (url.pathname === '/Sessions/Capabilities') return { status: state.unregistered ? 500 : 204, body: '' };
@@ -55,6 +56,7 @@ async function start(env = {}) {
     state,
     resume: (body) => svc.call('POST', '/api/resume', { body: Object.assign({ app: JF, source: 'jellyfin' }, body) }),
     launch: (body) => svc.call('POST', '/api/launch', { body }),
+    list: () => svc.call('GET', '/api/continue?source=jellyfin'),
     launches: () => lines().filter((l) => l.uri === 'luna://com.webos.applicationManager/launch').map((l) => l.params.id),
     toasts: () => lines().filter((l) => l.uri.endsWith('/createToast')).map((l) => l.params.message),
     sent: () => server.hits.filter((h) => /\/Playing$/.test(h.path)),
@@ -137,6 +139,16 @@ describe('OK on a Jellyfin card', { concurrency: true }, () => {
     t.state.broken = true;
     await until(() => t.toasts().length > 1, 5000, 'the second toast');
     assert.deepEqual(t.toasts(), ['Resuming “Film”', TODAY]);
+  }));
+
+  test('a server asleep (it takes the call, and answers nothing): the app opens at once, then today\'s toast', () => withService({}, async (t) => {
+    await t.list();
+    t.state.silent = true;
+    const began = Date.now();
+    assert.equal((await t.resume({ id: 'm1' })).status, 200);
+    assert.ok(Date.now() - began < 1000, `answered after ${Date.now() - began} ms`);
+    assert.deepEqual(t.launches(), [JF]);
+    await until(() => t.toasts().includes(TODAY), 8000, 'today\'s toast');
   }));
 
   test('leaving the app before it\'s ready: nothing is sent, and nothing is said', () => withService({ HOMEPLUS_PREVIEW_LAUNCH_FRONT: '1' }, async (t) => {
