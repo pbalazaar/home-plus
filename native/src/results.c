@@ -242,6 +242,12 @@ int handle_result(Result *r)
             }
         }
         break;
+    case TAG_RESUME: /* the launch's answer */
+        if (r->status != 200) { /* the title's not known (it has left the list since the card came): OK as on any card */
+            launch(S.resume_app, S.resume_hint);
+            break;
+        }
+        /* fall through */
     case TAG_LAUNCH:
         if (r->status != 200 || (r->body && strstr(r->body, "\"returnValue\":false"))) {
             S.away = 0;

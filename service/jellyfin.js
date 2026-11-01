@@ -8,6 +8,9 @@
  *
  * The row shows what you're partway through, then the next episodes of the
  * shows you're watching. Emby speaks the same API; only its sign-in differs.
+ *
+ * OK on a title plays it in Jellyfin's own app (playOnTV). That app reads no
+ * launch parameters, but it obeys its server, and the server can be asked.
  */
 'use strict';
 
@@ -17,6 +20,11 @@ const { requestJSON, onThisTV } = require('./net');
 const { URL } = require('url');
 
 const TICKS_PER_MIN = 600000000; // Jellyfin times are 100 ns ticks
+const TV_DEVICE = 'LG Smart TV'; // what Jellyfin's web client calls a webOS TV
+// On the C3, with the server on the same network, the app's session came 4.5 s after a cold start and
+// playback about 2.5 s after PlayNow: these leave room for a slower server
+const SESSION_WAIT_MS = 25000, START_WAIT_MS = 15000, POLL_MS = 1000;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 module.exports = function createJellyfin({ readConfig, writeConfig, log, version }) {
   let pending = null; // { code, secret, url, name, expires_at }
@@ -213,6 +221,7 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
       poster: '',
       season: ep ? it.ParentIndexNumber || 0 : 0,
       episode: ep ? it.IndexNumber || 0 : 0,
+      positionTicks: pos,
       progress: run ? Math.max(0, Math.min(1, pos / run)) : (ud.PlayedPercentage || 0) / 100,
       remainingMin: run ? Math.max(1, Math.round((run - pos) / TICKS_PER_MIN)) : 0,
       lastWatched: ud.LastPlayedDate || '',
@@ -220,8 +229,8 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
     };
   }
 
-  async function get(a, path) {
-    const r = await requestJSON('GET', a.url + path, { headers: auth(a.token) });
+  async function call(method, a, path) {
+    const r = await requestJSON(method, a.url + path, { headers: auth(a.token) });
     if (r.status === 401) {
       log('jellyfin: token rejected; sign in again');
       forget();
@@ -230,10 +239,13 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
     return r;
   }
 
+  const get = (a, path) => call('GET', a, path);
+
   const QUERY = 'limit=16&mediaTypes=Video&enableImageTypes=Primary,Backdrop,Thumb,Logo&imageTypeLimit=1&enableUserData=true';
 
-  async function items() {
-    if (cache.items && Date.now() - cache.at < 60 * 1000) return cache.items;
+  // fresh: read it again, even if the list is new (as an outage does, it keeps the last list)
+  async function items(fresh) {
+    if (!fresh && cache.items && Date.now() - cache.at < 60 * 1000) return cache.items;
     try {
       return await fetchItems();
     } catch (e) { /* an outage doesn't empty the shelf: the last list stays */
@@ -262,5 +274,81 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
     return cache.items;
   }
 
-  return { status, startLink, setServer, disconnect, items };
+  async function sessions(a) {
+    const r = await get(a, '/Sessions');
+    if (!r) throw new Error('signed out');
+    if (r.status !== 200 || !Array.isArray(r.json)) throw new Error(`sessions failed (${r.status})`);
+    return r.json;
+  }
+
+  // This TV's sessions in the server's list: the ones named as Jellyfin's app names a TV, reaching the server
+  // from the address Home+ does. Home+'s own entry shows that address, which Docker or a proxy can make
+  // something other than the TV's. Client can't say which they are (it depends on when the app signed in), nor
+  // can DeviceId (the TV's two sessions don't share one). The address is empty on an entry that hasn't
+  // registered, and two empty ones aren't one address.
+  function tvSessions(list) {
+    const me = list.find((s) => s.DeviceId === deviceId());
+    if (!me || !me.RemoteEndPoint) return [];
+    return list.filter((s) => s.DeviceName === TV_DEVICE && s.RemoteEndPoint === me.RemoteEndPoint);
+  }
+
+  // OK on a title (item: { id, fromStart }): tells Jellyfin's app on this TV to play it, from where it stopped.
+  // The app has just been opened: a hidden one doesn't play, it holds the command till it's opened. Answers
+  // whether the title started; stillWanted() going false ends it at once, and it stays quiet about that.
+  async function playOnTV(item, stillWanted, { sessionMs = SESSION_WAIT_MS, startMs = START_WAIT_MS, pollMs = POLL_MS } = {}) {
+    const began = Date.now();
+    const say = (...what) => log(`jellyfin: resume ${item.id} (${((Date.now() - began) / 1000).toFixed(1)} s):`, ...what);
+    try {
+      const title = (await items(true)).find((it) => it.id === item.id); /* its position, as of now */
+      const a = account();
+      if (!title || !a) {
+        say('it has left the list');
+        return false;
+      }
+      // the server notes where it sees Home+ from when Home+ registers, whatever the entry it may have had
+      const registered = await call('POST', a, '/Sessions/Capabilities');
+      if (!registered || registered.status >= 300) throw new Error(`registering failed (${registered ? registered.status : 'signed out'})`);
+      const end = Date.now() + sessionMs;
+      let session, doubled = false;
+      for (;;) {
+        if (!stillWanted()) return false;
+        const open = tvSessions(await sessions(a)).filter((s) => s.SupportsRemoteControl);
+        if (open.length === 1) {
+          session = open[0];
+          break;
+        }
+        if (open.length > 1 && !doubled) { /* it never guesses */
+          doubled = true;
+          say('two sessions at this address: picking neither');
+        }
+        if (Date.now() >= end) {
+          say('no session for this TV');
+          return false;
+        }
+        await sleep(pollMs);
+      }
+      if (!stillWanted()) return false; /* (it may have left while the list was on its way) */
+      const ticks = item.fromStart ? 0 : title.positionTicks;
+      say('PlayNow from', ticks, 'to', session.Client, session.Id);
+      const sent = await call('POST', a, `/Sessions/${encodeURIComponent(session.Id)}/Playing?playCommand=PlayNow&itemIds=${encodeURIComponent(item.id)}&startPositionTicks=${ticks}`);
+      if (!sent || sent.status >= 300) throw new Error(`PlayNow failed (${sent ? sent.status : 'signed out'})`);
+      // not only the session it went to: playback is often reported on another of this TV's
+      for (const until = Date.now() + startMs; Date.now() < until;) {
+        await sleep(pollMs);
+        if (!stillWanted()) return false;
+        const playing = tvSessions(await sessions(a)).find((s) => s.NowPlayingItem && s.NowPlayingItem.Id === item.id);
+        if (playing) {
+          say('playing on', playing.Client, playing.Id);
+          return true;
+        }
+      }
+      say('it didn\'t start');
+      return false;
+    } catch (e) { /* the server can't be reached, or won't: the app stays open */
+      say('failed:', e.message);
+      return false;
+    }
+  }
+
+  return { status, startLink, setServer, disconnect, items, playOnTV };
 };

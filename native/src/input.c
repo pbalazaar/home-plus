@@ -56,6 +56,10 @@ static void activate(void)
     if (S.zone == 1) {
         App *a = item_app(S.focus);
         if (a && S.rail_index < S.nrail) {
+            if (S.rail_source == SRC_JELLYFIN) { /* its server can send its app to a title */
+                resume_title(a, S.rail[S.rail_index].id, 0);
+                return;
+            }
             /* LG's apps can't be sent to a title: open the app and say where the title is */
             char hint[300];
             const char *name = S.rail[S.rail_index].name;
@@ -68,7 +72,7 @@ static void activate(void)
                 launch(a->id, hint);
                 snprintf(hint, sizeof hint, "Opening %s. Search for \xE2\x80\x9C%s\xE2\x80\x9D.", a->title, name);
             } else {
-                snprintf(hint, sizeof hint, "\xE2\x80\x9C%s\xE2\x80\x9D is in %s\xE2\x80\x99s Continue Watching", name, a->title);
+                snprintf(hint, sizeof hint, CONTINUE_HINT, name, a->title);
                 launch(a->id, hint);
                 snprintf(hint, sizeof hint, "Opening %s. Look for \xE2\x80\x9C%s\xE2\x80\x9D in Continue Watching.", a->title, name);
             }

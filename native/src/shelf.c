@@ -251,7 +251,9 @@ static void rail_fill(cJSON *arr, int src, const char *app, const char *heading,
         snprintf(hint, sizeof hint, "OK opens %s", opens);
         tex_free(&S.rail_hint);
         S.rail_hint = text_render(S.f_medium, HINT_PX, hint, 0, &S.rail_hint_w, &S.rail_hint_h);
-        snprintf(hint, sizeof hint, "Left and right for more  \xC2\xB7  OK opens %s", opens); /* while you step through them */
+        /* while you step through them, OK is on the title: Jellyfin's can be played */
+        if (src == SRC_JELLYFIN) snprintf(hint, sizeof hint, "Left and right for more  \xC2\xB7  OK plays  \xC2\xB7  Hold OK for options");
+        else snprintf(hint, sizeof hint, "Left and right for more  \xC2\xB7  OK opens %s", opens);
         tex_free(&S.rail_browse);
         S.rail_browse = text_render(S.f_medium, HINT_PX, hint, 0, &S.rail_browse_w, &S.rail_browse_h);
         S.rail_source = src;
@@ -715,7 +717,7 @@ static void draw_rail_content(RailItem *cur, Uint8 alpha, float title, float ske
     } else {
         if (S.zone == ZONE_RAIL && S.rail_browse)
             draw_shelf_text(S.rail_browse, S.rail_browse_w, S.rail_browse_h, LEFT, y, (Uint8)(SHELF_DETAIL_ALPHA * alpha / 255));
-        else draw_shelf_text(S.rail_hint, S.rail_hint_w, S.rail_hint_h, LEFT, y, (Uint8)(SHELF_DETAIL_ALPHA * alpha / 255 * cc)); /* it can't resume from here */
+        else draw_shelf_text(S.rail_hint, S.rail_hint_w, S.rail_hint_h, LEFT, y, (Uint8)(SHELF_DETAIL_ALPHA * alpha / 255 * cc)); /* (from the tile: OK opens the app) */
     }
     if (full && S.rail_source == SRC_STREMIO && cur->resume_tex)
         draw_shelf_text(cur->resume_tex, cur->rw, cur->rh, LEFT, resume_y, (Uint8)(SHELF_DETAIL_ALPHA * ta / 255));

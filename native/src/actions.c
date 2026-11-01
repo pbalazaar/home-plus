@@ -52,6 +52,9 @@ void run_action(Action act, int arg, const char *id)
     case ACT_CC_RESET:
         cc_post("{\"action\":\"reset\"}");
         break;
+    case ACT_PLAY_START:
+        if (a) resume_title(a, id, 1);
+        break;
     case ACT_MOVE: S.moving = 1; break;
     case ACT_FRONT: move_item_to(0); save_layout(); break;
     case ACT_DELETE_ASK: { /* tvOS's question */
