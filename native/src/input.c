@@ -2,6 +2,7 @@
 #include <dlfcn.h>
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "home.h"
 
@@ -56,9 +57,14 @@ static void activate(void)
     if (S.zone == 1) {
         App *a = item_app(S.focus);
         if (a && S.rail_index < S.nrail) {
-            /* LG's apps can't be sent to a title: open the app and say where the title is */
             char hint[300];
-            const char *name = S.rail[S.rail_index].name;
+            const RailItem *item = &S.rail[S.rail_index];
+            const char *name = item->name;
+            if (S.rail_source == SRC_FEATURED && !strncmp(item->id, "rec:", 4)) {
+                snprintf(hint, sizeof hint, "Search for \xE2\x80\x9C%s\xE2\x80\x9D in %s", name, a->title);
+                launch_recommendation(a->id, item->id, hint);
+                return;
+            }
             if (S.rail_source == SRC_FEATURED && S.rail_trending) { /* not the app's: just open it */
                 launch(a->id, NULL);
                 return;

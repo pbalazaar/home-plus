@@ -22,6 +22,13 @@ for name in scenes:
         continue
     if ImageStat.Stat(img.convert('L')).stddev[0] < 8:
         problems.append(f'{name}: blank')
+    if name == 'provider-details-enabled' and (out / 'native-provider-details-off.png').exists():
+        # The same app stays selected. Enabling details must replace its plain card with metadata.
+        area = (60, 180, 960, 665)
+        plain = Image.open(out / 'native-provider-details-off.png').convert('RGB').crop(area)
+        diff = ImageChops.difference(img.crop(area), plain).convert('L').histogram()
+        if sum(diff[17:]) / sum(diff) < 0.005:
+            problems.append(f'{name}: the shelf stayed plain after enabling details')
     if name == 'signin-plex':
         # the QR code's middle, on its white card: dark modules (Plex sends white ones on transparency)
         card = img.convert('L').crop((820, 360, 1100, 640)).histogram()

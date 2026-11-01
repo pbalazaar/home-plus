@@ -103,6 +103,10 @@ service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=1 HOMEPLUS_PREVIEW_TMDB=1 HOME
 shot stremio-details-off "RRUR" 5500
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_MEDIA=1 HOMEPLUS_PREVIEW_TMDB=1 HOMEPLUS_PREVIEW_PREFS='{"topShelfDetails":"compact"}'
 shot stremio-details-compact "RRUR" 5500
+# Enable details on the same provider shelf that loaded plain cards while Off.
+service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_TMDB=1 HOMEPLUS_PREVIEW_RECOMMENDATIONS=1 HOMEPLUS_PREVIEW_PREFS='{"topShelfDetails":"off","shelfTurns":false}'
+shot provider-details-off "UU" 4500
+shot provider-details-enabled "UUODDDDRODODDDDDRRBB" 10000
 # streaming apps: what's popular on them (a mock TMDB), turning, and stepping through with Up
 service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_TMDB=1
 shot popular "" 5200

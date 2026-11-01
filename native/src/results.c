@@ -185,7 +185,11 @@ int handle_result(Result *r)
             for (int i = 0; i < NTINTS; i++)
                 if (!strcasecmp(tint, TINTS[i].name)) S.icon_tint = i;
             cJSON_Delete(o);
-            if (r->kind == JOB_POST && S.shelf_details != SHELF_DETAILS_OFF) rail_request(SRC_STREMIO);
+            if (r->kind == JOB_POST && S.shelf_details != SHELF_DETAILS_OFF) {
+                App *a = shelf_app();
+                if (a && !media_source(a)) a->feat_refresh = 1;
+                else rail_request(SRC_STREMIO);
+            }
         } else if (r->kind == JOB_POST) {
             toast("Couldn\xE2\x80\x99t save Top Shelf Details", 3500);
             net_get_json("/api/prefs", TAG_PREFS, 0, 0);

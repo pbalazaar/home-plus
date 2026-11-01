@@ -207,7 +207,8 @@ void settings_page(int page, int index)
         char about[700];
         snprintf(about, sizeof about, "Home+ %s, %s\n%s\nMIT licence \xC2\xB7 github.com/pbalazaar/home-plus\n"
                  "Not affiliated with LG, Apple, Stremio, Trakt, Jellyfin or Plex.\n"
-                 "Uses the TMDB API but is not endorsed or certified by TMDB.",
+                 "Uses the TMDB API but is not endorsed or certified by TMDB.\n"
+                 "Streaming availability data from JustWatch.",
                  S.svc_version[0] ? S.svc_version : "\xE2\x80\x93",
                  S.svc_elevated ? "set up with Homebrew Channel" : "not set up yet", keys);
         sheet_body(about);

@@ -166,8 +166,17 @@ if (process.env.HOMEPLUS_PREVIEW_TMDB) {
       genre_ids: [kind === 'tv' ? 18 : 12],
       overview: `${name} follows a small group whose plans change after an unexpected discovery. They must decide what matters most as the story unfolds.` }));
   http.createServer((req, res) => {
-    const p = new URL(req.url, BASE).pathname;
+    const url = new URL(req.url, BASE), p = url.pathname;
     if (/^\/tmdb\/watch\/providers\//.test(p)) return json(res, { results: PROVIDERS });
+    if (p === '/tmdb/search/multi') {
+      const name = url.searchParams.get('query'), i = NAMES.indexOf(name);
+      return json(res, { results: i < 0 ? [] : [{ id: 800 + i, media_type: 'tv', name, genre_ids: [18],
+        first_air_date: '2025-01-01', vote_average: 8.4,
+        overview: name + ' follows a small group whose plans change after an unexpected discovery.',
+        backdrop_path: '/b' + i + '.jpg' }] });
+    }
+    if (/^\/tmdb\/tv\/80\d\/watch\/providers$/.exec(p))
+      return json(res, { results: { US: { flatrate: [{ provider_id: 8 }] } } });
     if (p === '/tmdb/genre/tv/list') return json(res, { genres: [{ id: 18, name: 'Drama' }] });
     if (p === '/tmdb/genre/movie/list') return json(res, { genres: [{ id: 12, name: 'Adventure' }] });
     const found = /^\/tmdb\/find\/tt000000(\d)$/.exec(p);
@@ -240,6 +249,17 @@ const DESC = {
 };
 let moved = 0; /* frames of moving video so far (capture.json, below) */
 global.__stubLuna = (uri, params) => {
+  // Real recommendation cards through the service, including Details Off -> On.
+  if (process.env.HOMEPLUS_PREVIEW_RECOMMENDATIONS) {
+    if (uri.endsWith('/getAllContents')) return { returnValue: true, allContents: [{
+      launchPointId: 'netflix_default', contents: ['Northern Lights', 'The Long Orbit'].map((titleText, i) => ({
+        type: 'content', titleText, image: { url: process.env.HOMEPLUS_TMDB_IMAGES + '/w1280/b' + i + '.jpg' },
+        onClick: { targetAppId: 'netflix', contentId: 'preview-title-' + i }
+      }))
+    }] };
+    if (uri.endsWith('/getAppInfo') && params.id === 'netflix')
+      return { returnValue: true, appInfo: { deeplinkingParams: '{"contentTarget":"$CONTENTID"}' } };
+  }
   if (uri.endsWith('/getAllInputStatus')) {
     return { returnValue: true, arcDevice: true, devices: [
       { id: 'HDMI_1', appId: 'com.webos.app.hdmi1', label: 'HDMI 1', hdmiPlugIn: false },

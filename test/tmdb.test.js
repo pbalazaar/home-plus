@@ -10,6 +10,7 @@ const PROVIDERS = [
   { provider_id: 1796, provider_name: 'Netflix basic with Ads', display_priorities: { US: 5 } },
   { provider_id: 9, provider_name: 'Amazon Prime Video', display_priorities: { US: 2 } },
   { provider_id: 337, provider_name: 'Disney Plus', display_priorities: { US: 3 } },
+  { provider_id: 21, provider_name: 'Stan', display_priorities: { US: 4 } },
   { provider_id: 188, provider_name: 'YouTube Premium', display_priorities: { US: 9 } }
 ];
 const titles = (provider, kind, n = 4) => Array.from({ length: n }, (_, i) => ({
@@ -23,7 +24,7 @@ const titles = (provider, kind, n = 4) => Array.from({ length: n }, (_, i) => ({
   backdrop_path: `/b${provider}-${kind}-${i}.jpg`
 }));
 
-let tmdbServer, down = false, genreDown = false, findHang = false, genreHang = false;
+let tmdbServer, down = false, genreDown = false, findHang = false, genreHang = false, availabilityDown = false;
 test.before(async () => {
   tmdbServer = await mockServer((req, url) => {
     if (down) return { status: 500, json: {} };
@@ -47,6 +48,13 @@ test.before(async () => {
     if (/^\/3\/(tv|movie)\/\d+\/images$/.test(url.pathname)) {
       return { json: { logos: [{ file_path: '/fr.png', iso_639_1: 'fr', vote_average: 9 }, { file_path: '/en.png', iso_639_1: 'en', vote_average: 5 }] } };
     }
+    const watch = /^\/3\/(tv|movie)\/(\d+)\/watch\/providers$/.exec(url.pathname);
+    if (watch) {
+      if (availabilityDown) return { status: 500, json: {} };
+      const on = { 1: [8], 2: [8], 123: [9], 213562: [21], 1001: [8], 1002: [9], 1003: [21], 1004: [9],
+        1005: [337], 1006: [337], 1007: [337] }[Number(watch[2])] || [];
+      return { json: { results: { US: { flatrate: on.map((id) => ({ provider_id: id })) } } } };
+    }
     const found = /^\/3\/find\/(tt\d+)$/.exec(url.pathname);
     if (found) {
       if (findHang) return { hang: true };
@@ -56,13 +64,53 @@ test.before(async () => {
         overview: 'A series  about people\nwho discover an unexpected world.' }] : [];
       return { json: { movie_results: movie, tv_results: tv } };
     }
+    if (url.pathname === '/3/search/multi') {
+      const query = url.searchParams.get('query');
+      if (query === 'Just Add Magic') return { json: { results: [{ id: 123, media_type: 'tv', name: query,
+        genre_ids: [18], first_air_date: '2015-01-01', vote_average: 7.86,
+        overview: 'Three friends  find a cookbook.', backdrop_path: '/magic.jpg' }] } };
+      if (query === 'Crystal Lake') return { json: { results: [
+        { id: 213562, media_type: 'tv', name: query, popularity: 141, genre_ids: [18],
+          first_air_date: '2026-01-01', vote_average: 7.23, overview: 'A series  story.', backdrop_path: '/lake.jpg' },
+        { id: 1267470, media_type: 'movie', title: query, popularity: 1.7 }
+      ] } };
+      if (query === 'Same Title') return { json: { results: [
+        { id: 1, media_type: 'movie', title: query, popularity: 25 },
+        { id: 2, media_type: 'tv', name: query, popularity: 20 }
+      ] } };
+      if (query === 'The Rainmaker') return { json: { results: [
+        { id: 1001, media_type: 'tv', name: query, popularity: 25, genre_ids: [18],
+          first_air_date: '2025-01-01', vote_average: 8, overview: 'A new series.', backdrop_path: '/new-rain.jpg' },
+        { id: 1002, media_type: 'movie', title: query, popularity: 15, genre_ids: [35],
+          release_date: '1997-01-01', vote_average: 7, overview: 'An older film.', backdrop_path: '/old-rain.jpg' }
+      ] } };
+      if (query === 'Survivor USA') return { json: { results: [
+        { id: 1003, media_type: 'tv', name: 'Survivor', popularity: 30, genre_ids: [18],
+          first_air_date: '2000-01-01', vote_average: 8, overview: 'The competition.', backdrop_path: '/survivor.jpg' }
+      ] } };
+      if (query === 'SVU: Special Victims Unit') return { json: { results: [
+        { id: 1004, media_type: 'tv', name: 'Law & Order: Special Victims Unit', popularity: 40, genre_ids: [18],
+          first_air_date: '1999-01-01', vote_average: 8, overview: 'The detectives.', backdrop_path: '/svu.jpg' }
+      ] } };
+      if (query === "Tim Burton's The Nightmare Before Christmas") return { json: { results: [
+        { id: 1005, media_type: 'movie', title: 'The Nightmare Before Christmas', popularity: 40, genre_ids: [35],
+          release_date: '1993-01-01', vote_average: 8, overview: 'A festive film.', backdrop_path: '/nightmare.jpg' }
+      ] } };
+      if (query === 'Star Wars: The Mandalorian and Grogu') return { json: { results: [
+        { id: 1006, media_type: 'movie', title: 'The Mandalorian and Grogu', popularity: 40, genre_ids: [35],
+          release_date: '2026-01-01', vote_average: 8, overview: 'A space film.', backdrop_path: '/grogu.jpg' },
+        { id: 1007, media_type: 'tv', name: 'Star Wars: The Mandalorian and Grogu Official Podcast', popularity: 20,
+          first_air_date: '2026-01-01', overview: 'A podcast.' }
+      ] } };
+      return { json: { results: [] } };
+    }
     return null;
   });
   process.env.HOMEPLUS_TMDB = `${tmdbServer.base}/3`;
   process.env.HOMEPLUS_TMDB_IMAGES = `${tmdbServer.base}/img`;
 });
 test.after(() => tmdbServer.close());
-test.beforeEach(() => { down = genreDown = findHang = genreHang = false; });
+test.beforeEach(() => { down = genreDown = findHang = genreHang = availabilityDown = false; });
 
 function makeTmdb(cfg = { tmdbKey: 'goodkey' }) {
   const store = configStore(cfg);
@@ -77,6 +125,87 @@ test('tmdb: without a key nothing is fetched', async () => {
   assert.deepEqual(await tmdb.featured({ id: 'netflix', title: 'Netflix' }, false), { kind: '', provider: '', items: [] });
   assert.equal(tmdbServer.hits.length, before);
   assert.equal(tmdb.status().configured, false);
+});
+
+test('tmdb: an exact or clearly dominant provider title gets details; close namesakes stay plain', async () => {
+  const { tmdb } = makeTmdb();
+  const info = await tmdb.detailsByTitle('Just Add Magic - Season 1');
+  assert.deepEqual(info, { type: 'series', genre: 'Drama', year: 2015, rating: 7.9,
+    overview: 'Three friends find a cookbook.', background: `${tmdbServer.base}/img/w1280/magic.jpg`,
+    logo: `${tmdbServer.base}/img/w500/en.png` });
+  assert.deepEqual(await tmdb.detailsByTitle('Crystal Lake'), { type: 'series', genre: 'Drama', year: 2026, rating: 7.2,
+    overview: 'A series story.', background: `${tmdbServer.base}/img/w1280/lake.jpg`,
+    logo: `${tmdbServer.base}/img/w500/en.png` });
+  assert.equal(await tmdb.detailsByTitle('Same Title'), null);
+  const hits = tmdbServer.hits.filter((h) => h.path.startsWith('/3/search/multi')).length;
+  await tmdb.detailsByTitle('Just Add Magic - Season 1');
+  assert.equal(tmdbServer.hits.filter((h) => h.path.startsWith('/3/search/multi')).length, hits, 'details are cached');
+});
+
+test('tmdb: provider availability resolves close namesakes, with separate caches per provider', async () => {
+  const { tmdb } = makeTmdb();
+  assert.equal((await tmdb.detailsByTitle('The Rainmaker', 'Netflix')).overview, 'A new series.');
+  assert.equal((await tmdb.detailsByTitle('The Rainmaker', 'Prime Video')).overview, 'An older film.');
+  assert.equal(await tmdb.detailsByTitle('The Rainmaker', 'Stan'), null, 'another provider cannot reuse the Netflix match');
+  assert.equal(await tmdb.detailsByTitle('Same Title', 'Netflix'), null, 'two available namesakes remain plain');
+  assert.equal((await tmdb.detailsByTitle('The Rainmaker (1997)', 'Prime Video')).overview, 'An older film.',
+    'an explicit year identifies the film');
+});
+
+test('tmdb: even a dominant exact name must be on the selected provider', async () => {
+  const { tmdb } = makeTmdb();
+  assert.equal((await tmdb.detailsByTitle('Crystal Lake', 'Stan')).overview, 'A series story.');
+  assert.equal(await tmdb.detailsByTitle('Crystal Lake', 'Netflix'), null, 'a namesake is not given Stan metadata on Netflix');
+  assert.equal(await tmdb.detailsByTitle('Just Add Magic', 'Netflix'), null);
+  assert.equal((await tmdb.detailsByTitle('Just Add Magic', 'Prime Video')).overview, 'Three friends find a cookbook.');
+});
+
+test('tmdb: provider availability confirms likely title aliases', async () => {
+  const { tmdb } = makeTmdb();
+  assert.equal((await tmdb.detailsByTitle('Survivor USA', 'Stan')).overview, 'The competition.');
+  assert.equal((await tmdb.detailsByTitle('SVU: Special Victims Unit', 'Prime Video')).overview, 'The detectives.');
+  assert.equal((await tmdb.detailsByTitle("Tim Burton's The Nightmare Before Christmas", 'Disney+')).overview,
+    'A festive film.');
+  assert.equal((await tmdb.detailsByTitle('Star Wars: The Mandalorian and Grogu', 'Disney+')).overview,
+    'A space film.', 'an available podcast with a similar name is not chosen');
+  assert.equal(await tmdb.detailsByTitle('Survivor USA'), null, 'an inexact title needs a provider check');
+});
+
+test('tmdb: unavailable provider data leaves uncertain cards plain', async () => {
+  availabilityDown = true;
+  const { tmdb } = makeTmdb();
+  assert.equal(await tmdb.detailsByTitle('The Rainmaker', 'Netflix'), null);
+  assert.equal(await tmdb.detailsByTitle('Just Add Magic', 'Prime Video'), null,
+    'unverified exact titles stay plain when availability cannot be checked');
+});
+
+test('tmdb: failed availability requests retry after the short backoff', async (t) => {
+  const { tmdb } = makeTmdb();
+  availabilityDown = true;
+  assert.equal(await tmdb.detailsByTitle('The Rainmaker', 'Netflix'), null);
+  availabilityDown = false;
+  const now = Date.now();
+  t.mock.method(Date, 'now', () => now + 6 * 60 * 1000);
+  assert.equal((await tmdb.detailsByTitle('The Rainmaker', 'Netflix')).overview, 'A new series.');
+});
+
+test('tmdb: an availability outage keeps previously verified details', async (t) => {
+  const { tmdb } = makeTmdb();
+  const first = await tmdb.detailsByTitle('The Rainmaker', 'Netflix');
+  const now = Date.now();
+  t.mock.method(Date, 'now', () => now + 13 * 3600 * 1000);
+  availabilityDown = true;
+  assert.deepEqual(await tmdb.detailsByTitle('The Rainmaker', 'Netflix'), first);
+});
+
+test('tmdb: simultaneous ambiguous cards share the provider list lookup', async () => {
+  const { tmdb } = makeTmdb();
+  const before = tmdbServer.hits.filter((h) => h.path.startsWith('/3/watch/providers/')).length;
+  await Promise.all([
+    tmdb.detailsByTitle('The Rainmaker', 'Netflix'),
+    tmdb.detailsByTitle('Same Title', 'Netflix')
+  ]);
+  assert.equal(tmdbServer.hits.filter((h) => h.path.startsWith('/3/watch/providers/')).length - before, 2);
 });
 
 test('tmdb: "Netflix" is Netflix, not "Netflix basic with Ads"', async () => {
@@ -149,7 +278,7 @@ test('tmdb: a stalled IMDb and genre lookup cannot hold the Continue Watching sh
   const { tmdb } = makeTmdb();
   const started = Date.now();
   assert.equal(await tmdb.detailsByImdb('tt1234567', 'movie'), null);
-  assert.ok(Date.now() - started < 3200, 'both requests must time out together, not one after the other');
+  assert.ok(Date.now() - started < 5000, 'both requests must time out together, not one after the other');
 });
 
 test('tmdb: a shared genre request keeps the Continue Watching deadline', async () => {

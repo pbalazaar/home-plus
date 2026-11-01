@@ -206,7 +206,9 @@ Home+ checks the key with TMDB before keeping it, and `{"key":""}` removes it. T
 
 ![Trending Now behind YouTube](docs/screenshots/trending.jpg)
 
-An app counts as a streaming service when its name is one TMDB lists for your TV's country (its LG store country). Its 10 most popular series and films are fetched every 12 hours. **OK** opens the app and names the title, ready to search for: LG's apps can't be sent to a title.
+Apps that publish clickable recommendations show those titles in Top Shelf. **OK** opens a recommendation in its app. Home+ adds TMDB details only when TMDB also lists that title on the app in your TV's country. Unverified matches keep the app's own artwork and title. Availability data comes from [JustWatch](https://www.justwatch.com) through TMDB. Top Shelf Details set to Off skips these title lookups.
+
+For apps without compatible recommendations, Home+ shows the 10 most popular films and series TMDB lists for that service. These are refreshed every 12 hours; **OK** opens the app and names the title to search for.
 
 ## Home button
 
@@ -288,7 +290,7 @@ If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot s
 
 ## Privacy and security
 
-- **What Home+ connects to:** only the services you sign in to: Stremio's and Trakt's APIs, `plex.tv` and your Plex server, your Jellyfin server, and TMDB (`api.themoviedb.org`, `image.tmdb.org`) if you add a key. With a TMDB key and Top Shelf Details enabled, Home+ sends IMDb IDs from Continue Watching to TMDB for genre, rating and synopsis. Stremio artwork comes from `images.metahub.space`; Jellyfin and Plex artwork comes from your server. To find a Jellyfin server, Home+ sends one broadcast on your local network (UDP port 7359), only when you start a Jellyfin sign-in.
+- **What Home+ connects to:** only the services you sign in to: Stremio's and Trakt's APIs, `plex.tv` and your Plex server, your Jellyfin server, and TMDB (`api.themoviedb.org`, `image.tmdb.org`) if you add a key. With a TMDB key and Top Shelf Details enabled, Home+ sends IMDb IDs from Continue Watching and app recommendation titles to TMDB for genre, rating and synopsis. Stremio artwork comes from `images.metahub.space`; Jellyfin and Plex artwork comes from your server. To find a Jellyfin server, Home+ sends one broadcast on your local network (UDP port 7359), only when you start a Jellyfin sign-in.
 - **Signing out:** Settings → Accounts signs out of Stremio and ends Home+'s session on your Jellyfin server. Plex lists Home+ under your account's **Authorized Devices**; remove it there to revoke its access.
 - **What's stored:** sign-ins, your layout and preferences, in `/var/lib/homeplus/config.json`, and the Top Shelf's pictures, so they show at once the next time, in `/var/lib/homeplus/images` (up to 64 MB). Both are readable only by root, and **Remove Home+** deletes them.
 - **The local API:** the service runs as root and answers only on `127.0.0.1`. Every request needs a token the service writes into Home+'s app folder, and requests from web pages and other hosts are refused.

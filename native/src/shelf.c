@@ -196,6 +196,7 @@ void featured_request(App *a)
     char path[ID_LEN + 32];
     snprintf(path, sizeof path, "/api/featured?app=%s", a->id);
     if (!a->feat) a->feat = 1;
+    a->feat_refresh = 0;
     S.feat_req = (int)(a - S.apps);
     net_get_json(path, TAG_FEATURED, S.feat_req, S.generation);
 }
@@ -387,20 +388,23 @@ void parse_continue(const char *json, int src)
     cJSON_Delete(o);
 }
 
-/* An app's titles from TMDB, for its Top Shelf: what's popular on the streaming
- * service it is, or what's trending (an app with no picture); none: neither. */
+/* An app's own recommendations, or TMDB's popular/trending fallback. */
 void parse_featured(const char *json, App *a)
 {
     cJSON *o = cJSON_Parse(json);
     cJSON *arr = o ? cJSON_GetObjectItem(o, "items") : NULL;
     int n = cJSON_GetArraySize(arr), trending = o && !strcmp(jstr(o, "kind"), "trending");
+    int recommended = o && !strcmp(jstr(o, "kind"), "recommendations");
     a->feat = n > 0 ? 2 : 3;
     if (n > 0 && a == shelf_app()) {
         char heading[ID_LEN + 16], name[ID_LEN];
         short_title(a, name, sizeof name);
         if (trending) snprintf(heading, sizeof heading, "Trending Now");
+        else if (recommended) snprintf(heading, sizeof heading, "Recommended on %s", name);
         else snprintf(heading, sizeof heading, "Popular on %s", name);
-        rail_fill(arr, SRC_FEATURED, a->id, heading, name);
+        char opens[ID_LEN + 24];
+        if (recommended) snprintf(opens, sizeof opens, "this title in %s", name);
+        rail_fill(arr, SRC_FEATURED, a->id, heading, recommended ? opens : name);
         S.rail_trending = trending;
     }
     cJSON_Delete(o);
@@ -419,7 +423,7 @@ int carousel_coming(const App *a)
 {
     int src = media_source(a);
     if (src) return S.rail_req == src;
-    return S.tmdb_configured && S.service_ok && (a->feat <= 1 || (a->feat == 2 && !rail_for(a)));
+    return S.service_ok && (a->feat <= 1 || (a->feat == 2 && !rail_for(a)));
 }
 
 /* Whether the Top Shelf can show the page (item, rail) yet: a title once its picture and
@@ -463,8 +467,8 @@ void shelf_load(void)
     int want = want_source();
     if (want && want != SRC_FEATURED && want != S.rail_source && want != S.rail_req && S.service_ok) rail_request(want);
     App *sa = shelf_app();
-    if (sa && !media_source(sa) && S.tmdb_configured && S.service_ok && S.feat_req < 0 &&
-        (sa->feat == 0 || (sa->feat == 2 && !rail_for(sa))))
+    if (sa && !media_source(sa) && S.service_ok && S.feat_req < 0 &&
+        (sa->feat_refresh || sa->feat == 0 || (sa->feat == 2 && !rail_for(sa))))
         featured_request(sa); /* a streaming service? (the service keeps its list) */
     if (rail_active()) {
         int nx = (S.rail_index + 1) % S.nrail, pv = (S.rail_index + S.nrail - 1) % S.nrail;

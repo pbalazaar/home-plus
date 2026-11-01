@@ -177,6 +177,7 @@ typedef struct {
     float ink_tint;               /* its logo is grey or white on a coloured icon: on a dark tile it takes that colour */
     int icon_state, art_state; /* 0 idle, 1 loading, 2 ready, 3 failed */
     int feat; /* a streaming service with popular titles (TMDB): 0 not asked, 1 asking, 2 yes, 3 no */
+    int feat_refresh; /* saved detail preferences need fresh cards, after any request already on its way */
     int removable, deleted; /* it can be deleted from the TV; it was, and the app list hasn't caught up */
     int lw, lh, bw, bh;
     float s, sv; /* focus animation 0..1, and its spring velocity */
@@ -668,6 +669,7 @@ void parse_layout(const char *json);
 int parse_apps(const char *json);
 void request_icons(void);
 void launch_app(const char *id, const char *params, const char *hint);
+void launch_recommendation(const char *id, const char *recommendation_id, const char *hint);
 void launch(const char *id, const char *hint);
 void close_apps(const char *id);
 App *app_by_id(const char *id);
