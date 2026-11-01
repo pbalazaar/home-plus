@@ -115,3 +115,30 @@ test('slow TMDB metadata does not hold an app recommendation shelf', async () =>
   assert.equal(shelf.items[0].overview, '');
   assert.ok(Date.now() - started < 5000, 'the app title remains available while TMDB is slow');
 });
+
+test('unmatched recommendations use provider details without changing their launch ID', async () => {
+  const card = { type: 'content', titleText: 'Spike', image: { url: 'https://example.com/spike.jpg' },
+    onClick: { targetAppId: 'netflix', contentId: 'private-provider-id' } };
+  const calls = [];
+  const luna = async (uri, params) => {
+    if (uri.endsWith('/getAllContents')) return { returnValue: true, allContents: [{ launchPointId: 'netflix_default', contents: [card] }] };
+    if (uri.endsWith('/getAppInfo')) return { appInfo: { deeplinkingParams: '{"contentTarget":"$CONTENTID"}' } };
+    if (uri.endsWith('/launch')) { calls.push(params); return { returnValue: true }; }
+    throw new Error(uri);
+  };
+  let pageLookups = 0;
+  const providerDetails = { details: async () => {
+    pageLookups++;
+    return { type: 'series', genre: 'Kids', year: 2024, rating: 0, overview: 'Friends learn together.' };
+  } };
+  const recommendations = createRecommendations({ luna, tmdb: { detailsByTitle: async () => null }, providerDetails, log: () => {} });
+  const shelf = await recommendations.featured('netflix', 'Netflix');
+  assert.equal(shelf.items[0].overview, 'Friends learn together.');
+  assert.equal(shelf.items[0].background, 'https://example.com/spike.jpg');
+  assert.equal(JSON.stringify(shelf).includes('private-provider-id'), false);
+  const plain = await recommendations.featured('netflix', 'Netflix', false);
+  assert.equal(plain.items[0].overview, '');
+  assert.equal(pageLookups, 1, 'Details Off does not request provider pages');
+  await recommendations.launch('netflix', shelf.items[0].id);
+  assert.equal(calls[0].replaceParams.deeplinkingParams.value, 'private-provider-id');
+});

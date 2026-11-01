@@ -37,7 +37,7 @@
 - **Recents:** an App Switcher for the apps you opened that are still running, most recent first. Apps webOS runs by itself (preloaded, or started again in the background) stay out. Open them, close them one by one, or close them all. Press **Back** on the first app to open Recents.
 - **Your layout:** hold **OK** on an app to move it, move it to the front, hide it, or delete it from the TV (like tvOS's Delete App; LG's built-in apps, the Homebrew Channel, LG Input Hook and Home+ itself can't be deleted). Hidden apps collect in a "Hidden" tile at the end.
 - **Your home screen, all day:** optionally, the Home button opens Home+ instead of LG's home screen, closing an app comes back to it, and it's what you see after the TV starts.
-- **No ads:** no sponsored rows or tiles. Home+ connects only to the services you sign in to (see [Privacy and security](#privacy-and-security)).
+- **No ads:** no sponsored rows or tiles. Home+'s network connections are listed under [Privacy and security](#privacy-and-security).
 - **OLED care:** the picture drifts by a pixel every minute, and an idle Home+ dims, then goes black.
 - **Light on the TV:** a native app (C, SDL2, OpenGL ES 2) that draws nothing while nothing moves. It shares the GPU happily with PicCap and HyperHDR.
 
@@ -208,6 +208,8 @@ Home+ checks the key with TMDB before keeping it, and `{"key":""}` removes it. T
 
 Apps that publish clickable recommendations show those titles in Top Shelf. **OK** opens a recommendation in its app. Home+ adds TMDB details only when TMDB also lists that title on the app in your TV's country. Unverified matches keep the app's own artwork and title. Availability data comes from [JustWatch](https://www.justwatch.com) through TMDB. Top Shelf Details set to Off skips these title lookups.
 
+For unmatched Prime Video, Netflix and Stan cards, Home+ can also read a public title page to get display details when the page confirms the same title. This happens only with Top Shelf Details enabled. The app's own content ID still opens the title; the page does not supply a launch link.
+
 For apps without compatible recommendations, Home+ shows the 10 most popular films and series TMDB lists for that service. These are refreshed every 12 hours; **OK** opens the app and names the title to search for.
 
 ## Home button
@@ -290,7 +292,7 @@ If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot s
 
 ## Privacy and security
 
-- **What Home+ connects to:** only the services you sign in to: Stremio's and Trakt's APIs, `plex.tv` and your Plex server, your Jellyfin server, and TMDB (`api.themoviedb.org`, `image.tmdb.org`) if you add a key. With a TMDB key and Top Shelf Details enabled, Home+ sends IMDb IDs from Continue Watching and app recommendation titles to TMDB for genre, rating and synopsis. Stremio artwork comes from `images.metahub.space`; Jellyfin and Plex artwork comes from your server. To find a Jellyfin server, Home+ sends one broadcast on your local network (UDP port 7359), only when you start a Jellyfin sign-in.
+- **What Home+ connects to:** Stremio's and Trakt's APIs when you sign in, `plex.tv` and your Plex server, your Jellyfin server, and TMDB (`api.themoviedb.org`, `image.tmdb.org`) if you add a key. With a TMDB key and Top Shelf Details enabled, Home+ sends IMDb IDs from Continue Watching and app recommendation titles to TMDB for genre, rating and synopsis. With Top Shelf Details enabled, unmatched recommendations can also trigger public title-page requests to `www.primevideo.com`, `www.netflix.com` or `www.stan.com.au` without a provider sign-in or TMDB key. Stremio artwork comes from `images.metahub.space`; Jellyfin and Plex artwork comes from your server. Recommendation artwork comes from URLs supplied by the installed apps, so its hosts vary by app. To find a Jellyfin server, Home+ sends one broadcast on your local network (UDP port 7359), only when you start a Jellyfin sign-in.
 - **Signing out:** Settings → Accounts signs out of Stremio and ends Home+'s session on your Jellyfin server. Plex lists Home+ under your account's **Authorized Devices**; remove it there to revoke its access.
 - **What's stored:** sign-ins, your layout and preferences, in `/var/lib/homeplus/config.json`, and the Top Shelf's pictures, so they show at once the next time, in `/var/lib/homeplus/images` (up to 64 MB). Both are readable only by root, and **Remove Home+** deletes them.
 - **The local API:** the service runs as root and answers only on `127.0.0.1`. Every request needs a token the service writes into Home+'s app folder, and requests from web pages and other hosts are refused.

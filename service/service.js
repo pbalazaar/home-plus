@@ -1428,7 +1428,7 @@ async function tvRegion() {
   return tvCountry;
 }
 const tmdb = require('./tmdb')({ readConfig, writeConfig, log, region: tvRegion });
-const recommendations = require('./recommendations')({ luna, tmdb, log });
+const recommendations = require('./recommendations')({ luna, tmdb, log, region: tvRegion });
 // TMDB's and Trakt's keys, pasted on a phone: a page on the local network while the launcher shows its QR code
 const keysPage = require('./keys')({ tmdb, trakt, log, emit });
 const ambient = require('./ambient')({ luna, log });

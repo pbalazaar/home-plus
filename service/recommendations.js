@@ -3,6 +3,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const createProviderDetails = require('./provider-details');
 
 const APPMGR = 'luna://com.webos.applicationManager';
 const CONTENTS = 'luna://com.webos.service.applicationmanager/getAllContents';
@@ -17,10 +18,11 @@ function within(promise, timeout, fallback) {
     .then((value) => { clearTimeout(timer); return value; }, (error) => { clearTimeout(timer); throw error; });
 }
 
-module.exports = function createRecommendations({ luna, tmdb, log }) {
+module.exports = function createRecommendations({ luna, tmdb, log, region, providerDetails }) {
   const supported = new Map();
   let cachedRows = { at: 0, all: [] };
   let rowsBuilding = null;
+  const nativeDetails = providerDetails || createProviderDetails({ tmdb, log, region });
 
   async function rows(fresh = false) {
     if (!fresh && cachedRows.at && Date.now() - cachedRows.at < ROWS_MS) return cachedRows.all;
@@ -71,7 +73,9 @@ module.exports = function createRecommendations({ luna, tmdb, log }) {
     }).slice(0, MAX_ITEMS);
     return { kind: 'recommendations', provider: '', items: await Promise.all(items.map(async (c) => {
       const id = itemId(appId, c.titleText);
-      const info = detailsEnabled ? await within(tmdb.detailsByTitle(c.titleText, appTitle), DETAIL_WAIT_MS, null) : null;
+      const info = detailsEnabled ? await within((async () =>
+        (await tmdb.detailsByTitle(c.titleText, appTitle)) || nativeDetails.details(appId, c, appTitle)
+      )(), DETAIL_WAIT_MS, null) : null;
       const picture = (c.image && c.image.url) || (c.image_4k && c.image_4k.url) || '';
       return Object.assign({
         // Namesakes open the app: a refreshed link cannot identify which title was shown.
