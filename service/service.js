@@ -670,6 +670,7 @@ let overlayBusy = false; /* an open on its way */
 let overlayAsked = 0; /* when it was asked for: how long it takes to show is logged */
 let overlayInputs = []; /* the inputs it offered: the only apps it may open */
 let overlayList = ''; /* opened on a list of its own ('inputs': the Input key): if it fails, LG's picker for it */
+let overlayFrames = ''; /* the open panel's frames' folder (none with Reduce Transparency on) */
 
 // false: cancelled on the way (another app came to the front). list: 'inputs' opens it on them alone
 async function openOverlay(list = '') {
@@ -701,7 +702,7 @@ async function openOverlay(list = '') {
     asked = true;
     const r = await luna(SYSUI + '/launch', {
       appId: OVERLAY_ID, main: overlayMain(), windowType: '_WEBOS_SYSTEM_UI_TYPE_OVERLAY', defaultWindowType: 'overlay',
-      params: { state, port: IMAGE_PORT, token: TOKEN, frame: frames && 'file://' + path.join(frames, 'frame.png'), list } /* the API: the compositor may only call LG's services over luna */
+      params: { state, port: IMAGE_PORT, token: TOKEN, frame: frameFile(frames), list } /* the API: the compositor may only call LG's services over luna */
     });
     if (!r || r.returnValue === false) throw new Error((r && r.errorText) || "the TV didn't open it");
     if (gen !== overlayGen) { /* another app came to the front while it opened */
@@ -709,6 +710,7 @@ async function openOverlay(list = '') {
       return false;
     }
     overlayOpen = opened = true;
+    overlayFrames = frames;
     if (frames) framesLoop = framesLoop.then(() => captureFrames(gen, frames, snapshot));
     return true;
   } finally {
@@ -730,6 +732,7 @@ async function openOverlay(list = '') {
 // closes.
 const FRAMES_IN = process.env.HOMEPLUS_FRAMES_DIR || os.tmpdir(); /* tests: elsewhere */
 const framesDir = () => fs.mkdtempSync(path.join(FRAMES_IN, 'homeplus-cc-')); /* new, root's, 0700 */
+const frameFile = (dir) => (dir ? 'file://' + path.join(dir, 'frame.png') : '');
 try { /* left by a service that stopped (only its own) */
   for (const f of fs.readdirSync(FRAMES_IN).filter((f) => /^homeplus-cc-/.test(f))) {
     const p = path.join(FRAMES_IN, f), st = fs.lstatSync(p);
@@ -884,6 +887,14 @@ async function captureFrames(gen, dir, snapshot) {
     if (shown && shown.dir === dir) shown = null;
     dropFrames(dir);
   }
+}
+
+// Reduce Transparency turned off in the Settings of a panel that opened with it on, so with no frames: they
+// start now. Not with a snapshot of the screen: that would be of the panel.
+function startFrames() {
+  if (!overlayOpen || overlayFrames) return;
+  const dir = overlayFrames = framesDir(), gen = overlayGen;
+  framesLoop = framesLoop.then(() => captureFrames(gen, dir, 'not taken'));
 }
 
 // The compositor keeps every QML file it has loaded, by its address, until the TV restarts; so each
@@ -1680,6 +1691,7 @@ function setPrefs(b) {
   cfg.prefs = Object.assign({}, cfg.prefs, b);
   writeConfig(cfg);
   if (typeof b.ccBlurVideo === 'boolean') frameBlur = b.ccBlurVideo; /* (the panel open now too) */
+  if (b.reduceTransparency === false) startFrames();
   return cfg.prefs;
 }
 
@@ -1746,7 +1758,7 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/settings' && req.method === 'POST') { /* Settings over other apps: its pages, {row, dir} changes one first */
       const b = await readBody(req);
       if (b.row) await settings.act(String(b.row), b.dir === -1 || b.dir === 'next' ? b.dir : 1);
-      return sendJSON(res, 200, await settings.state());
+      return sendJSON(res, 200, Object.assign(await settings.state(), { frame: overlayOpen ? frameFile(overlayFrames) : '' }));
     }
     if (url.pathname === '/api/events') return listen(req, res);
     if (url.pathname === '/api/key' && req.method === 'POST') return sendJSON(res, 200, await remoteKey(String((await readBody(req)).key || '')));

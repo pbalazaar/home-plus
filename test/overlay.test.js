@@ -237,6 +237,36 @@ test('overlay: with Reduce Transparency (solid panels), no frames of the video a
   }
 });
 
+test('overlay: Reduce Transparency turned off in its Settings starts the frames it opened without', async () => {
+  await call('POST', '/api/prefs', { body: { reduceTransparency: true } });
+  try {
+    const before = calls(SHOT).length;
+    await call('POST', '/api/key', { body: { key: 'settings' } });
+    assert.equal(calls(LAUNCH).at(-1).params.params.frame, '', 'it opens with none');
+    assert.equal((await call('POST', '/api/settings', { body: {} })).json.frame, '', 'and says so');
+    const { frame } = (await call('POST', '/api/settings', { body: { row: 'reduceTransparency' } })).json;
+    assert.ok(frame, 'the panel hears where they are');
+    const file = fileURLToPath(frame);
+    await until(() => fs.existsSync(file), 3000, 'a frame');
+    assert.ok(calls(SHOT).slice(before).every((c) => c.params.method === 'VIDEO'), 'of the video: the screen would be of the panel');
+    assert.equal((await call('POST', '/api/settings', { body: {} })).json.frame, frame, 'the same ones from then on');
+    await call('POST', '/api/overlay', { body: { event: 'closed' } });
+    await until(() => !fs.existsSync(path.dirname(file)), 3000, 'the frames to go');
+    assert.equal((await call('POST', '/api/settings', { body: {} })).json.frame, '', 'closed: none');
+  } finally {
+    await call('POST', '/api/overlay', { body: { event: 'closed' } });
+    await call('POST', '/api/prefs', { body: { reduceTransparency: false } });
+  }
+});
+
+test('overlay: Reduce Transparency turned off with no panel open starts nothing', async () => {
+  const before = calls(SHOT).length;
+  await call('POST', '/api/prefs', { body: { reduceTransparency: false } });
+  await sleep(GAP + 100);
+  assert.equal(calls(SHOT).length, before);
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'frames')), []);
+});
+
 // opens it with the stand-in TV's capture giving `what` ({DISPLAY, VIDEO}: see harness.js); its frames'
 // folder, once it has taken the screen and asked for the video twice (the first answer dealt with)
 async function openWith(what) {
