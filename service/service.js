@@ -266,7 +266,7 @@ const NATIVE_ID = 'com.github.pbalazaar.homeplus'; // the launcher; this service
 // the app list, and Remove Home+ takes what it left too.
 const OLD_ID = 'com.github.pmiraka.homeplus';
 let lastForeground = '';
-let resumeRun = null; // the title OK last asked to play: { app, seen }, seen once its app has been in front
+let resumeRun = null; // the title OK last asked to play: { app, seen }, seen once its app has been in front; null when dropped
 let lastTakeover = 0;
 let takeoverLanded = true; // did the launcher reach the front after our last takeover?
 
@@ -1016,6 +1016,7 @@ async function onForeground(appId) {
   log('foreground', lastForeground || '-', '->', appId);
   lastForeground = appId;
   if (resumeRun && resumeRun.app === appId) resumeRun.seen = true;
+  else if (resumeRun && resumeRun.seen) resumeRun = null; /* you left it: not wanted, even if you come back before it's ready */
   closeOverlay();
   lastUsed.set(appId, Date.now());
   saveRecents();
@@ -1600,10 +1601,10 @@ function tellInstead(message) {
 
 // OK on a title in the Top Shelf: its app has opened, and now its server has it play the title. The launcher has
 // its answer by then: this takes seconds, and is all that polls, only after an OK. A new run replaces the last, and
-// once the app has been in front any other app there ends it (right after the launch Home+ still is, which doesn't
-// count), so nothing starts behind your back. If it can't be done, the toast OK has always shown.
+// once the app has been in front any other app there ends it for good (onForeground; right after the launch Home+
+// still is, which doesn't count), so nothing starts behind your back. If it can't be done, the toast OK has always shown.
 async function playInBackground(m, app, item, fromStart, run) {
-  const stillWanted = () => run === resumeRun && !(run.seen && lastForeground && lastForeground !== app);
+  const stillWanted = () => run === resumeRun;
   if (await m.playOnTV({ id: item.id, fromStart }, stillWanted) || !stillWanted()) return;
   if (!titles[app]) await listApps();
   tellInstead(`“${item.name}” is in ${titles[app] || app}’s Continue Watching`);

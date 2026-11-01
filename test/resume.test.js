@@ -161,6 +161,16 @@ describe('OK on a Jellyfin card', { concurrency: true }, () => {
     assert.deepEqual(t.toasts(), ['Resuming “Film”']);
   }));
 
+  test('leaving the app and coming back before it\'s ready: it stays dropped', () => withService({ HOMEPLUS_PREVIEW_LAUNCH_FRONT: '1' }, async (t) => {
+    t.state.connected = false;
+    assert.equal((await t.resume({ id: 'm1' })).status, 200);
+    await t.launch({ id: 'youtube' });
+    await t.launch({ id: JF }); /* (back before the next poll, which then sees it in front) */
+    t.state.connected = true;
+    await sleep(2500);
+    assert.equal(t.sent().length, 0, 'nothing replaces what you came back to');
+  }));
+
   test('Home+ still in front right after the launch isn\'t leaving', () => withService({}, async (t) => {
     t.state.connected = false;
     assert.equal((await t.resume({ id: 'm1' })).status, 200);

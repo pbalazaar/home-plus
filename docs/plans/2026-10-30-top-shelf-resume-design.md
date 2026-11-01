@@ -66,7 +66,7 @@ On the C3, with the server on the same network, the session took 4.5 s from a co
 
 **Service (`service/`):**
 - `service.js`: `POST /api/resume` refuses a title that isn't in Jellyfin's list, then opens the app with the same code as `/api/launch` (shared in a helper, toast included) and replies with the launch's answer. It looks the title up with `known()`, in the list as it stands: a list over a minute old would otherwise be a network read before the app opens. The toast is "Resuming" when there's a position and it isn't From Beginning, otherwise "Playing". Today's toast takes that one's place if it hasn't shown yet.
-- `service.js` owns the run. A counter makes a new request replace the old one. `stillWanted()` is false for a replaced run, and once `lastForeground` has been the app, for any other app in front. (Right after the launch `lastForeground` is still Home+, so leaving only counts once the app has been seen in front.)
+- `service.js` owns the run. A new request replaces the old run. Once the app has been in front, any other app coming to the front ends the run for good, even if you come back before it's ready, and `stillWanted()` is false for a run that has ended. (Right after the launch Home+ is still in front, so leaving only counts once the app has been seen there.)
 - `jellyfin.js`: `toItem()` adds `positionTicks`. `playOnTV(item, stillWanted)` does steps 1 to 4 and answers true or false; on false with the run still wanted, `service.js` posts today's toast. Only `jellyfin.js` talks to the server.
 - Step 1 forces a refresh of the list, and `items()` already keeps the last list through an outage. If the title has left the list by then (you finished it elsewhere), Home+ stops and shows today's toast.
 

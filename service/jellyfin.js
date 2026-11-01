@@ -244,7 +244,7 @@ module.exports = function createJellyfin({ readConfig, writeConfig, log, version
 
   const QUERY = 'limit=16&mediaTypes=Video&enableImageTypes=Primary,Backdrop,Thumb,Logo&imageTypeLimit=1&enableUserData=true';
 
-  // fresh: read it again, even if the list is new (as an outage does, it keeps the last list)
+  // fresh: it's read again, however new the list is
   async function items(fresh) {
     if (!fresh && cache.items && Date.now() - cache.at < 60 * 1000) return cache.items;
     try {
