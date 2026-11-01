@@ -291,8 +291,7 @@ appears in your own SSH command line** — it kills the session. Use:
   this TV's sessions are `DeviceName` "LG Smart TV" at Home+'s own `RemoteEndPoint`, and a title has started when any
   of them has it as `NowPlayingItem` (by `Id`). Home+'s entry shows that address only once it has registered
   (`POST /Sessions/Capabilities`): right after sign-in the entry's address is null, and after a server restart
-  there's no entry, whatever it reads. The socket wants `ApiKey`; `api_key` is refused. Design:
-  `docs/plans/2026-10-30-top-shelf-resume-design.md`.
+  there's no entry, whatever it reads. Design: `docs/plans/2026-10-30-top-shelf-resume-design.md`.
 - Stremio's streaming server is a webOS service of its own (`io.strem.tv.server`, ~30 MB) that keeps
   running after Stremio closes, and webOS's memory manager closes apps, not services: `stremio-server.js`
   stops it once Stremio has been closed for 10 s (Stremio starts it again when it opens).
