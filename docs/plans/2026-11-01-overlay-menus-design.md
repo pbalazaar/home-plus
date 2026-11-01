@@ -62,8 +62,23 @@ The panel is about twice the glass of the largest thing the overlay has drawn. G
 the rounded edge five times a pixel; inside the bevel nothing it works out changes the colour, so the
 inside of a panel takes a short way through.
 
-## What only the TV can show
+## What the C3 showed
 
-- Whether the compositor can load other apps' icons from disk. If not, a card shows the app's name.
-- How the panel reads over real video, with and without frames (PicCap holds the capture on the C3).
-- The load with PicCap and HyperHDR running.
+Tried on the owner's C3 (webOS 9.2.1) on 2026-11-01, with the remote's keys sent from the TV.
+
+- The compositor loads the panels, and other apps' icons from `file://` paths.
+- Over video it holds 60 fps. It reads well on clear glass (PicCap holding the capture) and over live frames.
+- The heaviest case, Settings over video with live frames: 9% of a core for the compositor and 10% GPU, against
+  15% and 10% for the Control Center alone. The big panel costs no more than the small one. At rest, with no
+  frames, Settings is 4% and 5%.
+- A row takes about 100 ms. Blur Over Video pauses PicCap within 100 ms of the key, and it starts again 2 s after.
+- A change made over an app reaches Home+ when it comes back, Calm Colours included.
+- LG's All Settings takes about 8 s to come up, as an overlay window; `getForegroundAppInfo` needs `extraInfo` to
+  list it, and DISPLAY captures don't show it.
+
+Not tried:
+
+- The pointer. The compositor doesn't act on moves written to `/dev/input/event2`: the Control Center's tiles
+  don't follow them either, and they've always followed the pointer.
+- Hidden Apps: there were none hidden.
+- Close All itself. Only its question, and Back.
