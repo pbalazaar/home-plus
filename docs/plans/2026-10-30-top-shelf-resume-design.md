@@ -6,7 +6,9 @@ Approved by the owner in conversation on 2026-10-30:
 - the title is started through the Jellyfin server, in the app people already have;
 - the behaviour, the structure, the session rule and the failure handling below, with the two-TV gap accepted.
 
-Tried on the owner's C3 on 2026-10-31, and the approach works: section 6 has the results. They changed how Home+ finds the TV's session (section 3) and how it confirms that a title started, and they removed the resend (section 2). The owner asked for the design to be updated with them, and accepted the renamed-TV gap in section 3. There's no code yet.
+Tried on the owner's C3 on 2026-10-31, and the approach works: section 6 has the results. They changed how Home+ finds the TV's session (section 3) and how it confirms that a title started, and they removed the resend (section 2). The owner asked for the design to be updated with them, and accepted the renamed-TV gap in section 3. 
+
+Built on 2026-11-01. What building it changed is in place below, and section 6 has what the C3 and the test server showed: the tile keeps its line (the owner's decision), the app opens without waiting on the server, and Home+ registers before it reads the list.
 
 ## Goal
 
@@ -31,8 +33,8 @@ OK on a Continue Watching card opens the app, and a toast says where to find the
 ## 1. What you see
 
 - **OK on a Jellyfin card:** Jellyfin opens and the title plays from where you stopped. A Next Up episode plays from its start. A system toast says "Resuming *title*" (or "Playing *title*") while it gets there.
-- **Hold OK on a card:** a small sheet named after the title, with **Play From Beginning** (only for something you've started) and **Open Jellyfin** (just opens the app).
-- **The line under the title:** "OK plays · Hold OK for options". While stepping through titles, "Left and right for more · OK plays · Hold OK for options".
+- **Hold OK on a card:** a small sheet named after the title, with **Play From Beginning** (only for something you've started), **Open Jellyfin** (just opens the app) and Cancel, as every sheet has.
+- **The line under the title:** while stepping through titles, "Left and right for more · OK plays · Hold OK for options". With focus on the tile it stays "OK opens Jellyfin": OK there opens the app, and Hold OK gives the tile's own sheet.
 - **If Jellyfin can't be reached in time:** the app stays open and you get today's toast ("*title* is in Jellyfin's Continue Watching"). It's never worse than now.
 - **If you leave Jellyfin before it's ready:** Home+ drops the request, so nothing starts playing behind your back.
 - **OK on another title while one is starting:** the new one replaces it.
@@ -45,9 +47,9 @@ The launcher stays thin, and the service does the waiting. Nothing runs at rest:
 ```
 OK on a card
  └─ launcher: POST /api/resume { app, source: "jellyfin", id, fromStart }
-     └─ service: finds the title in its list, opens the app, posts the toast, answers at once
+     └─ service: finds the title in its list as it stands, opens the app, posts the toast, answers at once
          └─ in the background (jellyfin.js):
-            1. reads the list again, so the position is current
+            1. registers with the server (4 s to answer), then reads the list again, so the position is current
             2. asks the server for the TV's Jellyfin session, once a second, for up to 25 s
             3. POST /Sessions/<session>/Playing?playCommand=PlayNow&itemIds=<id>&startPositionTicks=<position>
             4. watches this TV's sessions for up to 15 s, until one has the title as its NowPlayingItem
@@ -57,13 +59,13 @@ OK on a card
 On the C3, with the server on the same network, the session took 4.5 s from a cold start and playback about 2.5 s more, so 25 s and 15 s leave room for a slower server. PlayNow worked the first time in all 10 tries, so it's sent once.
 
 **Launcher (`native/src`):**
-- `apps.c`: `resume_title(app, id, from_start)` posts `/api/resume` and sets `S.away`, as `launch_app()` does. `open_card_sheet()` sits next to `open_app_sheet()`.
+- `apps.c`: `resume_title(app, id, from_start)` posts `/api/resume` and sets `S.away`, as `launch_app()` does. `open_card_sheet()` sits next to `open_app_sheet()`. If the service refuses the title (it has left the list since the card came), `results.c` does what OK does on any card.
 - `input.c`: on Jellyfin's carousel, `activate()` calls `resume_title()`, and its own toast just says "Opening Jellyfin…". The sheet's Play From Beginning is a new action; Open Jellyfin is the existing `ACT_LAUNCH_ID`. The sheet keeps the title's `id`, since the carousel can turn behind it.
 - `main.c`: a long OK in `ZONE_RAIL` on Jellyfin's carousel opens the sheet.
-- `shelf.c`: `rail_fill()` builds the hint lines above for Jellyfin's carousel.
+- `shelf.c`: `rail_fill()` builds the hint line above for Jellyfin's carousel.
 
 **Service (`service/`):**
-- `service.js`: `POST /api/resume` refuses a title that isn't in Jellyfin's list, then opens the app with the same code as `/api/launch` (shared in a helper, toast included) and replies with the launch's answer. The toast is "Resuming" when there's a position and it isn't From Beginning, otherwise "Playing".
+- `service.js`: `POST /api/resume` refuses a title that isn't in Jellyfin's list, then opens the app with the same code as `/api/launch` (shared in a helper, toast included) and replies with the launch's answer. It looks the title up with `known()`, in the list as it stands: a list over a minute old would otherwise be a network read before the app opens. The toast is "Resuming" when there's a position and it isn't From Beginning, otherwise "Playing". Today's toast takes that one's place if it hasn't shown yet.
 - `service.js` owns the run. A counter makes a new request replace the old one. `stillWanted()` is false for a replaced run, and once `lastForeground` has been the app, for any other app in front. (Right after the launch `lastForeground` is still Home+, so leaving only counts once the app has been seen in front.)
 - `jellyfin.js`: `toItem()` adds `positionTicks`. `playOnTV(item, stillWanted)` does steps 1 to 4 and answers true or false; on false with the run still wanted, `service.js` posts today's toast. Only `jellyfin.js` talks to the server.
 - Step 1 forces a refresh of the list, and `items()` already keeps the last list through an outage. If the title has left the list by then (you finished it elsewhere), Home+ stops and shows today's toast.
@@ -74,13 +76,13 @@ Other features don't change: Jellyfin's "next episode" carries on as usual, and 
 
 Jellyfin lists every client on the server, so Home+ has to pick this TV's. The rule: **the controllable session named "LG Smart TV" that reaches the server from the same address Home+ does.**
 
-- Home+ first registers itself with `POST /Sessions/Capabilities`. Jellyfin records a session and its address when that endpoint runs (`RequestHelpers.GetSession`). No media control is offered, so nothing can be sent to it.
+- Home+ first registers itself with `POST /Sessions/Capabilities`. Jellyfin records a session and its address when that endpoint runs (`RequestHelpers.GetSession`). No media control is offered, so nothing can be sent to it. It has to: right after sign-in the entry's address is null, and after a server restart there's no entry until it does, whatever else Home+ reads.
 - Home+ then reads `GET /Sessions` once a second. That one list holds Home+'s own entry (its `DeviceId`), which shows how the server sees this TV, and the candidates: `DeviceName` is "LG Smart TV", and `SupportsRemoteControl` is true. `Client` can't be used: the TV's session may be "Jellyfin for WebOS" or "Jellyfin Web" (section 6).
-- The candidate must have the same `RemoteEndPoint` as Home+'s entry. Both are normalised the same way by the server.
+- The candidate must have the same `RemoteEndPoint` as Home+'s entry. Both are normalised the same way by the server. Two empty addresses aren't a match.
 - If two candidates share that address, Home+ picks neither and carries on polling, so it ends in today's toast. It never guesses.
 - A title has started when any session with that name and that address, controllable or not, has it as `NowPlayingItem` (compared by `Id`). That's often not the session PlayNow was sent to, and the two don't share a `DeviceId`.
 
-Comparing with Home+'s own address, not the TV's LAN IP, also works when the server sees something else: Docker's NAT, a reverse proxy, or a server elsewhere. Under OrbStack, every client showed the gateway, 192.168.215.1. Home+'s own entry hasn't been tried yet: it wasn't signed in to the test server.
+Comparing with Home+'s own address, not the TV's LAN IP, also works when the server sees something else: Docker's NAT, a reverse proxy, or a server elsewhere. Under OrbStack, every client showed the gateway, 192.168.215.1.
 
 **Known gap, accepted:** with two LG TVs behind a proxy that hides their addresses, if the other TV's Jellyfin app is open and this one hasn't connected yet, the other TV looks like the only match and the title plays there.
 
@@ -93,6 +95,7 @@ Comparing with Home+'s own address, not the TV's LAN IP, also works when the ser
 | The app is on its sign-in or server page (no session) | After 25 s, today's toast |
 | The app is signed in as another Jellyfin user | Works only if Home+'s account is an admin that may control other users (others don't see that session in `GET /Sessions`); otherwise today's toast |
 | Server unreachable | Today's toast right away |
+| The server takes the call and doesn't answer (it's asleep) | The app opens at once; today's toast after 4 s |
 | Home+'s token is rejected | Signs out as it does now, then today's toast |
 | Two matching sessions | After 25 s, today's toast |
 | The TV was renamed in Jellyfin's dashboard | After 25 s, today's toast |
@@ -126,7 +129,20 @@ Run on the owner's C3 on 2026-10-31, with Jellyfin 12.4.0 in OrbStack on the Mac
 | Added: signing in again on a later launch | One session, "Jellyfin Web": `Client` containing "webos" matched nothing. PlayNow to it played | The rule uses `DeviceName`, not `Client` |
 | Added: a device renamed, on the test server | `DeviceName` took the new name, `HasCustomDeviceName` turned true | A known gap in section 3 |
 
-Not covered: Home+'s own `/Sessions/Capabilities` entry and the same-address rule, a server on another machine, titles that need transcoding, and more than one TV.
+Then on 2026-11-01, with Home+ itself, the test server still under OrbStack:
+
+| Tried | Result | What it changed |
+|---|---|---|
+| Home+'s registration, with a real token, on the test server | 204, and its entry appears with its address. Right after sign-in the entry's address is null; after a restart a plain read makes no entry | An empty address is never a match |
+| The same-address rule, with `jellyfin.js` against the server and a stand-in "LG Smart TV" on a real socket | From a container at another address (192.168.215.4): no PlayNow. From Home+'s own address: the socket got `Play` with `StartPositionTicks` as sent, 0 for From Beginning | The rule stands |
+| OK on a card, on the C3, app closed | Session at 5.3 s, playing at 9.7 s, from 8:56, where it stopped | The approach stands |
+| OK, the app in the background with the title paused | PlayNow at 0.2 s, playing at 1.3 s, from 9:16: the fresh position, not the list's 8:56 | Step 1 earns its read |
+| OK on Next Up, and Play From Beginning | Each from 0:00, with "Playing", replacing what was paused | |
+| Hold OK on both kinds of card, and Open Jellyfin | Both sheets as in section 1. Open Jellyfin: the app opens, nothing plays, no PlayNow | |
+| Server refusing connections, on the C3 | Given up at 0.0 s, Jellyfin stays open, today's toast in the place of "Resuming" | |
+| A server that takes the call and doesn't answer | Found by reading the code after the Mac slept with the test server on it: OK would have waited 10 s to open the app, then 20 s for the toast. In the tests now; not yet on the C3 | `known()`, and registering first |
+
+Not covered: leaving Jellyfin before it's ready and that sleeping server on the C3 (both in the tests), a server on another machine, titles that need transcoding, and more than one TV.
 
 To run them again: about 20 minutes, no ssh, with the Mac and the TV on the same network.
 
