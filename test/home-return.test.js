@@ -19,7 +19,7 @@ const CLOSED = [[1930, { event: 'close', appId: 'netflix' }], [1940, { event: 's
 /* the service, with subscriptions saying subs ({"<method>": [[ms, payload], ...]}, from when it subscribed) */
 async function start(subs) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-return-'));
-  fs.writeFileSync(path.join(dir, 'apps.txt'), 'netflix|Netflix,youtube|YouTube');
+  fs.writeFileSync(path.join(dir, 'apps.txt'), 'netflix|Netflix,youtube|YouTube,com.webos.app.livetv|Live TV');
   const luna = path.join(dir, 'luna.log');
   const svc = await startService(dir, {
     HOMEPLUS_PREVIEW_LUNA_LOG: luna,
@@ -121,6 +121,168 @@ describe('getting back to Home+', { concurrency: true }, () => {
     try {
       await until(() => t.said('getForegroundAppInfo', ''), 4000, 'no app in front');
       await sleep(500);
+      assert.equal(t.launches().length, 0);
+    } finally {
+      await t.stop();
+    }
+  });
+
+  test('waking from standby opens Home+ when Live TV appears', async () => {
+    const t = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [600, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      await until(() => t.launches().length, 2000, 'Home+ after wake');
+      const live = t.said('getForegroundAppInfo', 'com.webos.app.livetv');
+      assert.ok(t.launches()[0].t - live.t < 1500, 'Home+ launched after Live TV remained in front');
+      await sleep(800);
+      assert.equal(t.launches().length, 1);
+      assert.match(t.log(), /power wake Active Standby -> Active/);
+    } finally {
+      await t.stop();
+    }
+  });
+
+  test('the foreground clearing just before standby still counts as Home+ in front', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [300, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [250, { appId: '' }], [600, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      await until(() => tv.launches().length, 2000, 'Home+ after foreground cleared for standby');
+      assert.equal(tv.launches().length, 1);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('an old empty foreground does not count as Home+ before standby', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [2500, { state: 'Active Standby' }], [2750, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [250, { appId: '' }], [2850, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.livetv'), 3500, 'Live TV after wake');
+      await sleep(1100);
+      assert.equal(tv.launches().length, 0);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('No Flash also restores Home+ after standby', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [700, { state: 'Active Standby' }], [950, { state: 'Active' }]],
+      getForegroundAppInfo: [[500, { appId: HP }], [1050, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      assert.equal((await tv.svc.call('POST', '/api/home', { body: { mode: 'redirect' } })).json.mode, 'redirect');
+      await until(() => tv.launches().length, 2500, 'Home+ after wake with No Flash');
+      assert.equal(tv.launches().length, 1);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('HDMI in front before standby stays in front after wake', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: 'com.webos.app.hdmi1' }], [600, { appId: 'com.webos.app.hdmi1' }]]
+    });
+    try {
+      await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.hdmi1'), 2000, 'HDMI after wake');
+      await sleep(1100);
+      assert.equal(tv.launches().length, 0);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('Home+ already in front after wake cancels the return', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [600, { appId: HP }], [750, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.livetv'), 2000, 'Live TV after Home+');
+      await sleep(1100);
+      assert.equal(tv.launches().length, 0);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('a quick HDMI selection after wake stays in front', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [600, { appId: 'com.webos.app.livetv' }],
+        [850, { appId: 'com.webos.app.hdmi2' }]]
+    });
+    try {
+      await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.hdmi2'), 2000, 'HDMI selected after wake');
+      await sleep(1100);
+      assert.equal(tv.launches().length, 0);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('an explicit Live TV selection after wake cancels the return', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [600, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.livetv'), 2000, 'Live TV after wake');
+      const result = await tv.svc.call('POST', '/api/control', { body: { action: 'input', value: 'com.webos.app.livetv' } });
+      assert.equal(result.status, 200);
+      await sleep(1100);
+      assert.equal(tv.launches().length, 0);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('an app launch request after wake cancels the return', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [600, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.livetv'), 2000, 'Live TV after wake');
+      const result = await tv.svc.call('POST', '/api/launch', { body: { id: 'com.webos.app.livetv' } });
+      assert.equal(result.status, 200);
+      await sleep(1100);
+      assert.equal(tv.launches().length, 0);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('waking to another app leaves that app in front', async () => {
+    const t = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[600, { appId: 'netflix' }]]
+    });
+    try {
+      await until(() => t.said('getForegroundAppInfo', 'netflix'), 2000, 'Netflix after wake');
+      await sleep(800);
+      assert.equal(t.launches().length, 0);
+    } finally {
+      await t.stop();
+    }
+  });
+
+  test('Home Button off leaves Live TV in front after wake', async () => {
+    const t = await start({
+      getPowerState: [[100, { state: 'Active' }], [700, { state: 'Active Standby' }], [950, { state: 'Active' }]],
+      getForegroundAppInfo: [[500, { appId: HP }], [1050, { appId: 'com.webos.app.livetv' }]]
+    });
+    try {
+      assert.equal((await t.svc.call('POST', '/api/home', { body: { mode: 'off' } })).json.mode, 'off');
+      await until(() => t.said('getForegroundAppInfo', 'com.webos.app.livetv'), 2000, 'Live TV after wake');
+      await sleep(800);
       assert.equal(t.launches().length, 0);
     } finally {
       await t.stop();

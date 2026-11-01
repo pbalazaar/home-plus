@@ -922,6 +922,7 @@ async function overlayEvent(p) {
     await (overlayList === 'inputs' ? inputPicker() : quickSettings());
   } else if (p.event === 'open' && p.app) {
     if (!overlayInputs.includes(p.app)) throw new Error(`not an input: ${p.app}`);
+    clearWake();
     await luna(APPMGR + '/launch', { id: p.app });
   } else if (p.event === 'open' && p.target === 'network') { /* as LG's Quick Settings open it */
     await luna(APPMGR + '/launch', { id: 'com.webos.app.firstuse-overlay', params: { target: 'network' } });
@@ -1009,6 +1010,7 @@ function saveRecents() {
 }
 
 async function onForeground(appId) {
+  maybeHomeAfterWake(appId);
   if (!appId || appId === lastForeground) return;
   log('foreground', lastForeground || '-', '->', appId);
   lastForeground = appId;
@@ -1050,6 +1052,30 @@ const coming = new Map(); /* apps SAM is starting or bringing back to the front,
 const quit = new Map(); /* apps that closed, id -> when */
 let emptied = { app: '', at: 0 }; /* the app that left the front with nothing after it, and when */
 let tvOn = true;
+let powerState = '';
+let wakeUntil = 0;
+let homeBeforeStandby = false;
+let wakeTimer = null;
+
+function clearWake() {
+  wakeUntil = 0;
+  if (wakeTimer) clearTimeout(wakeTimer);
+  wakeTimer = null;
+}
+
+function maybeHomeAfterWake(appId) {
+  if (!wakeUntil || !tvOn || !appId) return;
+  if (Date.now() > wakeUntil) return clearWake();
+  const cfg = readConfig();
+  if (appId === homeTarget(cfg) || appId !== 'com.webos.app.livetv' || homeMode(cfg) === 'off') return clearWake();
+  if (wakeTimer) return;
+  wakeTimer = setTimeout(() => {
+    wakeTimer = null;
+    if (!wakeUntil || !tvOn || lastForeground !== 'com.webos.app.livetv') return;
+    clearWake();
+    takeover(homeTarget(readConfig()), ' (power on)').catch((e) => log('home wake failed', e.message));
+  }, 650);
+}
 
 function onNoForeground() {
   const left = lastForeground;
@@ -1105,7 +1131,26 @@ function watchPower() {
     const sub = service.subscribe('luna://com.webos.service.tvpower/power/getPowerState', { subscribe: true });
     sub.on('response', (m) => {
       const p = m.payload || {};
-      if (p.state) tvOn = p.state === 'Active' && !p.processing; /* (not turning off, nor its screen) */
+      if (!p.state) return;
+      tvOn = p.state === 'Active' && !p.processing; /* (not turning off, nor its screen) */
+      const previous = powerState;
+      if (p.state !== 'Active' || !p.processing) powerState = p.state;
+      if (['Active Standby', 'Suspend', 'Power Off'].includes(p.state) &&
+          !['Active Standby', 'Suspend', 'Power Off'].includes(previous)) {
+        const target = homeTarget(readConfig());
+        // webOS may clear the foreground just before reporting standby.
+        homeBeforeStandby = lastForeground === target ||
+          (!lastForeground && emptied.app === target && Date.now() - emptied.at < 2000);
+        clearWake();
+      }
+      if (!tvOn || !['Active Standby', 'Suspend', 'Power Off'].includes(previous)) return;
+      log('power wake', previous, '-> Active');
+      if (!homeBeforeStandby) return;
+      homeBeforeStandby = false;
+      wakeUntil = Date.now() + 5000;
+      const until = wakeUntil;
+      setTimeout(() => { if (wakeUntil === until && lastForeground === 'com.webos.app.livetv') maybeHomeAfterWake(lastForeground); }, 100);
+      setTimeout(() => { if (wakeUntil === until) clearWake(); }, 5000);
     });
     sub.on('cancel', () => setTimeout(watchPower, 3000));
   } catch (e) {
@@ -1546,6 +1591,7 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/control') { /* the Control Center: GET its state, POST {action, value} */
       if (req.method === 'POST') {
         const b = await readBody(req);
+        if (b.action === 'input') clearWake();
         await control.act(String(b.action || ''), b.value, b);
         log('control:', b.action, b.value === undefined ? '' : b.value);
       }
@@ -1629,6 +1675,7 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/launch' && req.method === 'POST') {
       const { id, params, toast } = await readBody(req);
       if (!id) return sendJSON(res, 400, { returnValue: false, errorText: 'id is required' });
+      clearWake();
       const r = await luna(APPMGR + '/launch', params ? { id, params } : { id });
       // a hint shown by the system, so it appears over the app that just opened
       if (toast && r && r.returnValue !== false) {
