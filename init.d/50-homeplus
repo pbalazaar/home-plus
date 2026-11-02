@@ -26,10 +26,15 @@ LOG=/var/lib/webosbrew/homeplus-boot.log
     echo "elevate-service not found at $ELEVATE"
   fi
 
+  # Some TV builds only print Luna replies on a terminal, even when the call succeeds.
+  request() {
+    script -q -c "luna-send -n 1 -w $1 'luna://$SVC/$2' '{}'" /dev/null
+  }
+
   # Retry until the bus answers (up to ~60s); the first answer starts the service.
   i=0
   while [ $i -lt 30 ]; do
-    if luna-send -n 1 -w 3000 "luna://$SVC/ping" '{}' 2>/dev/null | grep -q '"returnValue":true'; then
+    if request 3000 ping 2>/dev/null | grep -q '"returnValue":true'; then
       echo "service up"
       break
     fi
@@ -37,6 +42,6 @@ LOG=/var/lib/webosbrew/homeplus-boot.log
     sleep 2
   done
   if [ $i -lt 30 ]; then
-    luna-send -n 1 -w 30000 "luna://$SVC/startup" '{}' 2>/dev/null
+    request 30000 startup 2>/dev/null
   fi
 ) >"$LOG" 2>&1 &

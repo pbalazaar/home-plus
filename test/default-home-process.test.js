@@ -3,9 +3,10 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const remove = require('../service/remove');
 const fs = require('fs'), os = require('os'), path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { until, sleep } = require('./helpers');
 const recovery = require('../service/default-home-guard');
+const createHome = require('../service/default-home');
 const APP = 'com.github.pbalazaar.homeplus', LG = 'com.webos.app.home';
 function fixture(deadline) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-independent-')), app = path.join(dir, 'app');
@@ -108,3 +109,41 @@ test('replacement during a delayed recovery health check cannot change config or
     assert.equal(t.read(t.model).calls.length, 1);
   } finally { await t.close(); }
 });
+
+for (const pauseRead of [1, 2]) {
+  test('a restore paused at defaults read ' + pauseRead + ' cannot undo a newly confirmed activation',
+    { skip: process.platform !== 'linux' }, async () => {
+      const t = fixture(Date.now() - 1);
+      try {
+        const m = t.read(t.model); m.pauseRead = pauseRead; recovery.atomic(t.model, m);
+        if (pauseRead === 1) {
+          const s = t.read(t.file); s.before.home = LG; recovery.atomic(t.file, s);
+        }
+        const g = t.start('--restore');
+        await until(() => fs.existsSync(t.model + '.paused'), 5000, 'the old restore to await its defaults read');
+        const binary = path.join(t.dir, "luna's fixture");
+        const luna = (uri, p) => new Promise((resolve, reject) => {
+          execFile(binary, [uri, JSON.stringify(p)], {
+            env: Object.assign({}, process.env, { HOMEPLUS_MOCK_LUNA_STATE: t.model }), timeout: 5000
+          }, (error, stdout) => error ? reject(error) : resolve(JSON.parse(stdout)));
+        });
+        const home = createHome({
+          luna, readConfig: () => t.read(t.config), writeConfig: (cfg) => recovery.atomic(t.config, cfg),
+          configPath: () => t.config, appDir: t.app, stateDir: t.dir, initDir: path.join(t.dir, 'init.d'),
+          isRoot: () => true, startGuard: async () => {}, suspend: async () => {}, resume: async () => {}, log: () => {}
+        });
+        await home.recover();
+        await home.setEnabled(true);
+        const confirmed = t.read(t.file), cfg = t.read(t.config), current = t.read(t.model);
+        assert.notEqual(confirmed.transaction, 'owned');
+        assert.equal(confirmed.deadline, null);
+        assert.equal(current.defaults.home, APP);
+        fs.writeFileSync(t.model + '.resume', '');
+        await g.done;
+        assert.deepEqual(t.read(t.model).defaults, current.defaults);
+        assert.deepEqual(t.read(t.config), cfg);
+        assert.deepEqual(t.read(t.file), confirmed);
+        assert.equal(t.read(t.model).calls.length, current.calls.length, 'the old transaction issued no further Luna calls');
+      } finally { await t.close(); }
+    });
+}

@@ -108,6 +108,12 @@ async function main(mode, file) {
   if (!['--watch', '--restore'].includes(mode) || !file) throw new Error('usage: default-home-guard.js --start|--watch|--restore state.json');
   let s = load(file), missingAt = 0, delay = 500;
   const transaction = s.transaction;
+  const ownedLuna = (uri, params) => {
+    // Defaults reads await the bus: another recovery and activation may finish before they return.
+    const current = load(file);
+    if (!current.active || current.transaction !== transaction) throw new Error('Home recovery no longer owns this transaction');
+    return luna(uri, params);
+  };
   if (!s.active) return;
   if (mode === '--watch') atomic(file + '.ready', { pid: process.pid, transaction: s.transaction });
   for (;;) {
@@ -129,7 +135,7 @@ async function main(mode, file) {
       await accepted(luna, MANAGER + 'getAppInfo', { id: s.stockHome });
       s = load(file);
       if (!s.active || s.transaction !== transaction) return;
-      const result = await restore(luna, s.before, s.stockHome);
+      const result = await restore(ownedLuna, s.before, s.stockHome);
       s = load(file);
       if (!s.active || s.transaction !== transaction) return;
       restoreConfig(s);
