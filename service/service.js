@@ -1148,7 +1148,13 @@ function onNoForeground() {
   log('foreground', left, '-> (none)');
   lastForeground = '';
   emptied = { app: left, at: Date.now() };
-  setTimeout(homeAfterQuit, QUIT_GRACE_MS);
+  checkHomeAfterQuit();
+}
+
+function checkHomeAfterQuit() {
+  /* Home+ itself won't be relaunched: clear a manual close before a queued standby event can remember it. */
+  if (emptied.app === homeTarget(readConfig())) homeAfterQuit();
+  else setTimeout(homeAfterQuit, QUIT_GRACE_MS);
 }
 
 /* (SAM says an app closed and the screen has no app, in either order) */
@@ -1176,7 +1182,7 @@ function watchLife() {
       stremioServer.onLife(p.appId, p.event);
       if (p.event === 'close' || p.event === 'stop') {
         quit.set(p.appId, Date.now());
-        if (p.appId === emptied.app) setTimeout(homeAfterQuit, QUIT_GRACE_MS);
+        if (p.appId === emptied.app) checkHomeAfterQuit();
       }
       if (p.event !== 'launch' && p.event !== 'splash') return coming.delete(p.appId);
       coming.set(p.appId, Date.now());
