@@ -1253,7 +1253,7 @@ register('setHomeOverride', async (msg) => {
   try {
     let cfg = readConfig();
     const p = msg.payload || {};
-    if (cfg.defaultHomeEnabled && (p.enabled === false || ['redirect', 'watch'].includes(p.mode))) {
+    if (p.enabled === false || ['redirect', 'watch'].includes(p.mode)) {
       await systemHome.setEnabled(false); cfg = readConfig();
     }
     if (typeof p.enabled === 'boolean') cfg.homeOverride = p.enabled;
@@ -1692,7 +1692,7 @@ async function setHome(b, cfg = readConfig()) {
     if (!b.defaultHome) { cfg.homeOverride = false; writeConfig(cfg); await applyHomeMode(); }
   }
   if (typeof b.startupEnabled === 'boolean') { cfg.startupEnabled = b.startupEnabled; writeConfig(cfg); }
-  if (cfg.defaultHomeEnabled && b.mode !== undefined) { await systemHome.setEnabled(false); cfg = readConfig(); }
+  if (b.mode !== undefined) { await systemHome.setEnabled(false); cfg = readConfig(); }
   if (typeof b.settingsKey === 'boolean' || typeof b.inputKey === 'boolean') {
     const was = { settingsKey: cfg.settingsKey, inputKey: cfg.inputKey };
     if (typeof b.settingsKey === 'boolean') setKeyBind(SETTINGS_KEY, b.settingsKey, cfg); /* the Settings key's bind */

@@ -365,6 +365,15 @@ if (HOME_MODEL) {
     }
     if (uri.endsWith('/setDefaultApp')) {
       if (HOME_MODEL === 'failure') return { returnValue: false, errorText: 'This TV refused the default Home change' };
+      if (HOME_MODEL === 'pending' && params.appId === HOME_APP) {
+        fs.writeFileSync(path.join(CONFIG_DIR, 'default-pending'), '');
+        return new Promise((resolve) => {
+          const timer = setInterval(() => {
+            if (!fs.existsSync(path.join(CONFIG_DIR, 'release-default'))) return;
+            clearInterval(timer); home.defaults.home = params.appId; resolve({ returnValue: true });
+          }, 25);
+        });
+      }
       home.defaults.home = params.appId; return { returnValue: true };
     }
     if (uri.endsWith('/getForegroundAppInfo')) return { returnValue: true, appId: home.foreground };
