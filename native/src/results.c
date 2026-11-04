@@ -200,6 +200,7 @@ int handle_result(Result *r)
             }
             S.shelf_still = o && cJSON_IsFalse(cJSON_GetObjectItem(o, "shelfTurns"));
             const char *details = o ? jstr(o, "topShelfDetails") : "";
+            int was_details = S.shelf_details;
             shelf_set_details(!strcmp(details, "off") ? SHELF_DETAILS_OFF :
                               !strcmp(details, "compact") ? SHELF_DETAILS_COMPACT : SHELF_DETAILS_FULL);
             const char *look = o ? jstr(o, "iconLook") : "";
@@ -209,7 +210,11 @@ int handle_result(Result *r)
             for (int i = 0; i < NTINTS; i++)
                 if (!strcasecmp(tint, TINTS[i].name)) S.icon_tint = i;
             cJSON_Delete(o);
-            if (r->kind == JOB_POST && S.shelf_details != SHELF_DETAILS_OFF) rail_request(SRC_STREMIO);
+            if ((r->kind == JOB_POST || was_details == SHELF_DETAILS_OFF) && S.shelf_details != SHELF_DETAILS_OFF) {
+                App *a = shelf_app();
+                if (a && !media_source(a)) a->feat_refresh = 1;
+                else rail_request(SRC_STREMIO);
+            }
         } else if (r->kind == JOB_POST) {
             toast("Couldn\xE2\x80\x99t save Top Shelf Details", 3500);
             net_get_json("/api/prefs", TAG_PREFS, 0, 0);

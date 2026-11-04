@@ -17,16 +17,16 @@ const IN_FRONT = [[1500, { appId: 'netflix' }], [2000, { appId: '' }]];
 const CLOSED = [[1930, { event: 'close', appId: 'netflix' }], [1940, { event: 'stop', appId: 'netflix' }]];
 
 /* the service, with subscriptions saying subs ({"<method>": [[ms, payload], ...]}, from when it subscribed) */
-async function start(subs) {
+async function start(subs, env = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homeplus-return-'));
   fs.writeFileSync(path.join(dir, 'apps.txt'), 'netflix|Netflix,youtube|YouTube,com.webos.app.livetv|Live TV');
   const luna = path.join(dir, 'luna.log');
-  const svc = await startService(dir, {
+  const svc = await startService(dir, Object.assign({
     HOMEPLUS_PREVIEW_LUNA_LOG: luna,
     HOMEPLUS_PREVIEW_SUBSCRIPTIONS: JSON.stringify(subs),
     HOMEPLUS_LOG: path.join(dir, 'service.log'),
     HOMEPLUS_RECENTS_FILE: path.join(dir, 'recents.json')
-  });
+  }, env));
   const lines = () => (fs.existsSync(luna) ? fs.readFileSync(luna, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
   return {
     svc,
@@ -288,6 +288,25 @@ describe('getting back to Home+', { concurrency: true }, () => {
       assert.equal(result.status, 200);
       await sleep(1100);
       assert.equal(tv.launches().length, 0);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  test('a recommendation title launch after wake cancels the return', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [600, { appId: 'com.webos.app.livetv' }]]
+    }, { HOMEPLUS_PREVIEW_RECOMMENDATIONS: '1' });
+    try {
+      const shelf = (await tv.svc.call('GET', '/api/featured?app=netflix')).json;
+      assert.equal(shelf.kind, 'recommendations');
+      await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.livetv'), 2000, 'Live TV after wake');
+      const result = await tv.svc.call('POST', '/api/launch', { body: { id: 'netflix', recommendationId: shelf.items[0].id } });
+      assert.equal(result.json.returnValue, true);
+      assert.ok(tv.lines().some((l) => l.uri.endsWith('/launch') && l.params.id === 'netflix' && l.params.replaceParams));
+      await sleep(1100);
+      assert.equal(tv.launches().length, 0, 'the selected title must not be replaced by Home+');
     } finally {
       await tv.stop();
     }

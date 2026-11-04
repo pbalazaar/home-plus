@@ -1550,18 +1550,20 @@ async function tvRegion() {
   return tvCountry;
 }
 const tmdb = require('./tmdb')({ readConfig, writeConfig, log, region: tvRegion });
+const recommendations = require('./recommendations')({ luna, tmdb, log });
 // TMDB's and Trakt's keys, pasted on a phone: a page on the local network while the launcher shows its QR code
 const keysPage = require('./keys')({ tmdb, trakt, log, emit });
 const ambient = require('./ambient')({ luna, log });
 const control = require('./control')({ luna, log, readConfig, writeConfig, extra: ambient }); /* the Control Center's TV controls, and ambient light (HyperHDR, PicCap) */
 const picCapture = ambient.find((c) => c.id === 'screenCapture'); /* Blur Over Video pauses it */
 
-// What's popular on the service a streaming app is, or trending for an app with no picture,
+// An app's own clickable recommendations, or TMDB's popular/trending fallback,
 // for its Top Shelf (pictures through us).
 async function apiFeatured(id) {
   if (!titles[id]) await listApps();
   const hasArt = !!(images[id] && images[id].art && images[id].art.length); /* else: what's trending */
-  const f = await tmdb.featured(titles[id] ? { id, title: titles[id] } : null, hasArt);
+  const detailsEnabled = (readConfig().prefs || {}).topShelfDetails !== 'off';
+  const f = await recommendations.featured(id, titles[id], detailsEnabled) || await tmdb.featured(titles[id] ? { id, title: titles[id] } : null, hasArt);
   return { kind: f.kind, provider: f.provider, items: f.items.map((it) => Object.assign({}, it, { background: proxied(it.background), logo: proxied(it.logo) })) };
 }
 // Media servers: each one's Continue Watching shows in its own app's Top Shelf.
@@ -1657,10 +1659,12 @@ const showToast = (message) => luna('luna://com.webos.notification/createToast',
 let hint = null; /* the toast waiting for its app to open: { message, timer } */
 
 // Opens an app. toast: a hint shown by the system, so it appears over the app that just opened.
-async function openApp(id, params, toast) {
+async function openApp(id, params, toast, recommendationId) {
   clearWake();
-  const r = await luna(APPMGR + '/launch', params ? { id, params } : { id });
-  if (toast && r && r.returnValue !== false) {
+  const direct = recommendationId ? await recommendations.launch(id, recommendationId) : null;
+  const openedTitle = direct && direct.returnValue !== false;
+  const r = openedTitle ? direct : await luna(APPMGR + '/launch', params ? { id, params } : { id });
+  if (toast && !openedTitle && r && r.returnValue !== false) {
     if (hint) clearTimeout(hint.timer);
     const h = hint = { message: toast, timer: setTimeout(() => { hint = null; showToast(h.message); }, 1500) };
   }
@@ -1815,9 +1819,9 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/trakt/link' && req.method === 'POST') return sendJSON(res, 200, await trakt.startDevice());
     if (url.pathname === '/api/trakt/disconnect' && req.method === 'POST') return sendJSON(res, 200, trakt.disconnect());
     if (url.pathname === '/api/launch' && req.method === 'POST') {
-      const { id, params, toast } = await readBody(req);
+      const { id, params, toast, recommendationId } = await readBody(req);
       if (!id) return sendJSON(res, 400, { returnValue: false, errorText: 'id is required' });
-      return sendJSON(res, 200, await openApp(id, params, toast));
+      return sendJSON(res, 200, await openApp(id, params, toast, recommendationId));
     }
     if (url.pathname === '/api/resume' && req.method === 'POST') { /* OK on a Jellyfin card: { app, source, id, fromStart } */
       const { app, source, id, fromStart } = await readBody(req);
