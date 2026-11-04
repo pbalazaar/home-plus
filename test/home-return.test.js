@@ -157,6 +157,39 @@ describe('getting back to Home+', { concurrency: true }, () => {
     }
   });
 
+  test('Home close cleanup keeps the recent foreground needed at standby', async () => {
+    const tv = await start({
+      getPowerState: [[100, { state: 'Active' }], [200, { state: 'Active', processing: 'Request Power Off' }],
+        [500, { state: 'Active Standby' }], [750, { state: 'Active' }]],
+      getForegroundAppInfo: [[120, { appId: HP }], [250, { appId: '' }], [850, { appId: 'com.webos.app.livetv' }]],
+      getAppLifeEvents: [[230, { event: 'close', appId: HP }], [240, { event: 'stop', appId: HP }]]
+    });
+    try {
+      await until(() => tv.launches().length, 2500, 'Home+ after close cleanup and standby');
+      assert.equal(tv.launches().length, 1);
+    } finally {
+      await tv.stop();
+    }
+  });
+
+  for (const [order, cleared, closed] of [['close first', 250, 230], ['foreground first', 230, 250]]) {
+    test(`a manual Home close is not remembered at standby (${order})`, async () => {
+      /* Standby arrives before the 50 ms quit grace finishes. Home+ itself needs no launch grace. */
+      const tv = await start({
+        getPowerState: [[100, { state: 'Active' }], [270, { state: 'Active Standby' }], [750, { state: 'Active' }]],
+        getForegroundAppInfo: [[120, { appId: HP }], [cleared, { appId: '' }], [850, { appId: 'com.webos.app.livetv' }]],
+        getAppLifeEvents: [[closed, { event: 'close', appId: HP }], [closed + 5, { event: 'stop', appId: HP }]]
+      });
+      try {
+        await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.livetv'), 2000, 'Live TV after wake');
+        await sleep(1100);
+        assert.equal(tv.launches().length, 0);
+      } finally {
+        await tv.stop();
+      }
+    });
+  }
+
   test('an old empty foreground does not count as Home+ before standby', async () => {
     const tv = await start({
       getPowerState: [[100, { state: 'Active' }], [2500, { state: 'Active Standby' }], [2750, { state: 'Active' }]],

@@ -131,8 +131,23 @@ test('settings: the Remote page asks for what the launcher\'s buttons ask for', 
 test('settings: on a TV where nothing catches the keys, the Remote page says what would', async () => {
   const { page } = setup({ home: { noFlashAvailable: false, settingsKey: { available: false, on: false } } });
   const remote = await page('remote');
-  assert.deepEqual(remote.rows.map((r) => r.id), ['homeButton']);
+  assert.deepEqual(remote.rows.map((r) => r.id), ['homeButton', 'defaultHome', 'startupHome']);
   assert.match(remote.body, /LG Input Hook/);
+});
+
+test('settings: default Home and startup use separate confirmed actions', async () => {
+  const tv = setup({ home: { defaultHomeAvailable: true, defaultHomeEnabled: false, startupEnabled: false } });
+  assert.equal((await tv.row('remote', 'defaultHome')).value, 'LG Home');
+  await tv.settings.act('defaultHome', 1);
+  await tv.settings.act('startupHome', 1);
+  assert.deepEqual(tv.homeAsked, [{ defaultHome: true }, { startupEnabled: true }]);
+  const active = setup({ home: { mode: 'system', defaultHomeEnabled: true, startupEnabled: true } });
+  assert.equal(await active.row('remote', 'noFlash'), undefined);
+  await active.settings.act('defaultHome', -1);
+  assert.deepEqual(active.homeAsked, [{ defaultHome: false }]);
+  const blocked = setup({ home: { defaultHomeAvailable: false, defaultHomeReason: 'Firmware has no default Home support' } });
+  await assert.rejects(blocked.settings.act('defaultHome', 1), /Firmware has no default Home support/);
+  assert.deepEqual(blocked.homeAsked, []);
 });
 
 test('settings: App Tiles ticks its look, and Tinted brings its colours', async () => {

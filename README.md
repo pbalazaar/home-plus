@@ -112,7 +112,7 @@ luna-send -n 1 luna://com.github.pbalazaar.homeplus.service/control '{"action":"
 
 | Section | What's there |
 |---|---|
-| **Remote** | Whether the Home button opens Home+ or LG's home screen, No Flash on TVs that support it, and what the Settings and Input buttons open (where Home+'s key filter or LG Input Hook can catch them) |
+| **Remote** | Whether the Home button opens Home+ or LG's home screen, the default Home app and startup choice, No Flash on TVs that support it, and what the Settings and Input buttons open (where Home+'s key filter or LG Input Hook can catch them) |
 | **Display & OLED** | Dim After, Turn Off After, Pixel Shift, Calm Colours (dark app backgrounds, so ambient lights don't flood the room), whether the Top Shelf turns pages by itself, and Top Shelf Details (Off, Compact or Full) |
 | **App Tiles** | Default, Dark, Clear or Tinted, and Tinted's colour |
 | **Control Center** | Blur Over Video (with PicCap installed, where the Settings button opens the Control Center over other apps): pauses PicCap's capture while the Control Center is open over an app, so its glass can blur the video |
@@ -217,6 +217,12 @@ An app counts as a streaming service when its name is one TMDB lists for your TV
 ## Home button
 
 With **Settings → Remote → Home Button** set to **Opens Home+**, Home+ watches for LG's home screen and opens itself instead. Without No Flash (below), LG's home screen shows for a moment first.
+
+**Default Home App**, below **Home Button**, offers **LG Home** or **Home+**. Home+ first checks that the TV reports support, that LG Home is available for recovery, and that it can read the current default. Enabling it briefly opens LG Home, then checks that the TV’s default-Home route opens Home+. A separate recovery process restores the original setting if that check fails or the package becomes unavailable. LG Home stays installed and can still be opened directly. Choosing **LG Home**, turning **Home Button** off, or using **Remove Home+** restores the saved default. No Flash is not used alongside this mode.
+
+**Open Home+ at Startup** is a separate, opt-in choice. On opens Home+ once after a full TV startup, from LG Home, Live TV or an input; an app already opened during startup is left alone. Off follows the TV’s own startup behaviour. It does not change LG’s power-on or input settings, and is separate from Home+ returning after standby.
+
+Default Home support is checked on each TV rather than inferred from its webOS version. A TV without the required profile, APIs or recoverable LG Home keeps the existing Home-button methods. Package/runtime compatibility covers webOS 5 and later; this does not establish that every model supports system default Home. Physical validation is currently limited to the OLED65C4PSA on webOS 26. HDMI-CEC wake remains unverified.
 
 Leaving an app (its own Exit, or Back on its first screen) comes back to Home+ too, without LG's home screen: Home+ opens as soon as the app has closed, before webOS would open LG's (it waits a second for that). Coming back, the home screen comes into focus where you left it, on the app you opened, as tvOS's does.
 

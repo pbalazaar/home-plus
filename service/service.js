@@ -362,6 +362,7 @@ async function unmountRedirect() {
 // Until the launcher has asked "Use Home+ as your home screen?", the Home button is left alone.
 function homeMode(cfg) {
   if (cfg.homeOverride === false || (!cfg.homeAsked && !cfg.homeMode)) return 'off';
+  if (cfg.defaultHomeEnabled) return 'system';
   return cfg.homeMode || 'watch';
 }
 
@@ -389,6 +390,22 @@ const APP_DIR = process.env.HOMEPLUS_APP_DIR || path.join(__dirname, '..', '..',
 const INITD_DIR = '/var/lib/webosbrew/init.d';
 const INITD = path.join(process.env.HOMEPLUS_INITD_DIR || INITD_DIR, '50-homeplus'); /* tests: elsewhere */
 const BOOT_LOG = path.join(path.dirname(INITD), '..', 'homeplus-boot.log'); /* the boot script's */
+
+const systemHome = require('./default-home')({
+  luna, readConfig, writeConfig, configPath: findConfigPath, appDir: APP_DIR, initDir: path.dirname(INITD),
+  stateDir: process.env.HOMEPLUS_DEFAULT_HOME_DIR || '/var/lib/webosbrew/homeplus-default-home',
+  runtimeDir: process.env.HOMEPLUS_RUNTIME_DIR || '/tmp', isRoot, log,
+  suspend: async () => {
+    const cfg = readConfig(); cfg.homeOverride = false; writeConfig(cfg);
+    await unmountRedirect(); await applyKeyFilter();
+  },
+  resume: applyHomeMode
+});
+setTimeout(() => systemHome.recover().catch((e) => log('default Home recovery:', e.message)), 0);
+register('startup', async (msg) => {
+  try { msg.respond(Object.assign({ returnValue: true }, await systemHome.startup())); }
+  catch (e) { fail(msg, e.message); }
+});
 
 function installBootScript() {
   if (!isRoot()) return false;
@@ -1018,6 +1035,8 @@ function dropElevation() {
 
 async function uninstall() {
   const steps = {};
+  await systemHome.remove(); // failure to restore Home must stop removal, not strand the Home button
+  steps.defaultHome = true;
   await unmountRedirect().catch(() => {});
   steps.keyFilter = await keyFilter.remove().catch((e) => e.message); /* (out of the compositor's list; a reboot would do it too) */
   try { [INITD, BOOT_LOG].forEach((f) => remove.rmSync(f, { force: true })); steps.bootScript = true; } catch (e) { steps.bootScript = e.message; }
@@ -1065,6 +1084,7 @@ async function onForeground(appId) {
   const cfg = readConfig();
   const target = homeTarget(cfg);
   if (appId === target) takeoverLanded = true;
+  if (cfg.defaultHomeEnabled) return; // system Home handles Home; an explicit LG Home launch stays usable
   if (cfg.homeOverride === false) return;
   if (!homeApps(cfg).includes(appId)) return;
   if (redirectTarget) return; // the no-flash page already opens Home+
@@ -1128,16 +1148,23 @@ function onNoForeground() {
   log('foreground', left, '-> (none)');
   lastForeground = '';
   emptied = { app: left, at: Date.now() };
-  setTimeout(homeAfterQuit, QUIT_GRACE_MS);
+  checkHomeAfterQuit();
+}
+
+function checkHomeAfterQuit() {
+  /* Home+ itself won't be relaunched: clear a manual close before a queued standby event can remember it. */
+  if (emptied.app === homeTarget(readConfig())) homeAfterQuit();
+  else setTimeout(homeAfterQuit, QUIT_GRACE_MS);
 }
 
 /* (SAM says an app closed and the screen has no app, in either order) */
 function homeAfterQuit() {
   const left = emptied.app, now = Date.now();
   if (!left || lastForeground || now - emptied.at > 900 || !(now - (quit.get(left) || 0) < 3000)) return;
-  emptied.app = '';
   const cfg = readConfig();
   const target = homeTarget(cfg);
+  if (left === target && !tvOn) return; /* standby still needs the recent Home+ foreground */
+  emptied.app = '';
   if (left === target || homeApps(cfg).includes(left) || cfg.homeOverride === false || redirectTarget || !tvOn) return;
   for (const [id, at] of coming) if (id !== target && now - at < 10000) return; /* (it'll be in front) */
   takeover(target, ` (${left} quit)`).catch((e) => log('home takeover failed', e.message));
@@ -1155,7 +1182,7 @@ function watchLife() {
       stremioServer.onLife(p.appId, p.event);
       if (p.event === 'close' || p.event === 'stop') {
         quit.set(p.appId, Date.now());
-        if (p.appId === emptied.app) setTimeout(homeAfterQuit, QUIT_GRACE_MS);
+        if (p.appId === emptied.app) checkHomeAfterQuit();
       }
       if (p.event !== 'launch' && p.event !== 'splash') return coming.delete(p.appId);
       coming.set(p.appId, Date.now());
@@ -1222,18 +1249,23 @@ function watchForeground() {
 }
 watchForeground();
 
-register('setHomeOverride', (msg) => {
-  const cfg = readConfig();
-  const p = msg.payload || {};
-  if (typeof p.enabled === 'boolean') cfg.homeOverride = p.enabled;
-  if (Array.isArray(p.homeApps)) cfg.homeApps = p.homeApps.map(String);
-  if (typeof p.target === 'string') cfg.homeTarget = p.target || undefined;
-  if (['redirect', 'watch'].includes(p.mode)) cfg.homeMode = p.mode;
-  writeConfig(cfg);
-  // rebuild: the no-flash page has the target baked in
-  unmountRedirect().then(applyHomeMode).catch((e) => log('home mode error', e.message));
-  msg.respond({ returnValue: true, enabled: cfg.homeOverride !== false, mode: homeMode(cfg),
-    homeApps: cfg.homeApps || DEFAULT_HOME_APPS, target: cfg.homeTarget || 'auto', lastForeground });
+register('setHomeOverride', async (msg) => {
+  try {
+    let cfg = readConfig();
+    const p = msg.payload || {};
+    if (p.enabled === false || ['redirect', 'watch'].includes(p.mode)) {
+      await systemHome.setEnabled(false); cfg = readConfig();
+    }
+    if (typeof p.enabled === 'boolean') cfg.homeOverride = p.enabled;
+    if (Array.isArray(p.homeApps)) cfg.homeApps = p.homeApps.map(String);
+    if (typeof p.target === 'string') cfg.homeTarget = p.target || undefined;
+    if (['redirect', 'watch'].includes(p.mode)) cfg.homeMode = p.mode;
+    writeConfig(cfg);
+    // rebuild: the no-flash page has the target baked in
+    unmountRedirect().then(applyHomeMode).catch((e) => log('home mode error', e.message));
+    msg.respond({ returnValue: true, enabled: cfg.homeOverride !== false, mode: homeMode(cfg),
+      homeApps: cfg.homeApps || DEFAULT_HOME_APPS, target: cfg.homeTarget || 'auto', lastForeground });
+  } catch (e) { fail(msg, e.message); }
 });
 
 // ------------------------------------------------------------------ local JSON API
@@ -1655,6 +1687,12 @@ async function playInBackground(m, app, item, fromStart, run) {
 // What Settings' Remote page changes: the Home button's mode, and the Settings and Input buttons. cfg is
 // saved here, and left as it's saved
 async function setHome(b, cfg = readConfig()) {
+  if (typeof b.defaultHome === 'boolean') {
+    await systemHome.setEnabled(b.defaultHome); cfg = readConfig();
+    if (!b.defaultHome) { cfg.homeOverride = false; writeConfig(cfg); await applyHomeMode(); }
+  }
+  if (typeof b.startupEnabled === 'boolean') { cfg.startupEnabled = b.startupEnabled; writeConfig(cfg); }
+  if (b.mode !== undefined) { await systemHome.setEnabled(false); cfg = readConfig(); }
   if (typeof b.settingsKey === 'boolean' || typeof b.inputKey === 'boolean') {
     const was = { settingsKey: cfg.settingsKey, inputKey: cfg.inputKey };
     if (typeof b.settingsKey === 'boolean') setKeyBind(SETTINGS_KEY, b.settingsKey, cfg); /* the Settings key's bind */
@@ -1682,8 +1720,8 @@ async function setHome(b, cfg = readConfig()) {
 }
 
 async function homeState(cfg = readConfig()) {
-  return { mode: homeMode(cfg), noFlashActive: !!redirectTarget || keyFilter.takes('home'), noFlashAvailable: await noFlashAvailable(), settingsKey: settingsKeyState(), inputKey: keyState(INPUT_KEY),
-    piccap: !!picCapture && await picCapture.available() }; /* Settings -> Control Center offers Blur Over Video */
+  return Object.assign({ mode: homeMode(cfg), noFlashActive: !!redirectTarget || keyFilter.takes('home'), noFlashAvailable: !cfg.defaultHomeEnabled && await noFlashAvailable(), settingsKey: settingsKeyState(), inputKey: keyState(INPUT_KEY),
+    piccap: !!picCapture && await picCapture.available() }, await systemHome.status());
 }
 
 function setPrefs(b) {
@@ -1753,7 +1791,7 @@ async function handleApi(req, res) {
       const b = req.method === 'POST' ? await readBody(req) : null;
       const cfg = readConfig();
       if (b) await setHome(b, cfg);
-      return sendJSON(res, 200, await homeState(cfg));
+      return sendJSON(res, 200, await homeState());
     }
     if (url.pathname === '/api/settings' && req.method === 'POST') { /* Settings over other apps: its pages, {row, dir} changes one first */
       const b = await readBody(req);

@@ -5,6 +5,23 @@
 
 #include "home.h"
 
+static void home_post(const char *body)
+{
+    if (S.home_pending) return;
+    S.home_pending = 1;
+    net_post("/api/home", body, TAG_HOME_SET);
+}
+
+static void home_mode(const char *mode, int welcome)
+{
+    if (S.home_pending) return;
+    char body[96];
+    snprintf(body, sizeof body, "{\"mode\":\"%s\",\"asked\":true%s}", mode,
+             S.onboarded ? "" : ",\"onboarded\":false");
+    S.home_welcome_next = welcome;
+    home_post(body);
+}
+
 void run_action(Action act, int arg, const char *id)
 {
     App *a = item_app(S.focus);
@@ -104,28 +121,28 @@ void run_action(Action act, int arg, const char *id)
         rebuild_items();
         save_layout();
         break;
-    case ACT_HOME_MODE: {
-        const char *next = !strcmp(S.home_mode, "watch") ? "redirect" : "watch";
-        char body[48];
-        snprintf(body, sizeof body, "{\"mode\":\"%s\"}", next);
-        net_post("/api/home", body, TAG_HOME_SET);
-        snprintf(S.home_mode, sizeof S.home_mode, "%s", next);
-        toast(!strcmp(next, "redirect") ? "Home button: no-flash mode" : "Home button: standard mode", 3000);
-        settings_again();
+    case ACT_HOME_MODE:
+        if (!S.default_home_enabled)
+            home_mode(!strcmp(S.home_mode, "watch") ? "redirect" : "watch", 0);
         break;
-    }
+    case ACT_DEFAULT_HOME:
+        if (!S.default_home_enabled && !S.default_home_available) {
+            toast(S.default_home_reason[0] ? S.default_home_reason : "Default Home+ isn\xE2\x80\x99t available on this TV", 6000);
+            break;
+        }
+        home_post(S.default_home_enabled ? "{\"defaultHome\":false}" : "{\"defaultHome\":true}");
+        break;
+    case ACT_STARTUP:
+        home_post(S.startup_enabled ? "{\"startupEnabled\":false}" : "{\"startupEnabled\":true}");
+        break;
     case ACT_SETUP_RETRY:
         setup_retry_now();
         break;
     case ACT_HOME_YES:
-        set_home_mode(S.noflash_available ? "redirect" : "watch", 1);
-        toast("The Home button now opens Home+", 3000);
-        if (S.at_page == PAGE_WELCOME) welcome_next();
+        home_mode(S.noflash_available ? "redirect" : "watch", S.at_page == PAGE_WELCOME);
         break;
     case ACT_HOME_NO:
-        set_home_mode("off", 1);
-        toast("You can turn this on later in Settings", 3000);
-        if (S.at_page == PAGE_WELCOME) welcome_next();
+        home_mode("off", S.at_page == PAGE_WELCOME);
         break;
     case ACT_WELCOME_NEXT:
         welcome_next();
@@ -134,24 +151,14 @@ void run_action(Action act, int arg, const char *id)
         welcome_finish();
         break;
     case ACT_SETTINGS_KEY:
-        S.settings_key = !S.settings_key;
-        net_post("/api/home", S.settings_key ? "{\"settingsKey\":true}" : "{\"settingsKey\":false}", TAG_KEY_SET);
-        toast(S.settings_key ? "The Settings button opens the Control Center, over other apps too"
-                             : "The Settings button opens LG\xE2\x80\x99s Quick Settings", 3000);
-        settings_again();
+        home_post(S.settings_key ? "{\"settingsKey\":false}" : "{\"settingsKey\":true}");
         break;
     case ACT_INPUT_KEY:
-        S.input_key = !S.input_key;
-        net_post("/api/home", S.input_key ? "{\"inputKey\":true}" : "{\"inputKey\":false}", TAG_KEY_SET);
-        toast(S.input_key ? "The Input button opens Home+\xE2\x80\x99s inputs, over other apps too"
-                          : "The Input button opens LG\xE2\x80\x99s Input picker", 3000);
-        settings_again();
+        home_post(S.input_key ? "{\"inputKey\":false}" : "{\"inputKey\":true}");
         break;
     case ACT_HOME_TOGGLE: {
         int on = S.home_mode[0] && strcmp(S.home_mode, "off");
-        set_home_mode(on ? "off" : S.noflash_available ? "redirect" : "watch", 1);
-        toast(on ? "The Home button opens LG\xE2\x80\x99s home screen" : "The Home button now opens Home+", 3000);
-        settings_again();
+        home_mode(on ? "off" : S.noflash_available ? "redirect" : "watch", 0);
         break;
     }
     case ACT_REMOVE_ASK:

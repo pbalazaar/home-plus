@@ -1,5 +1,7 @@
 #!/bin/sh
 # Renders native Home+ screenshots into preview/native-*.png using the harness.
+# HOMEPLUS_PREVIEW_SCENE=remote|remote-default|remote-startup renders just that scene.
+# HOMEPLUS_PREVIEW_DEFAULT_HOME=supported|unsupported|failure models default-home support.
 # HOMEPLUS_PREVIEW_OUT: another folder for them (tools/test.sh uses a fresh one).
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -46,6 +48,15 @@ rest() { # name keys: run as on the TV for 32 s; in the last 10, the loop sleeps
   fi
   echo "rest-$1: $r"
 }
+# Focused Remote workflow: the real launcher changes settings through the harness's service.
+# "remote" also works against the unchanged baseline source for before/after screenshots.
+case "${HOMEPLUS_PREVIEW_SCENE:-}" in
+  remote) shot remote "UODDDDROO" 4800; exit 0 ;;
+  remote-default) shot remote-default "UODDDDROODO" 5600; exit 0 ;;
+  remote-startup) shot remote-startup "UODDDDROODDO" 5600; exit 0 ;;
+  "") ;;
+  *) echo "Unknown HOMEPLUS_PREVIEW_SCENE: $HOMEPLUS_PREVIEW_SCENE" >&2; exit 1 ;;
+esac
 shot home "" 2500
 shot stremio "RR" 3000
 shot stremio-shelf "RRUR" 3500

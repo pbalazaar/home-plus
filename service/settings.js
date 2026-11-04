@@ -49,7 +49,16 @@ module.exports = function createSettings({ log, readConfig, setPrefs, home, setH
       step('homeButton', 'Home Button', on ? 'Opens Home+' : 'Opens LG Home', 'Home+ in place of LG’s home screen, after apps too.',
         () => setHome({ mode: on ? 'off' : h.noFlashAvailable ? 'redirect' : 'watch', asked: true }))
     ];
-    if (on && h.noFlashAvailable) {
+    rows.push(step('defaultHome', 'Default Home App', h.defaultHomeEnabled ? 'Home+' : 'LG Home',
+      h.defaultHomeAvailable ? 'Use Home+ as the TV’s default Home app. LG Home stays available.' : h.defaultHomeReason || 'Default Home+ isn’t available on this TV.',
+      () => {
+        if (!h.defaultHomeEnabled && !h.defaultHomeAvailable) throw new Error(h.defaultHomeReason || 'Default Home+ isn’t available on this TV.');
+        return setHome({ defaultHome: !h.defaultHomeEnabled });
+      }));
+    rows.push(step('startupHome', 'Open Home+ at Startup', h.startupEnabled ? 'On' : 'Off',
+      'Open Home+ after the TV starts. Off follows the TV’s own startup behaviour.',
+      () => setHome({ startupEnabled: !h.startupEnabled })));
+    if (on && h.noFlashAvailable && !h.defaultHomeEnabled) {
       rows.push(step('noFlash', 'No Flash', h.noFlashActive ? 'On' : 'Off', 'LG’s home screen never shows, not even for a moment.',
         () => setHome({ mode: h.mode === 'watch' ? 'redirect' : 'watch' })));
     }
