@@ -354,7 +354,8 @@ async function mountRedirect() {
 async function unmountRedirect() {
   if (!redirectTarget) return;
   const r = await run('umount', [redirectTarget]);
-  log('no-flash mode off', r.err ? r.out.trim() : '');
+  if (r.err) throw new Error('could not unmount LG Home redirect: ' + (r.out.trim() || r.err.message));
+  log('no-flash mode off');
   redirectTarget = null;
   await luna(APPMGR + '/closeByAppId', { id: LG_HOME });
 }
@@ -378,7 +379,8 @@ async function applyHomeMode() {
   } else {
     await unmountRedirect();
   }
-  await applyKeyFilter(); /* (No Flash without the redirect: the key filter's) */
+  const took = await applyKeyFilter(); /* (No Flash without the redirect: the key filter's) */
+  if (took !== true) throw new Error(`the TV didn't take Home+'s key filter: ${took}`);
 }
 setTimeout(() => applyHomeMode().catch((e) => log('home mode error', e.message)), 1500);
 
@@ -438,6 +440,15 @@ const OUR_IDS = [NATIVE_ID, OLD_ID, 'com.atvlauncher.native', 'com.atvlauncher.a
 // (OLD_BINDS). Matched whole: a bind of yours that only mentions Home+ stays yours.
 const ourBind = (b, key) => !!b && !!OUR_BINDS[key] &&
   ((b.action === OUR_BINDS[key].action && b.command === OUR_BINDS[key].command) || OLD_BINDS[key](b));
+
+function dropHomeBind() {
+  const binds = readBinds();
+  if (!binds) throw new Error("LG Input Hook's keybinds.json isn't valid JSON");
+  if (ourBind(binds[HOME_KEY], HOME_KEY)) {
+    delete binds[HOME_KEY];
+    writeBinds(binds);
+  }
+}
 
 function dropInputhookBinds() {
   // lginputhook keybinds that are Home+'s are removed; other binds stay
@@ -1256,13 +1267,15 @@ register('setHomeOverride', async (msg) => {
     if (p.enabled === false || ['redirect', 'watch'].includes(p.mode)) {
       await systemHome.setEnabled(false); cfg = readConfig();
     }
+    if (p.enabled === false) dropHomeBind();
     if (typeof p.enabled === 'boolean') cfg.homeOverride = p.enabled;
     if (Array.isArray(p.homeApps)) cfg.homeApps = p.homeApps.map(String);
     if (typeof p.target === 'string') cfg.homeTarget = p.target || undefined;
     if (['redirect', 'watch'].includes(p.mode)) cfg.homeMode = p.mode;
     writeConfig(cfg);
     // rebuild: the no-flash page has the target baked in
-    unmountRedirect().then(applyHomeMode).catch((e) => log('home mode error', e.message));
+    await unmountRedirect();
+    await applyHomeMode();
     msg.respond({ returnValue: true, enabled: cfg.homeOverride !== false, mode: homeMode(cfg),
       homeApps: cfg.homeApps || DEFAULT_HOME_APPS, target: cfg.homeTarget || 'auto', lastForeground });
   } catch (e) { fail(msg, e.message); }
@@ -1693,7 +1706,7 @@ async function playInBackground(m, app, item, fromStart, run) {
 async function setHome(b, cfg = readConfig()) {
   if (typeof b.defaultHome === 'boolean') {
     await systemHome.setEnabled(b.defaultHome); cfg = readConfig();
-    if (!b.defaultHome) { cfg.homeOverride = false; writeConfig(cfg); await applyHomeMode(); }
+    if (!b.defaultHome) { dropHomeBind(); cfg.homeOverride = false; writeConfig(cfg); await applyHomeMode(); }
   }
   if (typeof b.startupEnabled === 'boolean') { cfg.startupEnabled = b.startupEnabled; writeConfig(cfg); }
   if (b.mode !== undefined) { await systemHome.setEnabled(false); cfg = readConfig(); }
@@ -1714,6 +1727,7 @@ async function setHome(b, cfg = readConfig()) {
     if (b.mode === undefined && !b.asked) writeConfig(cfg);
   }
   if (b.mode !== undefined || b.asked) {
+    if (b.mode === 'off') dropHomeBind();
     if (['redirect', 'watch'].includes(b.mode)) { cfg.homeMode = b.mode; cfg.homeOverride = true; }
     if (b.mode === 'off') cfg.homeOverride = false;
     if (b.asked) cfg.homeAsked = true;
@@ -1724,7 +1738,9 @@ async function setHome(b, cfg = readConfig()) {
 }
 
 async function homeState(cfg = readConfig()) {
-  return Object.assign({ mode: homeMode(cfg), noFlashActive: !!redirectTarget || keyFilter.takes('home'), noFlashAvailable: !cfg.defaultHomeEnabled && await noFlashAvailable(), settingsKey: settingsKeyState(), inputKey: keyState(INPUT_KEY),
+  const active = !!redirectTarget || keyFilter.takes('home');
+  const mode = homeMode(cfg) === 'off' && active ? 'redirect' : homeMode(cfg);
+  return Object.assign({ mode, noFlashActive: active, noFlashAvailable: !cfg.defaultHomeEnabled && await noFlashAvailable(), settingsKey: settingsKeyState(), inputKey: keyState(INPUT_KEY),
     piccap: !!picCapture && await picCapture.available() }, await systemHome.status());
 }
 

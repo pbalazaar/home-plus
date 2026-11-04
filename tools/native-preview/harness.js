@@ -33,7 +33,7 @@ if (HOME_MODEL) {
   fs.writeFileSync(path.join(process.env.HOMEPLUS_APP_DIR, 'homeplus'), 'preview native app');
 }
 // HOMEPLUS_PREVIEW_FRESH: a first install (the welcome steps not done yet)
-fs.writeFileSync(CONFIG_FILE, JSON.stringify(
+if (!process.env.HOMEPLUS_PREVIEW_KEEP_CONFIG || !fs.existsSync(CONFIG_FILE)) fs.writeFileSync(CONFIG_FILE, JSON.stringify(
   process.env.HOMEPLUS_PREVIEW_FRESH ? { stremioAuthKey: 'preview' } : { stremioAuthKey: 'preview', homeAsked: true, homeMode: 'watch' }));
 // HOMEPLUS_PREVIEW_PREFS: launcher preferences to start with, as JSON
 if (process.env.HOMEPLUS_PREVIEW_PREFS) {
@@ -413,6 +413,23 @@ global.__stubApps = process.env.HOMEPLUS_PREVIEW_NO_APPS ? [] : APPS.map(([id, t
   id, title, version: '1.0', folderPath: assets, icon: `${id}.png`, iconColor: COLORS[id] || '',
   removable: !BUILT_IN.includes(id), systemApp: BUILT_IN.includes(id)
 }));
+// Test-only fake web LG Home and mount commands; never mount on the host.
+if (process.env.HOMEPLUS_PREVIEW_REDIRECT) {
+  const folder = path.join(assets, 'lg-home');
+  mkdirSync(folder);
+  fs.writeFileSync(path.join(folder, 'appinfo.json'), JSON.stringify({ type: 'web', main: 'index.html' }));
+  fs.writeFileSync(path.join(folder, 'index.html'), 'LG Home');
+  global.__stubApps.push({ id: 'com.webos.app.home', folderPath: folder });
+  const read = fs.readFileSync;
+  fs.readFileSync = (file, ...args) => file === '/proc/mounts' ? '' : read(file, ...args);
+  const cp = require('child_process'), exec = cp.execFile;
+  cp.execFile = (cmd, args, cb) => {
+    if (cmd !== 'mount' && cmd !== 'umount') return exec(cmd, args, cb);
+    fs.appendFileSync(path.join(assets, 'mount-calls'), JSON.stringify({ cmd, args }) + '\n');
+    const fail = cmd === 'umount' && fs.existsSync(path.join(assets, 'fail-umount'));
+    setImmediate(() => cb(fail ? new Error('simulated unmount failure') : null, '', ''));
+  };
+}
 // HOMEPLUS_PREVIEW_OLD: the old Home+'s service on Home+'s port (com.github.pmiraka.homeplus, its id up to
 // 0.14.0, installed beside the new one)
 if (process.env.HOMEPLUS_PREVIEW_OLD) require(path.join(serviceDir, 'package.json')).name = 'com.github.pmiraka.homeplus.service';
