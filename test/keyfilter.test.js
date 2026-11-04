@@ -400,6 +400,9 @@ test('key filter: a button configd doesn\'t take stays as it was, and Settings h
     assert.match(r.json.errorText, /key filter/);
     assert.deepEqual((await svc.call('GET', '/api/home')).json.settingsKey, { available: true, on: false });
     assert.notEqual(JSON.parse(fs.readFileSync(path.join(dir, 'config', 'config.json'), 'utf8')).settingsKey, true, 'not kept as on');
+    const home = await svc.call('POST', '/api/home', { body: { mode: 'redirect' } });
+    assert.equal(home.status, 500);
+    assert.match(home.json.errorText, /key filter/);
   } finally {
     await svc.stop();
     rmSync(dir, { recursive: true, force: true, maxRetries: 5 });

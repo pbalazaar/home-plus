@@ -187,7 +187,7 @@ module.exports = function createKeyFilter({ luna, subscribe, log, dir, write, ap
 
   // one change at a time, each with what's wanted by then
   function queue() {
-    busy = busy.then(settle).catch((e) => log('key filter:', e.message));
+    busy = busy.then(settle).catch((e) => { failed = e.message; log('key filter:', e.message); });
     return busy;
   }
 
