@@ -1131,25 +1131,37 @@ let tvOn = true;
 let powerState = '';
 let wakeUntil = 0;
 let homeBeforeStandby = false;
+let wakeFromHome = false;
 let wakeTimer = null;
 
 function clearWake() {
   wakeUntil = 0;
+  wakeFromHome = false;
   if (wakeTimer) clearTimeout(wakeTimer);
   wakeTimer = null;
+}
+
+function wakeFallback(appId, cfg) {
+  return (wakeFromHome && appId === 'com.webos.app.livetv') ||
+    (cfg.defaultHomeEnabled === true && cfg.startupEnabled === true && appId === LG_HOME);
 }
 
 function maybeHomeAfterWake(appId) {
   if (!wakeUntil || !tvOn || !appId) return;
   if (Date.now() > wakeUntil) return clearWake();
   const cfg = readConfig();
-  if (appId === homeTarget(cfg) || appId !== 'com.webos.app.livetv' || homeMode(cfg) === 'off') return clearWake();
-  if (wakeTimer) return;
+  if (appId === homeTarget(cfg) || !wakeFallback(appId, cfg) || homeMode(cfg) === 'off') return clearWake();
+  if (wakeTimer) {
+    if (lastForeground === appId) return;
+    clearTimeout(wakeTimer);
+  }
   wakeTimer = setTimeout(() => {
     wakeTimer = null;
-    if (!wakeUntil || !tvOn || lastForeground !== 'com.webos.app.livetv') return;
+    if (!wakeUntil || !tvOn || lastForeground !== appId) return;
+    const cfg = readConfig();
+    if (!wakeFallback(appId, cfg) || homeMode(cfg) === 'off') return clearWake();
     clearWake();
-    takeover(homeTarget(readConfig()), ' (power on)').catch((e) => log('home wake failed', e.message));
+    takeover(homeTarget(cfg), ' (power on)').catch((e) => log('home wake failed', e.message));
   }, 650);
 }
 
@@ -1228,11 +1240,16 @@ function watchPower() {
       }
       if (!tvOn || !['Active Standby', 'Suspend', 'Power Off'].includes(previous)) return;
       log('power wake', previous, '-> Active');
-      if (!homeBeforeStandby) return;
+      const fromHome = homeBeforeStandby, cfg = readConfig();
       homeBeforeStandby = false;
+      // Some TVs wake straight into LG Home without resolving the default Home app.
+      if (!fromHome && !(cfg.defaultHomeEnabled === true && cfg.startupEnabled === true)) return;
+      wakeFromHome = fromHome;
       wakeUntil = Date.now() + 5000;
       const until = wakeUntil;
-      setTimeout(() => { if (wakeUntil === until && lastForeground === 'com.webos.app.livetv') maybeHomeAfterWake(lastForeground); }, 100);
+      setTimeout(() => {
+        if (wakeUntil === until && wakeFallback(lastForeground, readConfig())) maybeHomeAfterWake(lastForeground);
+      }, 100);
       setTimeout(() => { if (wakeUntil === until) clearWake(); }, 5000);
     });
     sub.on('cancel', () => setTimeout(watchPower, 3000));
