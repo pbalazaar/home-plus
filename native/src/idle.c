@@ -156,6 +156,7 @@ void ready_home(void)
 void go_offscreen(void)
 {
     if (S.offscreen) return;
+    S.ptr_entry = 0;
     S.offscreen = 1;
     S.hidden_at = SDL_GetTicks();
     S.keys_until = 0;
@@ -186,6 +187,7 @@ void hidden_idle(Uint32 now)
 void come_back(void)
 {
     if (S.offscreen) { /* the first frame back is the screen at rest (nothing catches up on screen), coming into focus */
+        pointer_home();
         S.settle = 1;
         S.back_at = S.reduce_motion ? 0 : SDL_GetTicks() | 1; /* (Reduce Motion: there at once, as a sheet appears in place) */
         S.rail_next = 0; /* the carousel turns a whole turn after it's back (the titles beside it were let go) */
