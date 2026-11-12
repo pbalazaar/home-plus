@@ -51,7 +51,15 @@ function fixture(flags = {}) {
       if (flags.refusedStartup && p.id === APP) return { returnValue: false, errorText: 'Startup refused' };
       model.foreground = p.id; return { returnValue: true };
     }
-    if (method === 'getForegroundAppInfo') return { returnValue: true, appId: model.foreground };
+    if (method === 'getPowerState') return { returnValue: true, state: model.powerState || 'Active', processing: !!model.processing };
+    if (method === 'getPowerOnReason') {
+      if (model.beforeReason) await model.beforeReason();
+      return model.powerReason || { returnValue: true, reason: 'remoteKey' };
+    }
+    if (method === 'getForegroundAppInfo') {
+      if (model.beforeForeground) await model.beforeForeground();
+      return { returnValue: true, appId: model.foreground };
+    }
     if (method === 'launchDefaultApp') {
       if (flags.badRollback) { recovering = true; return { returnValue: false, errorText: 'Launch failed' }; }
       if (flags.refusedLaunch) return { returnValue: false, errorText: 'Launch failed' };
@@ -65,6 +73,7 @@ function fixture(flags = {}) {
   const home = createHome({
     luna, readConfig, writeConfig, configPath: () => file, appDir: app, initDir: path.join(dir, 'init.d'),
     stateDir: path.join(dir, 'guard'), runtimeDir: runtime, isRoot: () => !flags.unrooted, timeout: 100,
+    power: () => ({ on: (model.powerState || 'Active') === 'Active' && !model.processing, generation: model.powerGeneration || 0 }),
     suspend: async () => { const c = readConfig(); c.homeOverride = false; writeConfig(c); },
     resume: async () => {}, log: () => {},
     startGuard: async () => {
@@ -216,4 +225,124 @@ test('startup is independent of Home button takeover and does not steal another 
     assert.deepEqual(await t.home.startup(), { launched: false });
     assert.equal(t.readConfig().homeOverride, false);
   } finally { t.close(); }
+});
+
+test('system startup opens a ready blank screen without waiting for LG Home', async () => {
+  const t = fixture();
+  try {
+    await t.home.setEnabled(true);
+    const cfg = t.readConfig(); cfg.startupEnabled = true; t.writeConfig(cfg);
+    t.model.foreground = '';
+    assert.deepEqual(await t.home.startup(), { launched: true });
+    assert.equal(t.model.foreground, APP);
+    assert.equal(t.readConfig().defaultHomeEnabled, true);
+  } finally { t.close(); }
+});
+
+for (const reason of ['remoteKey', 'localKey', 'lastPowerOn', 'wakeOnWiFi', 'hdmiCec', 'unknown']) {
+  test(`only a normal power-on reason requests direct Home startup (${reason})`, async () => {
+    const t = fixture();
+    try {
+      const cfg = t.readConfig(); cfg.defaultHomeEnabled = true; cfg.startupEnabled = true; t.writeConfig(cfg);
+      t.model.powerReason = { returnValue: true, reason };
+      assert.equal(await t.home.powerOnHome(), ['remoteKey', 'localKey', 'lastPowerOn'].includes(reason));
+      cfg.startupEnabled = false; t.writeConfig(cfg);
+      assert.equal(await t.home.powerOnHome(), false);
+      cfg.startupEnabled = true; cfg.defaultHomeEnabled = false; t.writeConfig(cfg);
+      assert.equal(await t.home.powerOnHome(), false);
+    } finally { t.close(); }
+  });
+}
+
+test('turning startup Off during the power-reason lookup cancels direct Home', async () => {
+  const t = fixture();
+  try {
+    const cfg = t.readConfig(); cfg.defaultHomeEnabled = true; cfg.startupEnabled = true; t.writeConfig(cfg);
+    t.model.beforeReason = async () => { cfg.startupEnabled = false; t.writeConfig(cfg); };
+    assert.equal(await t.home.powerOnHome(), false);
+  } finally { t.close(); }
+});
+
+test('an app opened during the blank-startup check stays in front', async () => {
+  const t = fixture();
+  try {
+    await t.home.setEnabled(true);
+    const cfg = t.readConfig(); cfg.startupEnabled = true; t.writeConfig(cfg);
+    t.model.foreground = '';
+    t.model.beforeReason = async () => { t.model.foreground = 'netflix'; };
+    assert.deepEqual(await t.home.startup(), { launched: false });
+    assert.equal(t.model.foreground, 'netflix');
+  } finally { t.close(); }
+});
+
+test('Startup Off during the final foreground lookup cancels even an idle input', async () => {
+  const t = fixture();
+  try {
+    await t.home.setEnabled(true);
+    const cfg = t.readConfig(); cfg.startupEnabled = true; t.writeConfig(cfg);
+    t.model.foreground = '';
+    t.model.beforeReason = async () => {
+      t.model.beforeForeground = async () => {
+        t.model.beforeForeground = null;
+        cfg.startupEnabled = false; t.writeConfig(cfg);
+        t.model.foreground = 'com.webos.app.livetv';
+      };
+    };
+    assert.deepEqual(await t.home.startup(), { launched: false });
+    assert.equal(t.model.foreground, 'com.webos.app.livetv');
+  } finally { t.close(); }
+});
+
+test('a power-down during the reason lookup cannot launch Home+ on a blank screen', async () => {
+  const t = fixture();
+  try {
+    await t.home.setEnabled(true);
+    const cfg = t.readConfig(); cfg.startupEnabled = true; t.writeConfig(cfg);
+    t.model.foreground = '';
+    let checked;
+    const checking = new Promise((resolve) => { checked = resolve; });
+    t.model.beforeReason = async () => { t.model.powerState = 'Active Standby'; checked(); };
+    const starting = t.home.startup();
+    await checking;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const front = t.model.foreground;
+    cfg.startupEnabled = false; t.writeConfig(cfg);
+    const result = await starting;
+    assert.equal(front, '');
+    assert.deepEqual(result, { launched: false });
+  } finally { t.close(); }
+});
+
+for (const [appId, rewoke] of [['', false], ['com.webos.app.livetv', false], ['', true]]) {
+  test(`power-down during the final foreground lookup cancels startup (${appId || 'blank'}, ${rewoke ? 'rewoke' : 'off'})`, async () => {
+    const t = fixture();
+    try {
+      await t.home.setEnabled(true);
+      const cfg = t.readConfig(); cfg.startupEnabled = true; t.writeConfig(cfg);
+      t.model.foreground = '';
+      t.model.beforeReason = async () => {
+        t.model.beforeForeground = async () => {
+          t.model.beforeForeground = null;
+          t.model.powerState = rewoke ? 'Active' : 'Active Standby';
+          t.model.powerGeneration = 1;
+          t.model.foreground = appId;
+        };
+      };
+      assert.deepEqual(await t.home.startup(), { launched: false });
+      assert.equal(t.model.foreground, appId);
+    } finally { t.close(); }
+  });
+}
+
+test('blank boot waits for Active rather than dropping startup while the panel is starting', async () => {
+  const t = fixture();
+  let timer;
+  try {
+    await t.home.setEnabled(true);
+    const cfg = t.readConfig(); cfg.startupEnabled = true; t.writeConfig(cfg);
+    t.model.foreground = ''; t.model.powerState = 'Active Standby';
+    timer = setTimeout(() => { t.model.powerState = 'Active'; }, 300);
+    assert.deepEqual(await t.home.startup(), { launched: true });
+    assert.equal(t.model.foreground, APP);
+  } finally { clearTimeout(timer); t.close(); }
 });

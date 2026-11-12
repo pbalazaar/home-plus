@@ -397,6 +397,7 @@ const systemHome = require('./default-home')({
   luna, readConfig, writeConfig, configPath: findConfigPath, appDir: APP_DIR, initDir: path.dirname(INITD),
   stateDir: process.env.HOMEPLUS_DEFAULT_HOME_DIR || '/var/lib/webosbrew/homeplus-default-home',
   runtimeDir: process.env.HOMEPLUS_RUNTIME_DIR || '/tmp', isRoot, log,
+  power: () => ({ on: tvOn, generation: powerGeneration }),
   suspend: async () => {
     const cfg = readConfig(); cfg.homeOverride = false; writeConfig(cfg);
     await unmountRedirect(); await applyKeyFilter();
@@ -1129,27 +1130,60 @@ const quit = new Map(); /* apps that closed, id -> when */
 let emptied = { app: '', at: 0 }; /* the app that left the front with nothing after it, and when */
 let tvOn = true;
 let powerState = '';
+let powerGeneration = 0;
 let wakeUntil = 0;
 let homeBeforeStandby = false;
+let wakeFromHome = false;
 let wakeTimer = null;
+let wakeGeneration = 0;
+let wakePending = false;
+let wakeDirect = false;
+let wakeInput = '';
 
 function clearWake() {
+  wakeGeneration++;
   wakeUntil = 0;
+  wakeFromHome = false;
+  wakePending = false;
+  wakeDirect = false;
+  wakeInput = '';
   if (wakeTimer) clearTimeout(wakeTimer);
   wakeTimer = null;
 }
 
+function wakeIdle(appId) {
+  return !appId || appId === LG_HOME || /^com\.webos\.app\.(livetv|hdmi[0-9]+)$/.exec(appId);
+}
+
+function wakeFallback(appId, cfg) {
+  return (wakeFromHome && appId === 'com.webos.app.livetv') ||
+    (cfg.defaultHomeEnabled === true && cfg.startupEnabled === true &&
+      (appId === LG_HOME || (wakeDirect && wakeIdle(appId) &&
+        (!/^com\.webos\.app\.hdmi[0-9]+$/.exec(appId) || !wakeInput || appId === wakeInput))));
+}
+
 function maybeHomeAfterWake(appId) {
-  if (!wakeUntil || !tvOn || !appId) return;
+  if (!wakeUntil || !tvOn) return;
   if (Date.now() > wakeUntil) return clearWake();
   const cfg = readConfig();
-  if (appId === homeTarget(cfg) || appId !== 'com.webos.app.livetv' || homeMode(cfg) === 'off') return clearWake();
-  if (wakeTimer) return;
+  if (/^com\.webos\.app\.hdmi[0-9]+$/.exec(appId)) {
+    if (wakeInput && wakeInput !== appId) return clearWake();
+    wakeInput = appId;
+  }
+  if (wakePending && appId !== homeTarget(cfg) && wakeIdle(appId)) return;
+  if (!appId && !wakeDirect) return;
+  if (appId === homeTarget(cfg) || !wakeFallback(appId, cfg) || homeMode(cfg) === 'off') return clearWake();
+  if (wakeTimer) {
+    if (lastForeground === appId) return;
+    clearTimeout(wakeTimer);
+  }
   wakeTimer = setTimeout(() => {
     wakeTimer = null;
-    if (!wakeUntil || !tvOn || lastForeground !== 'com.webos.app.livetv') return;
+    if (!wakeUntil || !tvOn || lastForeground !== appId) return;
+    const cfg = readConfig();
+    if (!wakeFallback(appId, cfg) || homeMode(cfg) === 'off') return clearWake();
     clearWake();
-    takeover(homeTarget(readConfig()), ' (power on)').catch((e) => log('home wake failed', e.message));
+    takeover(homeTarget(cfg), ' (power on)').catch((e) => log('home wake failed', e.message));
   }, 650);
 }
 
@@ -1159,6 +1193,7 @@ function onNoForeground() {
   log('foreground', left, '-> (none)');
   lastForeground = '';
   emptied = { app: left, at: Date.now() };
+  maybeHomeAfterWake('');
   checkHomeAfterQuit();
 }
 
@@ -1215,7 +1250,9 @@ function watchPower() {
     sub.on('response', (m) => {
       const p = m.payload || {};
       if (!p.state) return;
+      const wasOn = tvOn;
       tvOn = p.state === 'Active' && !p.processing; /* (not turning off, nor its screen) */
+      if (wasOn && !tvOn && powerState) powerGeneration++;
       const previous = powerState;
       if (p.state !== 'Active' || !p.processing) powerState = p.state;
       if (['Active Standby', 'Suspend', 'Power Off'].includes(p.state) &&
@@ -1228,11 +1265,27 @@ function watchPower() {
       }
       if (!tvOn || !['Active Standby', 'Suspend', 'Power Off'].includes(previous)) return;
       log('power wake', previous, '-> Active');
-      if (!homeBeforeStandby) return;
+      const fromHome = homeBeforeStandby, cfg = readConfig();
       homeBeforeStandby = false;
+      // Some TVs wake straight into LG Home without resolving the default Home app.
+      if (!fromHome && !(cfg.defaultHomeEnabled === true && cfg.startupEnabled === true)) return;
+      wakeFromHome = fromHome;
       wakeUntil = Date.now() + 5000;
       const until = wakeUntil;
-      setTimeout(() => { if (wakeUntil === until && lastForeground === 'com.webos.app.livetv') maybeHomeAfterWake(lastForeground); }, 100);
+      if (cfg.defaultHomeEnabled === true && cfg.startupEnabled === true) {
+        const generation = wakeGeneration;
+        wakePending = true;
+        wakeInput = /^com\.webos\.app\.hdmi[0-9]+$/.exec(lastForeground) ? lastForeground : '';
+        systemHome.powerOnHome().then((direct) => {
+          if (wakeGeneration !== generation || !wakeUntil || !tvOn) return;
+          wakePending = false;
+          wakeDirect = direct;
+          if (wakeFallback(lastForeground, readConfig())) maybeHomeAfterWake(lastForeground);
+        });
+      }
+      setTimeout(() => {
+        if (wakeUntil === until && wakeFallback(lastForeground, readConfig())) maybeHomeAfterWake(lastForeground);
+      }, 100);
       setTimeout(() => { if (wakeUntil === until) clearWake(); }, 5000);
     });
     sub.on('cancel', () => setTimeout(watchPower, 3000));

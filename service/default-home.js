@@ -165,6 +165,17 @@ module.exports = function defaultHome(options) {
       throw e;
     } finally { busy = false; }
   }
+  async function powerOnHome() {
+    const cfg = readConfig();
+    if (cfg.defaultHomeEnabled !== true || cfg.startupEnabled !== true) return false;
+    try {
+      const r = await inspect('luna://com.webos.service.tvpower/power/getPowerOnReason', {});
+      const fresh = readConfig();
+      // Network and HDMI/CEC wakes belong to the app or input that requested them.
+      return !!r && r.returnValue === true && ['remoteKey', 'localKey', 'lastPowerOn'].includes(r.reason) &&
+        fresh.defaultHomeEnabled === true && fresh.startupEnabled === true;
+    } catch (e) { return false; } // older TVs may not expose the reason
+  }
   async function startup() {
     if (recoveryRun) await recoveryRun;
     if (readConfig().startupEnabled !== true || busy) return { launched: false };
@@ -173,11 +184,31 @@ module.exports = function defaultHome(options) {
       const marker = path.join(options.runtimeDir || '/tmp', 'homeplus-startup-requested');
       try { fs.closeSync(fs.openSync(marker, 'wx', 0o600)); } catch (e) { if (e.code === 'EEXIST') return { launched: false }; throw e; }
       const end = Date.now() + 20000;
+      const powerBefore = options.power && options.power();
       do {
+        if (readConfig().startupEnabled !== true) return { launched: false };
         const r = await luna(MANAGER + 'getForegroundAppInfo', {});
-        const id = r && (r.appId || (r.foregroundAppInfo && r.foregroundAppInfo[0] && r.foregroundAppInfo[0].appId));
+        let id = r && (r.appId || (r.foregroundAppInfo && r.foregroundAppInfo[0] && r.foregroundAppInfo[0].appId));
+        let readyBlank = false;
+        if (!id && readConfig().defaultHomeEnabled === true && await powerOnHome()) {
+          const power = await inspect('luna://com.webos.service.tvpower/power/getPowerState', {});
+          if (power && power.returnValue === true && power.state === 'Active' && !power.processing) {
+            // With LG Auto Launch off there need not be a foreground app at all.
+            // Re-read after the asynchronous checks, preserving an app opened meanwhile.
+            const current = await inspect(MANAGER + 'getForegroundAppInfo', {});
+            if (current && current.returnValue === true) {
+              id = current.appId || (current.foregroundAppInfo && current.foregroundAppInfo[0] && current.foregroundAppInfo[0].appId);
+              const cfg = readConfig();
+              readyBlank = !id && cfg.defaultHomeEnabled === true && cfg.startupEnabled === true;
+            }
+          }
+        }
         if (id === APP) return { launched: false };
-        if (id && (id === 'com.webos.app.home' || /^com\.webos\.app\.(livetv|hdmi[0-9]+)$/.exec(id))) {
+        const powerNow = options.power && options.power();
+        if (readConfig().startupEnabled !== true || (powerNow &&
+            powerNow.generation !== powerBefore.generation)) return { launched: false };
+        if (powerNow && !powerNow.on) { await wait(250); continue; }
+        if (readyBlank || (id && (id === 'com.webos.app.home' || /^com\.webos\.app\.(livetv|hdmi[0-9]+)$/.exec(id)))) {
           await call(MANAGER + 'launch', { id: APP, params: { source: 'homeplus-boot' } });
           await foreground(APP); return { launched: true };
         }
@@ -217,5 +248,5 @@ module.exports = function defaultHome(options) {
       (error) => { recoveryRun = null; throw error; });
     return recoveryRun;
   }
-  return { status, setEnabled, startup, remove, recover };
+  return { status, setEnabled, startup, powerOnHome, remove, recover };
 };
