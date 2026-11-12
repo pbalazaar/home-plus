@@ -279,6 +279,12 @@ const DESC = {
 };
 let moved = 0; /* frames of moving video so far (capture.json, below) */
 global.__stubLuna = (uri, params) => {
+  if (uri.endsWith('/power/getPowerOnReason') && process.env.HOMEPLUS_PREVIEW_POWER_REASON) {
+    const answer = { returnValue: true, reason: process.env.HOMEPLUS_PREVIEW_POWER_REASON };
+    const delay = Number(process.env.HOMEPLUS_PREVIEW_POWER_REASON_DELAY || 0);
+    return delay ? new Promise((resolve) => setTimeout(() => resolve(answer), delay)) : answer;
+  }
+
   // Real recommendation cards through the service, including Details Off -> On.
   if (process.env.HOMEPLUS_PREVIEW_RECOMMENDATIONS) {
     if (uri.endsWith('/getAllContents')) return { returnValue: true, allContents: [{

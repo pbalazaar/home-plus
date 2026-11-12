@@ -152,6 +152,54 @@ describe('getting back to Home+', { concurrency: true }, () => {
   // Already configured through Default Home App and Open Home+ at Startup.
   const systemStartup = { homeAsked: true, homeMode: 'watch', homeOverride: true,
     defaultHomeEnabled: true, startupEnabled: true };
+  for (const appId of ['', 'com.webos.app.livetv', 'com.webos.app.hdmi1']) {
+    for (const at of [450, 650]) {
+      test(`normal power wake goes straight to Home+ from ${appId || 'blank'} (${at})`, async () => {
+        const tv = await start({
+          getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+          getForegroundAppInfo: [[120, { appId: HP }], [at, { appId }]]
+        }, { HOMEPLUS_PREVIEW_POWER_REASON: 'remoteKey', HOMEPLUS_PREVIEW_POWER_REASON_DELAY: '200' }, systemStartup);
+        try {
+          await until(() => tv.launches().length, 2500, 'direct Home+ after power wake');
+          assert.equal(tv.launches().length, 1);
+          assert.equal(tv.lines().filter((l) => l.uri.endsWith('/launch') && l.params.id === 'com.webos.app.home').length, 0);
+        } finally { await tv.stop(); }
+      });
+    }
+  }
+  for (const reason of ['wakeOnWiFi', 'hdmiCec', 'unknown']) {
+    test(`an input wake is preserved for ${reason}`, async () => {
+      const tv = await start({
+        getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+        getForegroundAppInfo: [[120, { appId: 'com.webos.app.hdmi1' }], [600, { appId: 'com.webos.app.hdmi1' }]]
+      }, { HOMEPLUS_PREVIEW_POWER_REASON: reason }, systemStartup);
+      try {
+        await until(() => tv.said('getForegroundAppInfo', 'com.webos.app.hdmi1'), 2000, 'input foreground');
+        await sleep(1500);
+        assert.equal(tv.launches().length, 0);
+      } finally { await tv.stop(); }
+    });
+  }
+  for (const [name, later, route, body] of [
+    ['an app', [[800, { appId: 'netflix' }]]],
+    ['a different HDMI input', [[800, { appId: 'com.webos.app.hdmi2' }]]],
+    ['an explicit launch', [], '/api/launch', { id: 'netflix' }],
+    ['an explicit input', [], '/api/control', { action: 'input', value: 'com.webos.app.hdmi1' }],
+    ['Startup Off', [], '/api/home', { startupEnabled: false }]
+  ]) {
+    test(`a slow power-reason reply cannot override ${name}`, async () => {
+      const tv = await start({
+        getPowerState: [[100, { state: 'Active' }], [250, { state: 'Active Standby' }], [500, { state: 'Active' }]],
+        getForegroundAppInfo: [[120, { appId: 'com.webos.app.hdmi1' }], [600, { appId: 'com.webos.app.hdmi1' }], ...later]
+      }, { HOMEPLUS_PREVIEW_POWER_REASON: 'remoteKey', HOMEPLUS_PREVIEW_POWER_REASON_DELAY: '500' }, systemStartup);
+      try {
+        await until(() => tv.lines().some((l) => l.uri.endsWith('/getPowerOnReason')), 2000, 'reason lookup');
+        if (route) assert.equal((await tv.svc.call('POST', route, { body })).status, 200);
+        await sleep(1600);
+        assert.equal(tv.launches().length, 0);
+      } finally { await tv.stop(); }
+    });
+  }
   for (const config of [undefined, systemStartup]) {
     test(`a delayed wake foreground does not mistake old Home+ for a completed return (${config ? 'system' : 'watch'})`, async () => {
       const tv = await start({
