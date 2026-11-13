@@ -735,6 +735,7 @@ void move_focus(int dx, int dy);
 int is_back(SDL_Keycode k);
 void keys_take_over(void);
 void pointer_home(void);
+void pointer_visibility_changed(SDL_bool visible);
 int pointer_moved(int mx, int my);
 int pointer_click(int mx, int my);
 void on_key_down(SDL_KeyboardEvent *e);

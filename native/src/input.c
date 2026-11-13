@@ -233,12 +233,21 @@ void pointer_home(void)
     pointer_visibility(SDL_FALSE);
 }
 
+/* webOS is reporting its cursor, not asking us to hide it again. A real show starts
+ * a fresh entry baseline; repeated notifications must preserve movement progress. */
+void pointer_visibility_changed(SDL_bool visible)
+{
+    if (visible && S.ptr_entry && !S.cursor_up)
+        S.ptr_ax = S.ptr_ay = ptr_lx = ptr_ly = -1;
+    S.cursor_up = visible != SDL_FALSE;
+}
+
 /* the pointer moved to mx,my: 1 when it's (now) the one in charge */
 int pointer_moved(int mx, int my)
 {
     ptr_lx = mx;
     ptr_ly = my;
-    S.cursor_up = !S.ptr_entry;
+    if (!S.ptr_entry) S.cursor_up = 1;
     if (S.ptr_mode) return 1;
     if (S.ptr_ax < 0) { /* first sighting since the keys took over: just remember it */
         S.ptr_ax = mx;
@@ -264,8 +273,7 @@ void on_key_down(SDL_KeyboardEvent *e)
 {
     SDL_Keycode k = remote_key(&e->keysym);
     if (k == WEBOS_KEY_CURSOR_SHOW || k == WEBOS_KEY_CURSOR_HIDE) {
-        if (k == WEBOS_KEY_CURSOR_SHOW && S.ptr_entry) pointer_home(); /* a late handoff starts its own baseline */
-        else S.cursor_up = k == WEBOS_KEY_CURSOR_SHOW;
+        pointer_visibility_changed(k == WEBOS_KEY_CURSOR_SHOW ? SDL_TRUE : SDL_FALSE);
         return;
     }
     if (k != SDLK_RETURN && k != SDLK_KP_ENTER) keys_take_over();
