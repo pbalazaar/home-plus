@@ -272,10 +272,12 @@ Item {
             s.move(0, 1); expect(s.problem === "", "and that goes with the focus");
             v.keysTakeOver();
             expect(!v.pointerMoved(v, 100, 100), "a pointer lying still takes no focus");
-            expect(!v.pointerMoved(v, 110, 110), "nor one that trembles");
-            expect(v.pointerMoved(v, 180, 100), "one that really moves does");
-            expect(v.pointerMoved(v, 181, 100), "and keeps it");
-            v.keysTakeOver(); expect(!v.pointerMoved(v, 181, 100), "until an arrow takes it back");
+            expect(!v.pointerMoved(v, 108, 106), "ten pixels of hand movement leave keys in charge");
+            expect(v.pointerMoved(v, 112, 100), "twelve pixels enable pointing");
+            expect(v.pointerMoved(v, 113, 100), "and keeps it");
+            v.keysTakeOver(); expect(!v.pointerMoved(v, 113, 100), "until an arrow takes it back");
+            expect(!v.pointerMoved(v, 121, 106), "ten pixels after an arrow leave keys in charge");
+            expect(v.pointerMoved(v, 125, 100), "twelve pixels after an arrow restore pointing");
             v.back(); expect(v.listKind === 0 && !v.closing, "Back from the list: the controls");
             v.back(); expect(v.closing, "Back again closes it");
             break;

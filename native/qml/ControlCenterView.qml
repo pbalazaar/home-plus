@@ -643,7 +643,7 @@ FocusScope {
 
     // The Magic Remote's pointer, as in Home+ (input.c: pointer_moved): an arrow hands control to the keys, and
     // the pointer takes it back after real travel, so one left lying where a panel opens takes no focus from them
-    readonly property int ptrTakePx: 40
+    readonly property int ptrTakePx: 12
     property bool pointing: false
     property real pointerX: -1     // where it was when the keys took over
     property real pointerY: -1
