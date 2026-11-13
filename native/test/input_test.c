@@ -82,6 +82,15 @@ int main(void)
     cursor_set(0);
     pointer_visibility_changed(SDL_FALSE);
     check(!S.cursor_up && cursor_hidden(), "cursor-hide notification records the system visibility");
+    pointer_home();
+    check(!pointer_moved(1000, 600), "a short pointer wake still needs a fresh baseline");
+    check(!pointer_moved(1008, 606), "ten pixels of hand movement leave D-pad focus alone");
+    check(pointer_moved(1012, 600), "twelve pixels enable the pointer after entry");
+    check(!cursor_hidden() && !S.ptr_entry, "a short deliberate movement shows the pointer");
+    keys_take_over();
+    cursor_set(0); S.cursor_up = 0;
+    check(!pointer_moved(1020, 606), "ten pixels after an arrow still leave keys in charge");
+    check(pointer_moved(1024, 600), "twelve pixels restore pointing after an arrow too");
     SDL_Quit();
     printf(failures ? "input: %d failed\n" : "input: all passed\n", failures);
     return failures != 0;

@@ -191,7 +191,7 @@ static int is_mapped(SDL_Keycode k)
     }
 }
 
-#define PTR_TAKE_PX 40 /* pointer travel (logical px) that hands control back to it */
+#define PTR_TAKE_PX 12 /* pointer travel (logical px) that hands control back to it */
 static int ptr_lx = -1, ptr_ly = -1; /* the pointer's last position */
 
 void keys_take_over(void)
