@@ -385,6 +385,7 @@ typedef struct {
      * pointer doesn't move focus, and its click (what OK sends while the cursor shows)
      * presses what the keys focused. Moving the pointer clearly hands it back. */
     int ptr_mode;
+    int ptr_entry; /* wait for deliberate motion after a D-pad entry */
     int cursor_up; /* the Magic Remote's pointer is on screen */
     int ptr_ax, ptr_ay; /* where the pointer was when the keys took over, -1: not seen yet */
     Uint32 setup_retry;
@@ -733,7 +734,10 @@ void focus_rect(float *x, float *y, float *w, float *h);
 void move_focus(int dx, int dy);
 int is_back(SDL_Keycode k);
 void keys_take_over(void);
+void pointer_home(void);
+void pointer_visibility_changed(SDL_bool visible);
 int pointer_moved(int mx, int my);
+int pointer_click(int mx, int my);
 void on_key_down(SDL_KeyboardEvent *e);
 void ok_release(void);
 void on_key_up(SDL_KeyboardEvent *e);

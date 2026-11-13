@@ -81,7 +81,7 @@ Updates install the same way. An update resets the service's root access, and Ho
 
 ![Recents, an App Switcher like tvOS's](docs/screenshots/recents.jpg)
 
-**Magic Remote pointer:** point at anything and click. Pressing an arrow hands control back to the keys: then OK presses what the keys focused, wherever the cursor happens to be. Moving the pointer a short way gives it control again.
+**Magic Remote pointer:** Home+ opens with D-pad navigation and the pointer hidden. Move the remote deliberately to point and click. Pressing an arrow hands control back to the keys: then OK presses what the keys focused, wherever the cursor happens to be. Moving the pointer a short way gives it control again.
 
 From the top row, press **Up** to reach the clock at the top right, as on tvOS; **OK** on it opens the Control Center. On Stremio, Jellyfin or Plex, Up goes into Continue Watching first, as the chevron above the dock shows.
 

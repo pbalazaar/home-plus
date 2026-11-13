@@ -6,6 +6,7 @@
 #include <SDL.h>
 
 #include "render.h"
+#include "home.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -24,8 +25,9 @@ int homeplus_screenshot(const char *path)
 
 /* HOMEPLUS_KEYS: a script of remote presses, one every 150 ms from 1.5 s in.
  * L R U D = arrows, O = OK, H = hold OK (opens the sheet), B = back, . = wait.
- * Pointer: M moves it to the next point of HOMEPLUS_POINTS ("x,y x,y ...",
- * logical px), C clicks where it is. X: another app comes in front (Home+ is
+ * Pointer: M moves it to the next point of HOMEPLUS_POINTS ("x,y x,y ...", logical px),
+ * J sends just that position (a window handoff), V is webOS's cursor-show notification.
+ * C clicks where it is. X: another app comes in front (Home+ is
  * hidden), Y: Home+ is back (the Home button). */
 static void pointer_event(Uint32 type, int x, int y)
 {
@@ -60,11 +62,11 @@ void homeplus_preview_input(Uint32 elapsed)
     static int px = -1, py = -1;
     static const char *pts;
     if (c == '.') return;
-    if (c == 'M') {
+    if (c == 'M' || c == 'J') {
         if (!pts) pts = getenv("HOMEPLUS_POINTS");
         if (pts && sscanf(pts, "%d,%d", &px, &py) == 2) {
             /* a real move, from a little way off: a pointer that only twitches leaves the keys in charge */
-            pointer_event(SDL_MOUSEMOTION, px > 960 ? px - 120 : px + 120, py);
+            if (c == 'M') pointer_event(SDL_MOUSEMOTION, px > 960 ? px - 120 : px + 120, py);
             pointer_event(SDL_MOUSEMOTION, px, py);
             pts = strchr(pts, ' ');
             if (pts) pts++;
@@ -84,7 +86,7 @@ void homeplus_preview_input(Uint32 elapsed)
         return;
     }
     SDL_Keycode k = c == 'L' ? SDLK_LEFT : c == 'R' ? SDLK_RIGHT : c == 'U' ? SDLK_UP : c == 'D' ? SDLK_DOWN
-                  : c == 'B' ? SDLK_ESCAPE : SDLK_RETURN;
+                  : c == 'B' ? SDLK_ESCAPE : c == 'V' ? WEBOS_KEY_CURSOR_SHOW : SDLK_RETURN;
     SDL_Event e = { 0 };
     e.type = SDL_KEYDOWN;
     e.key.keysym.sym = k;

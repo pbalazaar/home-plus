@@ -288,7 +288,7 @@ int main(int argc, char **argv)
 
     net_prepare(TAG_ICON, prepare_icon); /* icons become tiles on the workers, not between frames */
     net_start();
-    S.ptr_ax = S.ptr_ay = -1;
+    pointer_home();
     start_idle_wait();
     {
         int dw, dh, ww, wh;
@@ -360,7 +360,7 @@ int main(int argc, char **argv)
                     int mx = e.button.x, my = e.button.y, outside = 0;
                     to_logical(&mx, &my);
                     S.click_x = mx;
-                    if (!pointer_moved(mx, my)) { /* the keys are in charge: it's their OK */
+                    if (!pointer_click(mx, my)) { /* the keys are in charge: it's their OK */
                         S.click_x = -1;
                         S.ptr_press = 1;
                         S.ptr_dismiss = 0;
