@@ -11,6 +11,21 @@ const { URL } = require('url');
 
 const ROOT = path.join(__dirname, '..');
 
+/* Bind only the guard's POSIX launch boundary to this host. Linux keeps the real close loop
+ * with a shell supporting the TV's high-FD syntax; Windows runs the real Node guard directly.
+ * This preload is temporary test data, never an installed runtime selector. */
+function guardShellFixture(dir, shell = process.platform === 'win32' ? null : process.platform === 'linux' ? '/bin/bash' : '/bin/sh') {
+  const file = path.join(dir, 'guard-shell-fixture.js');
+  fs.writeFileSync(file, `
+    const cp = require('child_process'), spawn = cp.spawn, shell = ${JSON.stringify(shell)};
+    cp.spawn = function(command, args, options) {
+      if (command !== '/bin/sh' || !args || args[2] !== 'homeplus-guard') return spawn(command, args, options);
+      return shell === null ? spawn(args[3], args.slice(4), options) : spawn(shell, args, options);
+    };
+  `);
+  return file;
+}
+
 /* A local HTTP server standing in for an online service. route(req, url, body) returns
  * { status, json } or { status, body, type } (either with headers too), { hang: true } to never
  * answer, { cut: text } to send only text of a longer reply and then hang up, or nothing for a 404.
@@ -116,8 +131,10 @@ async function startService(dir, env = {}) {
  * till then, whoever has its port would answer. */
 async function launch(dir, env, logFile) {
   const port = await freePort();
+  const args = [path.join(ROOT, 'tools/native-preview/harness.js'), dir, path.join(ROOT, 'service')];
+  if (env.HOMEPLUS_PREVIEW_DEFAULT_HOME) args.unshift('-r', guardShellFixture(dir));
   const child = spawn(process.env.HOMEPLUS_SERVICE_NODE || process.execPath,
-    [path.join(ROOT, 'tools/native-preview/harness.js'), dir, path.join(ROOT, 'service')], {
+    args, {
       env: Object.assign({}, process.env, {
         NODE_PATH: path.join(ROOT, 'tools/native-preview/stub'),
         HOMEPLUS_CONFIG_DIR: path.join(dir, 'config'),
@@ -180,4 +197,4 @@ async function launch(dir, env, logFile) {
   return svc;
 }
 
-module.exports = { mockServer, configStore, quiet, sleep, last, until, freshRequire, startService };
+module.exports = { mockServer, configStore, quiet, sleep, last, until, freshRequire, startService, guardShellFixture };

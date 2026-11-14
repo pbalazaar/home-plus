@@ -78,30 +78,60 @@ function restoreConfig(s) {
   }
   atomic(s.configPath, cfg);
 }
+// Opt-in private updater evidence. Never included in an error message or bus reply.
+function commandDiagnostic(err, stdout, stderr) {
+  const result = { code: err ? (typeof err.code === 'number' ? err.code : String(err.code || '').slice(0, 80)) : 0, signal: err && err.signal || null, killed: !!(err && err.killed) };
+  for (const key of ['stdout', 'stderr']) {
+    const data = Buffer.from(String((key === 'stdout' ? stdout : stderr) || ''));
+    result[key] = data.slice(0, 16384).toString(); result[key + 'Truncated'] = data.length > 16384;
+  }
+  return result;
+}
 // A PTY keeps the reply on TV builds where luna-send otherwise exits without JSON.
-function luna(uri, params) {
+function luna(uri, params, onFailure) {
   const quote = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
   const command = 'exec ' + quote(process.env.HOMEPLUS_RECOVERY_LUNA || 'luna-send') +
     ' -n 1 -w 4000 ' + quote(uri) + ' ' + quote(JSON.stringify(params));
   return new Promise((resolve, reject) => {
-    const child = execFile('script', ['-q', '-c', command, '/dev/null'], { timeout: 8000 }, (err, stdout) => {
-      if (err) return reject(new Error('Home recovery call failed: ' + err.message));
+    const child = execFile('script', ['-q', '-c', command, '/dev/null'], { timeout: 8000 }, (err, stdout, stderr) => {
+      const capture = () => { if (onFailure) { try { onFailure(commandDiagnostic(err, stdout, stderr)); } catch (ignored) { /* diagnostics cannot change recovery */ } } };
+      if (err) { capture(); return reject(new Error('Home recovery call failed: ' + err.message)); }
       let result;
       for (const line of String(stdout).split('\n')) {
         try { const r = JSON.parse(line.trim()); if (r && typeof r === 'object') result = r; } catch (e) { /* PTY output */ }
       }
-      if (!result) return reject(new Error('Home recovery returned no JSON'));
+      if (!result) { capture(); return reject(new Error('Home recovery returned no JSON')); }
+      if (result.returnValue !== true) capture();
       resolve(result);
     });
     child.stdin.end();
   });
 }
+function spawnGuard(helper, mode, file) {
+  // Native LS2 sockets may lack CLOEXEC. Close them in the child before Node creates its own FDs.
+  const closeDescriptors = 'descriptorDir=/proc/self/fd\n' +
+    '[ -e "$descriptorDir" ] || descriptorDir=/dev/fd\n' +
+    '[ -d "$descriptorDir" ] && [ -r "$descriptorDir" ] && [ -x "$descriptorDir" ] || exit 1\n' +
+    'for entry in "$descriptorDir"/*; do\n' +
+    '  descriptor=${entry##*/}\n' +
+    '  case "$descriptor" in\n' +
+    '    \'\'|*[!0-9]*) exit 1 ;;\n' +
+    '    0|1|2) continue ;;\n' +
+    '  esac\n' +
+    '  eval "exec $descriptor>&-" || exit 1\n' +
+    'done\nexec "$@"';
+  const out = fs.openSync(file + '.log', 'a', 0o600);
+  try {
+    const child = spawn('/bin/sh', ['-c', closeDescriptors, 'homeplus-guard', process.execPath, helper, mode, file],
+      { detached: true, stdio: ['ignore', out, out] });
+    child.unref();
+    return child;
+  } finally { fs.closeSync(out); }
+}
 async function main(mode, file) {
   if (mode === '--start' && file) {
     const state = load(file);
-    const out = fs.openSync(file + '.log', 'a', 0o600);
-    const child = spawn(process.execPath, [__filename, state.deadline === null ? '--watch' : '--restore', file], { detached: true, stdio: ['ignore', out, out] });
-    child.unref(); fs.closeSync(out);
+    const child = spawnGuard(__filename, state.deadline === null ? '--watch' : '--restore', file);
     console.log(JSON.stringify({ pid: child.pid }));
     return;
   }
@@ -147,5 +177,5 @@ async function main(mode, file) {
     }
   }
 }
-module.exports = { readDefaults, restore, restoreConfig, accepted, atomic, durable, syncDir, load, luna };
+module.exports = { readDefaults, restore, restoreConfig, accepted, atomic, durable, syncDir, load, luna, commandDiagnostic, spawnGuard };
 if (require.main === module) main(process.argv[2], process.argv[3]).catch((e) => { console.error(e.message); process.exitCode = 1; });

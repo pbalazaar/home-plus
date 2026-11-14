@@ -5,6 +5,7 @@
 //                             launcher with its service and boot script (one package, as the
 //                             Homebrew Channel lists one). Run `make -C native webos` first.
 import crypto from 'node:crypto';
+import provenance from './update-provenance.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
@@ -127,7 +128,12 @@ if (!fs.existsSync(bin)) throw new Error('native/build/webos/homeplus missing: r
 const svcDir = path.join(root, 'service');
 // never hidden files (.DS_Store), service/data (a local config, maybe with sign-ins) or tests
 const shipped = (src) => !path.basename(src).startsWith('.') &&
+  !['api-token', 'config.json', 'cache'].includes(path.basename(src)) &&
   path.relative(svcDir, src).split(path.sep)[0] !== 'data' && !src.endsWith('.test.js');
+const updateInfo = provenance.validate(process.env.HOMEPLUS_UPDATE_INFO ?
+  JSON.parse(fs.readFileSync(process.env.HOMEPLUS_UPDATE_INFO, 'utf8')) : provenance.capture(root));
+// The capability describes this payload, never an unchecked caller claim.
+updateInfo.updater = fs.existsSync(path.join(svcDir, 'updates.js'));
 const ipk = buildPackage({
   appinfo,
   services: [svc.id],
@@ -149,7 +155,10 @@ const ipk = buildPackage({
     fs.cpSync(path.join(root, 'native/qml'), path.join(appDir, 'qml'), { recursive: true, filter: shipped });
     // the boot script travels with the app, so it can be installed on the TV with cp
     fs.cpSync(path.join(root, 'init.d'), path.join(appDir, 'init.d'), { recursive: true, filter: shipped });
-    fs.cpSync(svcDir, path.join(data, 'usr/palm/services', svc.id), { recursive: true, filter: shipped });
+    const serviceDir = path.join(data, 'usr/palm/services', svc.id);
+    fs.cpSync(svcDir, serviceDir, { recursive: true, filter: shipped });
+    updateInfo.fileHashes = provenance.inventory(appDir, serviceDir);
+    fs.writeFileSync(path.join(appDir, 'update-info.json'), JSON.stringify(updateInfo, null, 2) + '\n');
   }
 });
 

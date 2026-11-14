@@ -24,6 +24,10 @@ int handle_result(Result *r)
     default:  /* (a post that wants no answer: the log) */
     case TAG_WAKE:
         return 0;
+    case TAG_UPDATES:
+    case TAG_UPDATE_ACTION:
+        updates_result(r);
+        break;
     case TAG_LAYOUT:
         if (r->status == 200) parse_layout(r->body);
         break;
@@ -122,7 +126,7 @@ int handle_result(Result *r)
         if (r->body) { /* asked for from the Control Center over another app, which brings Home+ to the front */
             int want = strstr(r->body, "\"settings\"") ? OPEN_SETTINGS : strstr(r->body, "\"recents\"") ? OPEN_RECENTS
                      : strstr(r->body, "\"accessibility\"") ? OPEN_ACCESSIBILITY : strstr(r->body, "\"general\"") ? OPEN_GENERAL
-                     : strstr(r->body, "\"accounts\"") ? OPEN_ACCOUNTS : strstr(r->body, "\"about\"") ? OPEN_ABOUT : 0;
+                     : strstr(r->body, "\"accounts\"") ? OPEN_ACCOUNTS : strstr(r->body, "\"about\"") ? OPEN_ABOUT : strstr(r->body, "\"updates\"") ? OPEN_UPDATES : 0;
             if (want) open_asked(want); /* (while hidden too: coming back leaves it open) */
         }
         break;

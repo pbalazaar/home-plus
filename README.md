@@ -68,6 +68,18 @@ If something stops it, the screen says what and offers **Try Again**:
 
 Updates install the same way. An update resets the service's root access, and Home+ sets it up again the next time it starts.
 
+### Confirmed updates
+
+**Settings → About → Check for Updates** checks the latest stable Home+ release. **Automatic Update Checks** checks daily; it never installs automatically. A notice appears only on the Home+ screen when no menu or editor is open. Home opens from cached state without waiting for a release check.
+
+**Keep current build**, including **Back** on the notice, remembers that upstream version across restarts. Only a newer upstream version prompts again. A manual check can still show a kept release. A prepared custom build identifies its upstream base and preserves tracked customisations. Conflicts or failed checks explain the cause and offer an explicit **Install upstream** choice, which drops custom code. Unknown installed edits receive a replacement warning.
+
+Installation requires the displayed version and package confirmation, a verified private backup and an independent recovery helper. Progress remains visible while Home+ is running; installation and recovery continue after the package closes. Keep the recovery backup private: it can contain account settings. This updates Home+ only.
+
+If Homebrew Channel never reports a final install result, the backup and recovery hook stay armed. Cancelling its subscription does not cancel installation, so rollback waits for a full webOS restart and a new runtime boot generation. Standby and wake are insufficient. Home+ does not force a restart.
+
+Custom-build maintainers can enable the **Fork upstream updates** workflow in their own fork. Its scheduled checks start once the workflow is on the default branch. Manual runs default to checks only; publishing requires a successful build, service/runtime checks, launcher checks and firmware compatibility checks. The TV follows only the fork recorded in its verified package provenance.
+
 ## Using Home+
 
 | Key | What it does |
@@ -303,6 +315,8 @@ If the TV ever has trouble booting, the Homebrew Channel's failsafe skips boot s
 ## Privacy and security
 
 - **What Home+ connects to:** Stremio's and Trakt's APIs when you sign in, `plex.tv` and your Plex server, your Jellyfin server, and TMDB (`api.themoviedb.org`, `image.tmdb.org`) if you add a key. With a TMDB key and Top Shelf Details enabled, Home+ sends IMDb IDs from Continue Watching and app recommendation titles to TMDB for genre, rating and synopsis. Stremio artwork comes from `images.metahub.space`; Jellyfin and Plex artwork comes from your server. Recommendation artwork comes from URLs supplied by the installed apps, so its hosts vary by app. To find a Jellyfin server, Home+ sends one broadcast on your local network (UDP port 7359), only when you start a Jellyfin sign-in.
+- **Update checks:** Home+ reads release metadata from GitHub over HTTPS. Managed builds also read update results from the fork recorded in their packaged provenance. A confirmed installation downloads the selected GitHub release asset. It sends no account configuration and needs no GitHub sign-in.
+
 - **Signing out:** Settings → Accounts signs out of Stremio and ends Home+'s session on your Jellyfin server. Plex lists Home+ under your account's **Authorized Devices**; remove it there to revoke its access.
 - **What's stored:** sign-ins, your layout and preferences, in `/var/lib/homeplus/config.json`, and the Top Shelf's pictures, so they show at once the next time, in `/var/lib/homeplus/images` (up to 64 MB). Both are readable only by root, and **Remove Home+** deletes them.
 - **The local API:** the service runs as root and answers only on `127.0.0.1`. Every request needs a token the service writes into Home+'s app folder, and requests from web pages and other hosts are refused.

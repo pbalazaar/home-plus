@@ -7,6 +7,7 @@
  *   cc.c        the Control Center                          cc_list.c  its lists and gallery
  *   sheet.c     sheets (menus)                              settings.c Settings' pages
  *   actions.c   what sheets' buttons do                     recents.c  Recents (the App Switcher)
+ *   updates.c   update notices and confirmation
  *   setup.c     first run                                   accounts.c signing in (Stremio, Jellyfin, Plex, Trakt)
  *   input.c     keys, the pointer, focus                    idle.c     the idle wait, OLED care, offscreen
  *   draw.c      shared drawing, the home screen             tiles.c    an icon's logo and cover
@@ -105,7 +106,7 @@
 enum { TAG_APPS = 1, TAG_LAYOUT, TAG_STREMIO, TAG_MEDIA_LINK, TAG_MEDIA_STATUS, TAG_QR, TAG_ICON, TAG_ART, TAG_RAIL_LOGO, TAG_RAIL_BG, TAG_FEATURED, TAG_CONTROL, TAG_LAUNCH, TAG_RESUME, TAG_WAKE,
        TAG_SYSTEM, TAG_TRAKT_LINK, TAG_TRAKT_STATUS, TAG_RUNNING, TAG_CLOSED, TAG_HOME, TAG_HOME_SET, TAG_KEY_SET,
        TAG_STATUS, TAG_ELEVATE, TAG_RESTART, TAG_UNINSTALL,
-       TAG_PREFS, TAG_EVENTS, TAG_DELETED, TAG_KEYS, TAG_KEYS_STATUS };
+       TAG_UPDATES, TAG_UPDATE_ACTION, TAG_PREFS, TAG_EVENTS, TAG_DELETED, TAG_KEYS, TAG_KEYS_STATUS };
 
 /* Media sources: each one's Continue Watching is the Top Shelf of its own app */
 enum { SRC_NONE, SRC_STREMIO, SRC_JELLYFIN, SRC_PLEX, SRC_COUNT };
@@ -140,7 +141,7 @@ typedef struct {
 
 /* Settings pages (a sheet's page; 0 = not a Settings page) */
 enum { PAGE_MAIN = 1, PAGE_HOME, PAGE_DISPLAY, PAGE_CC, PAGE_ACCESS, PAGE_ACCOUNTS, PAGE_TV, PAGE_ABOUT, PAGE_CONFIRM, PAGE_SIGNIN, PAGE_ICONS,
-       PAGE_WELCOME, PAGE_KEYS, PAGE_GENERAL };
+       PAGE_WELCOME, PAGE_KEYS, PAGE_GENERAL, PAGE_UPDATES };
 
 /* zones: what the remote is moving through */
 enum { ZONE_GRID, ZONE_RAIL, ZONE_TOP };
@@ -207,7 +208,7 @@ typedef enum { ACT_NONE, ACT_MOVE, ACT_FRONT, ACT_HIDE, ACT_DELETE_ASK, ACT_DELE
                ACT_ACCESSIBILITY, ACT_REDUCE_MOTION, ACT_REDUCE_TRANSPARENCY, ACT_CC_BLUR_VIDEO,
                ACT_PAGE, ACT_CLOCK, ACT_DIM, ACT_OFF, ACT_ORBIT, ACT_CALM, ACT_HIDDEN, ACT_SETTINGS_KEY, ACT_INPUT_KEY,
                ACT_ICON_LOOK, ACT_ICON_TINT,
-               ACT_CC_EDIT, ACT_CC_ADD, ACT_CC_SIZE, ACT_CC_REMOVE, ACT_CC_RESET } Action;
+               ACT_UPDATE_CHECK, ACT_UPDATE_AUTO, ACT_UPDATE_KEEP, ACT_UPDATE_INSTALL, ACT_CC_EDIT, ACT_CC_ADD, ACT_CC_SIZE, ACT_CC_REMOVE, ACT_CC_RESET } Action;
 
 /* First run: the service has to be running and elevated (root, via Homebrew
  * Channel) before Home+ can list apps. Each step that can fail has a screen. */
@@ -387,6 +388,8 @@ typedef struct {
     int ptr_mode;
     int cursor_up; /* the Magic Remote's pointer is on screen */
     int ptr_ax, ptr_ay; /* where the pointer was when the keys took over, -1: not seen yet */
+    Uint32 updates_poll;
+    int updates_automatic;
     Uint32 setup_retry;
     Uint32 next_retry;
     int logged_keys;
@@ -463,7 +466,7 @@ static const char *const SRC_ID[SRC_COUNT] = { "", "stremio", "jellyfin", "plex"
 static const char *const SRC_NAME[SRC_COUNT] = { "", "Stremio", "Jellyfin", "Plex" };
 
 /* what the Control Center over another app can ask Home+ to open */
-enum { OPEN_SETTINGS = 1, OPEN_RECENTS, OPEN_ACCESSIBILITY, OPEN_GENERAL, OPEN_ACCOUNTS, OPEN_ABOUT };
+enum { OPEN_SETTINGS = 1, OPEN_RECENTS, OPEN_ACCESSIBILITY, OPEN_GENERAL, OPEN_ACCOUNTS, OPEN_ABOUT, OPEN_UPDATES };
 
 /* OK on a card: an app can't be sent to its title, so a toast over it says where the title is (its name, the app's) */
 #define CONTINUE_HINT "\xE2\x80\x9C%s\xE2\x80\x9D is in %s\xE2\x80\x99s Continue Watching"
@@ -720,6 +723,13 @@ float swatch_x(float bx, float bw, int i);
 int swatch_at(float mx);
 void icon_tint_set(int i);
 void open_settings_sheet(void);
+
+/* updates.c */
+void updates_tick(void);
+void updates_open(int check);
+void updates_result(Result *r);
+void updates_action(Action act, int arg);
+void updates_keep(void);
 
 /* actions.c */
 void run_action(Action act, int arg, const char *id);

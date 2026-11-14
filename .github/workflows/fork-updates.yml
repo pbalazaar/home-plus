@@ -1,0 +1,303 @@
+# Scheduled runs become active only after this file reaches the fork's default branch.
+# Manual runs default to dry-run: candidates/checks/artifacts, with no release writes.
+name: Fork upstream updates
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build/check only, without publishing a result
+        type: boolean
+        default: true
+      version:
+        description: Stable upstream version, or empty for latest
+        type: string
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: fork-updates
+  cancel-in-progress: false
+env:
+  # openlgtv/buildroot-nc4 release; keep in step with docker/Dockerfile. Its files' SHA-256s are in
+  # docker/toolchain.sha256, and change with it.
+  SDK_RELEASE: 2026.08-webos
+  SDK_FILE: arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz
+  WEBOS_SDK: /home/runner/toolchain/arm-webos-linux-gnueabi_sdk-buildroot
+  # webOSbrew's compatibility checker (webosbrew/dev-toolbox-cli), built from this commit. It reads the
+  # firmware data from its own source folder, so that's cached along with the binary.
+  VERIFY_REV: 2d5a7b6881850d825aa7fdc6c0b5e53c91dc40d3
+  VERIFY_DIR: /home/runner/webosbrew-verify
+  # The firmware Home+ supports: webOS 5 (2020) and later, whose Node (8.12 and later) runs the service.
+  # Every webOS has some firmware that can be rooted (CanI.RootMy.TV), but webOS 4 and older have Node
+  # 0.12 or older.
+  VERIFY_FW: '>=5.0'
+
+jobs:
+  prepare:
+    if: github.repository != 'pbalazaar/home-plus' && github.event.repository.fork == true
+    runs-on: ubuntu-24.04
+    outputs:
+      candidate: ${{ steps.prepare.outputs.candidate }}
+      version: ${{ steps.prepare.outputs.version }}
+      source: ${{ steps.prepare.outputs.source }}
+      skip: ${{ steps.prepare.outputs.skip }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve official release and integrate tracked fork source
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST_VERSION: ${{ inputs.version }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ -n "$REQUEST_VERSION" ]; then
+            [[ "$REQUEST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            gh api "repos/pbalazaar/home-plus/releases/tags/v$REQUEST_VERSION" > "$RUNNER_TEMP/release.json"
+          else
+            gh api repos/pbalazaar/home-plus/releases/latest > "$RUNNER_TEMP/release.json"
+          fi
+          VERSION=$(node -e 'const r=require(process.argv[1]); if(r.draft||r.prerelease||!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(r.tag_name)) process.exit(1); console.log(r.tag_name.slice(1));' "$RUNNER_TEMP/release.json")
+          git fetch --no-tags https://github.com/pbalazaar/home-plus.git "refs/tags/v$VERSION:refs/tags/v$VERSION"
+          UPSTREAM=$(git rev-parse "v$VERSION^{commit}")
+          SOURCE=$(git rev-parse HEAD)
+          BASE=$(git merge-base --all "$SOURCE" "$UPSTREAM")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/result"
+          if gh release download "upstream-v$VERSION" --repo "$GITHUB_REPOSITORY" --pattern com.github.pbalazaar.homeplus.update.json --dir "$RUNNER_TEMP/previous"; then
+            if [ "$EVENT" = schedule ] && node -e 'const p=require(process.argv[1]); process.exit(require("./tools/prepare-fork-update").sameCandidate(p,process.argv[2],process.argv[3],process.env.GITHUB_REPOSITORY)?0:1)' "$RUNNER_TEMP/previous/com.github.pbalazaar.homeplus.update.json" "$SOURCE" "$UPSTREAM"; then
+              echo 'skip=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          node tools/prepare-fork-update.js prepare "$GITHUB_WORKSPACE" "$RUNNER_TEMP/candidate" "$SOURCE" "$BASE" "$VERSION" "$GITHUB_REPOSITORY"
+          cp "$RUNNER_TEMP/candidate/com.github.pbalazaar.homeplus.update.json" "$RUNNER_TEMP/result/"
+          if [ -f "$RUNNER_TEMP/candidate/update-info-build.json" ]; then
+            echo 'candidate=true' >> "$GITHUB_OUTPUT"
+            tar --exclude=.git -cf "$RUNNER_TEMP/candidate.tar" -C "$RUNNER_TEMP/candidate" .
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.prepare.outputs.skip != 'true'
+        with:
+          name: fork-result
+          path: ${{ runner.temp }}/result/*.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.prepare.outputs.candidate == 'true'
+        with:
+          name: fork-candidate
+          path: ${{ runner.temp }}/candidate.tar
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.candidate == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fork-candidate
+          path: .homeplus-candidate
+      - name: Unpack isolated candidate
+        run: tar -xf .homeplus-candidate/candidate.tar
+
+      - name: Cache the webOS toolchain
+        id: sdk-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /home/runner/toolchain
+          key: fork-webos-sdk-${{ env.SDK_RELEASE }}-x86_64-${{ hashFiles('docker/toolchain.sha256') }}
+
+      - name: Fetch the webOS toolchain, and check it's the one Home+ is built with
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/$SDK_FILE" "https://github.com/openlgtv/buildroot-nc4/releases/download/${SDK_RELEASE}/${SDK_FILE}"
+          (cd "$RUNNER_TEMP" && grep " $SDK_FILE\$" "$GITHUB_WORKSPACE/docker/toolchain.sha256" | sha256sum -c -)
+          mkdir -p /home/runner/toolchain
+          tar xzf "$RUNNER_TEMP/$SDK_FILE" -C /home/runner/toolchain
+          rm "$RUNNER_TEMP/$SDK_FILE"
+
+      - name: Point the toolchain at its location
+        run: "$WEBOS_SDK/relocate-sdk.sh"
+
+      - name: Build
+        run: HOMEPLUS_UPDATE_INFO="$GITHUB_WORKSPACE/update-info-build.json" tools/build-release.sh
+
+      - name: Check the package
+        run: node tools/check-package.mjs
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fork-ipk
+          path: |
+            dist/*.ipk
+            dist/*.manifest.json
+
+  service:
+    needs: prepare
+    if: needs.prepare.outputs.candidate == 'true'
+    name: Service (${{ matrix.os }}${{ matrix.tv-node && format(', Node {0}', matrix.tv-node) || '' }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            tv-node: '8.12.0' # webOS 5 and 6; the runner stays on Node 22
+          - os: ubuntu-24.04
+            tv-node: '12.21.0' # webOS 22
+          - os: ubuntu-24.04
+            tv-node: '12.22.2' # webOS 23
+          - os: ubuntu-24.04
+            tv-node: '16.19.1' # webOS 24
+          - os: ubuntu-24.04
+            tv-node: '16.20.2' # webOS 25
+          - os: ubuntu-24.04
+            tv-node: '20.12.2' # webOS 26
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fork-candidate
+          path: .homeplus-candidate
+      - name: Unpack isolated candidate
+        run: tar -xf .homeplus-candidate/candidate.tar
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: matrix.tv-node
+        with:
+          node-version: ${{ matrix.tv-node }}
+      - name: Run the service on the TV's Node
+        if: matrix.tv-node
+        run: echo "HOMEPLUS_SERVICE_NODE=$(node -p process.execPath)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Service tests
+        run: node --test test/*.test.js
+
+  # Keep the existing required Linux check while testing every TV runtime above.
+  # This gate succeeds only after the entire service matrix has succeeded.
+  service-required:
+    name: Service (ubuntu-24.04)
+    needs: service
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: All service runtimes passed
+        env:
+          SERVICE_RESULT: ${{ needs.service.result }}
+        run: test "$SERVICE_RESULT" = success
+
+  launcher:
+    needs: prepare
+    if: needs.prepare.outputs.candidate == 'true'
+    name: Launcher
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fork-candidate
+          path: .homeplus-candidate
+      - name: Unpack isolated candidate
+        run: tar -xf .homeplus-candidate/candidate.tar
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Install the preview's packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libsdl2-dev xvfb xauth libgles2 libegl1 libgl1-mesa-dri python3-pil \
+            qmlscene qml-module-qtquick2 qml-module-qtgraphicaleffects qml-module-qtmultimedia
+      - name: The launcher's own tests
+        run: tools/test.sh native
+      - name: Load and drive the Control Center's QML
+        run: tools/test.sh qml
+
+  compatibility:
+    name: Compatibility
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fork-ipk
+          path: dist
+
+      - name: Cache the compatibility checker
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.VERIFY_DIR }}
+          key: fork-webosbrew-verify-${{ env.VERIFY_REV }}
+
+      - name: Build the compatibility checker
+        run: | # (also when the cache brought back a folder without it)
+          [ -x "$VERIFY_DIR/bin/webosbrew-ipk-verify" ] && exit 0
+          rm -rf "$VERIFY_DIR"
+          git init -q "$VERIFY_DIR" && cd "$VERIFY_DIR"
+          git fetch -q --depth 1 https://github.com/webosbrew/dev-toolbox-cli "$VERIFY_REV"
+          git checkout -q FETCH_HEAD
+          cargo build --release --locked -p ipk-verify
+          mkdir bin && mv target/release/webosbrew-ipk-verify bin/ && rm -rf target .git # (its data stays: common/data)
+
+      - name: Check the package against LG's firmware
+        run: |
+          "$VERIFY_DIR/bin/webosbrew-ipk-verify" --fw-releases "$VERIFY_FW" --format markdown \
+            --output "$RUNNER_TEMP/compatibility.md" dist/*.ipk
+          status=$?
+          cat "$RUNNER_TEMP/compatibility.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+        shell: bash {0} # (the summary is written whatever the verdict)
+
+
+  result:
+    needs: [prepare, build, service, launcher, compatibility]
+    if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.skip != 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fork-result
+          path: result
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: needs.build.result == 'success'
+        with:
+          name: fork-ipk
+          path: dist
+      - name: Finalise honest result and immutable package name
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_RESULTS: build=${{ needs.build.result }}, service=${{ needs.service.result }}, launcher=${{ needs.launcher.result }}, compatibility=${{ needs.compatibility.result }}
+          CHECKS_PASSED: ${{ needs.build.result == 'success' && needs.service.result == 'success' && needs.launcher.result == 'success' && needs.compatibility.result == 'success' }}
+          EXPECT_SOURCE: ${{ needs.prepare.outputs.source }}
+          EXPECT_VERSION: ${{ needs.prepare.outputs.version }}
+        run: node tools/publish-fork-update.js finalise "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/result/com.github.pbalazaar.homeplus.update.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fork-checked-result
+          path: result/*
+      - name: Publish in trusted fork context
+        if: github.event_name == 'schedule' || inputs.dry_run == false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EXPECT_SOURCE: ${{ needs.prepare.outputs.source }}
+          EXPECT_VERSION: ${{ needs.prepare.outputs.version }}
+        run: node tools/publish-fork-update.js publish "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/result/com.github.pbalazaar.homeplus.update.json"

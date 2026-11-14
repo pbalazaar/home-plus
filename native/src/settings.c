@@ -72,7 +72,7 @@ int settings_steps(Action act)
     switch (act) {
     case ACT_HOME_TOGGLE: case ACT_HOME_MODE: case ACT_DEFAULT_HOME: case ACT_STARTUP: case ACT_SETTINGS_KEY: case ACT_INPUT_KEY:
     case ACT_DIM: case ACT_OFF: case ACT_ORBIT: case ACT_CALM: case ACT_SHELF: case ACT_SHELF_DETAILS:
-    case ACT_SOUNDS: case ACT_CLOCK: case ACT_REDUCE_MOTION: case ACT_REDUCE_TRANSPARENCY: case ACT_CC_BLUR_VIDEO:
+    case ACT_UPDATE_AUTO: case ACT_SOUNDS: case ACT_CLOCK: case ACT_REDUCE_MOTION: case ACT_REDUCE_TRANSPARENCY: case ACT_CC_BLUR_VIDEO:
         return 1;
     default:
         return 0;
@@ -217,6 +217,10 @@ void settings_page(int page, int index)
                  S.svc_version[0] ? S.svc_version : "\xE2\x80\x93",
                  S.svc_elevated ? "set up with Homebrew Channel" : "not set up yet", keys);
         sheet_body(about);
+        settings_row("Check for Updates", S.svc_version, ACT_UPDATE_CHECK, 0, 1, 0);
+        settings_desc("Check for a newer Home+ release.");
+        settings_row("Automatic Update Checks", S.updates_automatic ? "On" : "Off", ACT_UPDATE_AUTO, 0, 0, 0);
+        settings_desc("Check daily. Installation always needs confirmation.");
         settings_row("Remove Home+", "", ACT_REMOVE_ASK, 0, 1, 1);
         settings_desc("Undoes everything Home+ set up, then uninstalls it.");
         break;

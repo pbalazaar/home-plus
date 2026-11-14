@@ -3,6 +3,8 @@
 // that only calls SDL functions the TV's SDL 2.0.14 has.
 //   node tools/check-package.mjs [file.ipk]   (default: dist/<id>_<version>_all.ipk)
 import fs from 'node:fs';
+import crypto from 'node:crypto';
+import provenance from './update-provenance.js';
 import path from 'node:path';
 import url from 'node:url';
 import zlib from 'node:zlib';
@@ -47,7 +49,7 @@ function tarEntries(gz) {
 // the files under a folder of the repo, as paths relative to it (hidden files aren't packaged)
 function walk(dir, rel = '') {
   return fs.readdirSync(path.join(root, dir, rel), { withFileTypes: true })
-    .filter((e) => !e.name.startsWith('.'))
+    .filter((e) => !e.name.startsWith('.') && !['api-token', 'config.json', 'cache'].includes(e.name))
     .flatMap((e) => (e.isDirectory() ? walk(dir, `${rel}${e.name}/`) : [`${rel}${e.name}`]));
 }
 
@@ -117,6 +119,23 @@ if (!problems.length) {
   for (const p of data.keys()) {
     check(!p.startsWith(`${SVC}/data`) && !/(^|\/)(config\.json|api-token)$/.test(p) && !p.endsWith('.test.js'), `mustn't ship: ${p}`);
   }
+
+  // Provenance hashes cover the bytes shipped, independent of package version/name.
+  const info = json(`${APP}/update-info.json`);
+  try { provenance.validate(info); } catch (error) { check(false, error.message); }
+  check(info.updater === !!file(`${SVC}/updates.js`), 'updater capability does not match the service payload');
+  const expectedHashes = {};
+  for (const [p, entry] of data) {
+    if (entry.type !== '0' || p === `${APP}/update-info.json`) continue;
+    let key;
+    if (p.startsWith(APP + '/')) key = 'application/' + p.slice(APP.length + 1);
+    if (p.startsWith(SVC + '/')) key = 'service/' + p.slice(SVC.length + 1);
+    if (key) expectedHashes[key] = crypto.createHash('sha256').update(entry.data).digest('hex');
+  }
+  const hashes = info.fileHashes || {};
+  check(Object.keys(expectedHashes).length === Object.keys(hashes).length &&
+    Object.keys(expectedHashes).every(key => hashes[key] === expectedHashes[key]),
+    'update-info.json fileHashes do not exactly match the shipped application/service');
 
   // modes: programs 0755, nothing writable by anyone but root (the service runs as root)
   for (const [p, e] of data) check(!(e.mode & 0o022), `${p} is writable by others (mode ${e.mode.toString(8)})`);

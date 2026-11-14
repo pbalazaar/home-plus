@@ -374,6 +374,7 @@ function onboarded(cfg) {
 }
 
 async function applyHomeMode() {
+  if (updates && updates.busy() && !updateReconcile) return;
   if (homeMode(readConfig()) === 'redirect' && (await redirectAvailable())) {
     if (!(await mountRedirect())) log('no-flash unavailable; using watch mode');
   } else {
@@ -393,6 +394,9 @@ const INITD_DIR = '/var/lib/webosbrew/init.d';
 const INITD = path.join(process.env.HOMEPLUS_INITD_DIR || INITD_DIR, '50-homeplus'); /* tests: elsewhere */
 const BOOT_LOG = path.join(path.dirname(INITD), '..', 'homeplus-boot.log'); /* the boot script's */
 
+let updates = null, homeChanges = 0, updateReconcile = false, uninstalling = false;
+const UPDATE_HOME_CAPABILITY = {};
+function requireNoUpdate() { if (updates && updates.busy()) throw new Error('Home+ installation or recovery is in progress'); }
 const systemHome = require('./default-home')({
   luna, readConfig, writeConfig, configPath: findConfigPath, appDir: APP_DIR, initDir: path.dirname(INITD),
   stateDir: process.env.HOMEPLUS_DEFAULT_HOME_DIR || '/var/lib/webosbrew/homeplus-default-home',
@@ -403,6 +407,14 @@ const systemHome = require('./default-home')({
   },
   resume: applyHomeMode
 });
+for (const operation of ['setEnabled', 'remove', 'startup']) {
+  const original = systemHome[operation];
+  systemHome[operation] = async (...args) => {
+    if (!(operation === 'setEnabled' && args[1] === UPDATE_HOME_CAPABILITY)) requireNoUpdate();
+    homeChanges++;
+    try { return await original(...args); } finally { homeChanges--; }
+  };
+}
 setTimeout(() => systemHome.recover().catch((e) => log('default Home recovery:', e.message)), 0);
 register('startup', async (msg) => {
   try { msg.respond(Object.assign({ returnValue: true }, await systemHome.startup())); }
@@ -510,8 +522,9 @@ function hookHome() {
 // didn't take it.
 async function applyKeyFilter() {
   const cfg = readConfig();
+  const redirect = homeMode(cfg) === 'redirect' && !(await redirectAvailable());
   return keyFilter.set({
-    home: homeMode(cfg) === 'redirect' && !(await redirectAvailable()),
+    home: redirect && (!(updates && updates.busy()) || updateReconcile),
     settings: keyOn(SETTINGS_KEY, cfg),
     input: keyOn(INPUT_KEY, cfg)
   });
@@ -973,7 +986,7 @@ async function overlayOffers(id) {
 
 // What it leaves to Home+: all of a menu if its own panel didn't load, or a page of Settings, for a row
 // that can't be done over an app
-const HOME_TARGETS = ['recents', 'accessibility', 'settings', 'general', 'accounts', 'about'];
+const HOME_TARGETS = ['recents', 'accessibility', 'settings', 'general', 'accounts', 'about', 'updates'];
 
 // What it asks for (POST /api/overlay): {"event": "open", "target": "network" or one of HOME_TARGETS}, or
 // {"event": "open", "app"} for an app it offered; {"event": "recents"}, the apps for its Recents;
@@ -1045,6 +1058,12 @@ function dropElevation() {
 }
 
 async function uninstall() {
+  requireNoUpdate();
+  if (uninstalling) throw new Error('Home+ removal is already running');
+  uninstalling = true;
+  try { return await uninstallNow(); } catch (e) { uninstalling = false; throw e; }
+}
+async function uninstallNow() {
   const steps = {};
   await systemHome.remove(); // failure to restore Home must stop removal, not strand the Home button
   steps.defaultHome = true;
@@ -1107,6 +1126,7 @@ function homeApps(cfg) {
 }
 
 async function takeover(target, why) {
+  if (updates && updates.busy()) return;
   // If the launcher never came up after a takeover moments ago, don't keep retrying.
   if (!takeoverLanded && Date.now() - lastTakeover < 3000) return;
   lastTakeover = Date.now();
@@ -1261,7 +1281,9 @@ function watchForeground() {
 watchForeground();
 
 register('setHomeOverride', async (msg) => {
+  let changing = false;
   try {
+    requireNoUpdate(); homeChanges++; changing = true;
     let cfg = readConfig();
     const p = msg.payload || {};
     if (p.enabled === false || ['redirect', 'watch'].includes(p.mode)) {
@@ -1279,6 +1301,7 @@ register('setHomeOverride', async (msg) => {
     msg.respond({ returnValue: true, enabled: cfg.homeOverride !== false, mode: homeMode(cfg),
       homeApps: cfg.homeApps || DEFAULT_HOME_APPS, target: cfg.homeTarget || 'auto', lastForeground });
   } catch (e) { fail(msg, e.message); }
+  finally { if (changing) homeChanges--; }
 });
 
 // ------------------------------------------------------------------ local JSON API
@@ -1704,6 +1727,10 @@ async function playInBackground(m, app, item, fromStart, run) {
 // What Settings' Remote page changes: the Home button's mode, and the Settings and Input buttons. cfg is
 // saved here, and left as it's saved
 async function setHome(b, cfg = readConfig()) {
+  requireNoUpdate(); homeChanges++;
+  try { return await setHomeNow(b, cfg); } finally { homeChanges--; }
+}
+async function setHomeNow(b, cfg) {
   if (typeof b.defaultHome === 'boolean') {
     await systemHome.setEnabled(b.defaultHome); cfg = readConfig();
     if (!b.defaultHome) { dropHomeBind(); cfg.homeOverride = false; writeConfig(cfg); await applyHomeMode(); }
@@ -1753,15 +1780,30 @@ function setPrefs(b) {
   return cfg.prefs;
 }
 
+updates = require('./updates').createUpdates({
+  version: pkg.version, appDir: APP_DIR, serviceDir: __dirname,
+  packageDir: path.join(APP_DIR, '..', '..', 'packages', NATIVE_ID),
+  stateDir: process.env.HOMEPLUS_UPDATE_DIR || path.join(path.dirname(findConfigPath()), 'updater'),
+  configPath: findConfigPath(), initDir: path.dirname(INITD),
+  homeStateFile: path.join(process.env.HOMEPLUS_DEFAULT_HOME_DIR || '/var/lib/webosbrew/homeplus-default-home', 'state.json'),
+  resumeHome: async () => { updateReconcile = true; try { await applyHomeMode(); } finally { updateReconcile = false; } },
+  suspendHome: async () => { const cfg = readConfig(); cfg.homeOverride = false; writeConfig(cfg); await unmountRedirect(); await applyKeyFilter(); },
+  readConfig, writeConfig, isRoot, foreground: () => lastForeground === NATIVE_ID, externalBusy: () => homeChanges > 0 || uninstalling
+});
+updates.start();
 const settings = require('./settings')({
   log, readConfig, setPrefs, home: homeState, setHome, apps: apiApps, tvApps: async () => (await apiSystem()).settings,
   accounts: () => ({ stremio: stremioStatus(), trakt: trakt.status(), jellyfin: media.jellyfin.status(), plex: media.plex.status(), tmdb: tmdb.status() }),
-  version: pkg.version, elevated: isRoot
+  version: pkg.version, elevated: isRoot, updates
 });
 
 async function handleApi(req, res) {
   const url = new URL(req.url, 'http://127.0.0.1');
   try {
+    if (url.pathname === '/api/updates') {
+      if (!['GET', 'POST'].includes(req.method)) return sendJSON(res, 405, { returnValue: false, errorText: 'Method not allowed' });
+      return sendJSON(res, 200, req.method === 'POST' ? await updates.act(await readBody(req)) : updates.state());
+    }
     if (url.pathname === '/api/apps') return sendJSON(res, 200, { apps: await apiApps() });
     if (url.pathname === '/api/stremio' || url.pathname === '/api/continue') {
       const source = url.searchParams.get('source');
@@ -1810,8 +1852,22 @@ async function handleApi(req, res) {
     if (url.pathname === '/api/home') { /* (the config is read once the body is in: a sign-in may save it meanwhile) */
       const b = req.method === 'POST' ? await readBody(req) : null;
       const cfg = readConfig();
-      if (b) await setHome(b, cfg);
-      return sendJSON(res, 200, await homeState());
+      if (b && b.updateTransaction) {
+        const transaction = require('./update-worker').load(path.join(process.env.HOMEPLUS_UPDATE_DIR || path.join(path.dirname(findConfigPath()), 'updater'), 'transaction.json'));
+        if (!transaction.active || transaction.phase !== 'restoring-home' || transaction.id !== b.updateTransaction || transaction.configPath !== findConfigPath()) throw new Error('Invalid update Home restoration');
+        if (updateReconcile) throw new Error('Home restoration is already running');
+        if (b.updateConfig !== undefined && !['restore', 'suspend'].includes(b.updateConfig)) throw new Error('Invalid update config restoration');
+        updateReconcile = true;
+        try {
+          require('./updates').restoreConfig(transaction, writeConfig, b.updateConfig === 'suspend');
+          if (transaction.defaultHome && b.defaultHome === true) {
+            if (lastForeground !== NATIVE_ID && !readConfig().defaultHomeEnabled) throw new Error('Default Home restoration waits for Home+');
+            await systemHome.setEnabled(true, UPDATE_HOME_CAPABILITY);
+          }
+          await applyHomeMode();
+        } finally { updateReconcile = false; }
+      } else if (b) await setHome(b, cfg);
+      return sendJSON(res, 200, Object.assign(await homeState(), b && b.updateTransaction ? { updateRecovery: 1 } : {}));
     }
     if (url.pathname === '/api/settings' && req.method === 'POST') { /* Settings over other apps: its pages, {row, dir} changes one first */
       const b = await readBody(req);
@@ -1883,7 +1939,7 @@ const imageServer = http.createServer(async (req, res) => {
     const cfg = readConfig();
     return sendJSON(res, 200, {
       id: pkg.name, /* (the launcher checks it's its own: the old Home+'s, still installed, takes the same port) */
-      version: pkg.version, elevated: isRoot(), token: tokenWritten,
+      version: pkg.version, elevated: isRoot(), token: tokenWritten, updateRecovery: 1,
       bootScript: fs.existsSync(INITD), homeAsked: !!cfg.homeAsked, homeMode: homeMode(cfg), onboarded: onboarded(cfg),
       tmdbConfigured: !!cfg.tmdbKey
     });

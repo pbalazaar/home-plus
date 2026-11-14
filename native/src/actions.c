@@ -31,6 +31,9 @@ void run_action(Action act, int arg, const char *id)
         return;
     }
     switch (act) {
+    case ACT_UPDATE_CHECK: case ACT_UPDATE_AUTO: case ACT_UPDATE_KEEP: case ACT_UPDATE_INSTALL:
+        updates_action(act, arg);
+        break;
     case ACT_CC_EDIT: /* the controls wobble; OK moves one, holding OK sizes or removes it */
         S.cc.editing = 1;
         S.cc.picked = -1;

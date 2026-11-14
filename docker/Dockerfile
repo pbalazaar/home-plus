@@ -13,7 +13,7 @@ ARG SDK_RELEASE=2026.08-webos
 ARG TARGETARCH
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl make nodejs file \
+ && apt-get install -y --no-install-recommends ca-certificates curl make nodejs file git \
  && rm -rf /var/lib/apt/lists/*
 
 COPY toolchain.sha256 /tmp/

@@ -3,7 +3,6 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
 const recovery = require('./default-home-guard');
 const { mkdirSync } = require('./mkdir');
 const APP = 'com.github.pbalazaar.homeplus';
@@ -68,9 +67,7 @@ module.exports = function defaultHome(options) {
       }
     } catch (e) { /* absent, or left over from another boot */ }
     try { fs.unlinkSync(file + '.ready'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    const out = fs.openSync(file + '.log', 'a', 0o600);
-    const child = spawn(process.execPath, [helper, '--watch', file], { detached: true, stdio: ['ignore', out, out] });
-    child.unref(); fs.closeSync(out);
+    const child = recovery.spawnGuard(helper, '--watch', file);
     const end = Date.now() + 4000;
     while (Date.now() < end) {
       try {

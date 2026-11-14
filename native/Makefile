@@ -7,7 +7,7 @@
 # Compiled against vendored SDL 2.0.14 headers so the binary only uses
 # functions the TV's libSDL2 actually has.
 
-SRC := src/main.c src/util.c src/tiles.c src/icon.c src/draw.c src/sheet.c src/recents.c src/cc.c src/cc_list.c src/shelf.c src/apps.c src/setup.c src/accounts.c src/settings.c src/actions.c src/input.c src/idle.c src/results.c src/perf.c src/gfx.c src/render.c src/sound.c src/net.c src/luna.c src/preview.c third_party/cJSON.c
+SRC := src/main.c src/util.c src/tiles.c src/icon.c src/draw.c src/sheet.c src/recents.c src/cc.c src/cc_list.c src/shelf.c src/apps.c src/setup.c src/accounts.c src/settings.c src/updates.c src/actions.c src/input.c src/idle.c src/results.c src/perf.c src/gfx.c src/render.c src/sound.c src/net.c src/luna.c src/preview.c third_party/cJSON.c
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers \
           -Ithird_party -Ithird_party/SDL2 -D_REENTRANT
 
@@ -37,8 +37,13 @@ build/webos/homeplus: $(SRC) src/*.h
 	$(WEBOS_SDK)/bin/arm-webos-linux-gnueabi-strip $@
 	@rm -rf $(@D)/assets && cp -r assets $(@D)/assets
 
-test: $(TEST_OUT)/net-test $(TEST_OUT)/icon-test $(TEST_OUT)/util-test
+test: $(TEST_OUT)/updates-test $(TEST_OUT)/net-test $(TEST_OUT)/icon-test $(TEST_OUT)/util-test
 	@python3 test/make-fixtures.py build/test
+	$(TEST_OUT)/updates-test
+	$(TEST_OUT)/updates-test hidden
+	$(TEST_OUT)/updates-test about
+	$(TEST_OUT)/updates-test pending
+	$(TEST_OUT)/updates-test getting
 	$(TEST_OUT)/net-test build/test
 	$(TEST_OUT)/icon-test
 	$(TEST_OUT)/util-test
@@ -54,6 +59,11 @@ $(TEST_OUT)/icon-test: test/icon_test.c src/icon.c src/*.h
 $(TEST_OUT)/util-test: test/util_test.c src/util.c src/*.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(TEST_FLAGS) -Isrc -o $@ test/util_test.c src/util.c third_party/cJSON.c -lm
+
+$(TEST_OUT)/updates-test: test/updates_test.c src/updates.c src/idle.c src/*.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(TEST_FLAGS) -ffunction-sections -fdata-sections -Wl,--gc-sections -Isrc -o $@ test/updates_test.c src/updates.c src/idle.c third_party/cJSON.c $(HOST_SDL) -lm
+
 
 sanitize:
 	@UBSAN_OPTIONS=print_stacktrace=1 $(MAKE) test TEST_OUT=build/sanitize \

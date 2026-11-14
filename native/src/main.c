@@ -39,6 +39,7 @@ void open_asked(int what)
     else if (what == OPEN_GENERAL) settings_page(PAGE_GENERAL, 0);
     else if (what == OPEN_ACCOUNTS) settings_page(PAGE_ACCOUNTS, 0);
     else if (what == OPEN_ABOUT) settings_page(PAGE_ABOUT, 0);
+    else if (what == OPEN_UPDATES) updates_open(1);
 }
 
 /* Advances every animated value once per frame. Drawing only reads them: the
@@ -47,6 +48,7 @@ int update(float dt)
 {
     int anim = 0;
     update_clock();
+    updates_tick();
     int row = S.focus / COLS;
     approach(&S.scrolled, row > 0 ? 1.0f : 0.0f, 10, dt, &anim);
     S.scroll_target = row == 0 ? 0 : 380 - (GRID_TOP + row * ROW_H);
@@ -382,7 +384,10 @@ int main(int argc, char **argv)
             case SDL_MOUSEBUTTONUP:
                 if (e.button.button != SDL_BUTTON_LEFT) break;
                 if (S.ptr_press && S.ok_down) ok_release();
-                else if (S.ptr_dismiss && S.sheet.open) sheet_dismiss();
+                else if (S.ptr_dismiss && S.sheet.open) {
+                    if (S.sheet.page == PAGE_UPDATES) updates_keep();
+                    else sheet_dismiss();
+                }
                 else if (S.ptr_dismiss && S.cc.open) cc_close();
                 S.ptr_press = S.ptr_dismiss = 0;
                 break;

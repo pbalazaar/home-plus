@@ -38,7 +38,7 @@ function along(list, cur, dir) {
 
 const minutes = (v, dflt) => (v < 0 ? 'Never' : `${v > 0 ? v : dflt} min`);
 
-module.exports = function createSettings({ log, readConfig, setPrefs, home, setHome, apps, tvApps, accounts, version, elevated }) {
+module.exports = function createSettings({ log, readConfig, setPrefs, home, setHome, apps, tvApps, accounts, version, elevated, updates }) {
   const step = (id, label, value, desc, set) => ({ id, kind: 'step', label, value, desc, set });
   const inHome = (id, label, value, desc, page) => ({ id, kind: 'home', label, value, desc, page });
   // a pref that's on or off
@@ -129,7 +129,11 @@ module.exports = function createSettings({ log, readConfig, setPrefs, home, setH
   }
 
   const about = () => ({
-    rows: [Object.assign(inHome('remove', 'Remove Home+', '', 'Undoes everything Home+ set up, then uninstalls it.', 'about'), { destructive: true })],
+    rows: (updates ? [
+      inHome('checkUpdates', 'Check for Updates', `Home+ ${version}`, 'Check for a newer Home+ release.', 'updates'),
+      step('automaticUpdates', 'Automatic Update Checks', updates.state().automatic ? 'On' : 'Off',
+        'Check daily. Installation always needs confirmation.', () => updates.act({ action: 'automatic', enabled: !updates.state().automatic }))
+    ] : []).concat([Object.assign(inHome('remove', 'Remove Home+', '', 'Undoes everything Home+ set up, then uninstalls it.', 'about'), { destructive: true })]),
     body: `Home+ ${version}, ${elevated() ? 'set up with Homebrew Channel' : 'not set up yet'}\nMIT licence · github.com/pbalazaar/home-plus\n` +
       'Not affiliated with LG, Apple, Stremio, Trakt, Jellyfin or Plex.\nUses the TMDB API but is not endorsed or certified by TMDB.'
   });

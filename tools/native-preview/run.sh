@@ -51,6 +51,48 @@ rest() { # name keys: run as on the TV for 32 s; in the last 10, the loop sleeps
 # Focused Remote workflow: the real launcher changes settings through the harness's service.
 # "remote" also works against the unchanged baseline source for before/after screenshots.
 case "${HOMEPLUS_PREVIEW_SCENE:-}" in
+  updates-ready)
+    service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_UPDATES=ready
+    shot updates-ready "UODDDDRODDDDDDDOO" 6500; exit 0 ;;
+  updates)
+    # Real launcher -> authenticated HTTP -> real controller. Only release IO/installer are fixtures.
+    UPDATE_LOG="$OUT/update-actions.jsonl"
+    : > "$UPDATE_LOG"
+    service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_UPDATES=ready HOMEPLUS_PREVIEW_UPDATE_LOG="$UPDATE_LOG"
+    shot updates-about "UODDDDRODDDDDDDO" 5600
+    shot updates-ready "UODDDDRODDDDDDDOO" 6500
+    shot updates-kept "UODDDDRODDDDDDDOO.......B" 7600
+    node - "$HOMEPLUS_CONFIG_DIR/config.json" "$UPDATE_LOG" <<'JS'
+const fs = require('fs'), assert = require('assert');
+assert.strictEqual(JSON.parse(fs.readFileSync(process.argv[2])).updates.ignoredVersion, '99.0.0');
+const acts = fs.readFileSync(process.argv[3], 'utf8').trim().split('\n').map(JSON.parse);
+assert(acts.some(a => a.action === 'check'), 'native About must request a real check');
+assert(acts.some(a => a.action === 'keep' && a.version === '99.0.0'), 'Back must persist the displayed version');
+assert(!acts.some(a => a.action === 'install'), 'default focus and Back must never install');
+JS
+    service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_KEEP_CONFIG=1 HOMEPLUS_PREVIEW_UPDATES=ready HOMEPLUS_PREVIEW_UPDATE_STARTUP=20
+    shot updates-suppressed "" 3200
+    node - "$HOMEPLUS_TOKEN_FILE" <<'JS'
+const fs = require('fs'), http = require('http'), assert = require('assert');
+http.get({host:'127.0.0.1',port:47823,path:'/api/updates',headers:{'X-Homeplus-Token':fs.readFileSync(process.argv[2],'utf8').trim()}},res=>{
+ let body='';res.on('data',d=>body+=d);res.on('end',()=>{const s=JSON.parse(body);assert.strictEqual(s.prompt,false);assert.strictEqual(s.ignoredVersion,'99.0.0');});
+});
+JS
+    for mode in conflict failed unknown checking error; do
+      service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_UPDATES="$mode"
+      shot "updates-$mode" "UODDDDRODDDDDDDOO" 6500
+    done
+    service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_UPDATES=ready HOMEPLUS_PREVIEW_UPDATE_LOG="$UPDATE_LOG"
+    shot updates-install "UODDDDRODDDDDDDOO.......DO" 7800
+    node - "$UPDATE_LOG" <<'JS'
+const fs=require('fs'),assert=require('assert');
+const acts=fs.readFileSync(process.argv[2],'utf8').trim().split('\n').map(JSON.parse), installs=acts.filter(a=>a.action==='install');
+assert.strictEqual(installs.length,1);assert.strictEqual(installs[0].target,'preserve');assert.strictEqual(installs[0].version,'99.0.0');
+assert(/^[a-f0-9]{64}$/.test(installs[0].confirmation));
+JS
+    service HOMEPLUS_PREVIEW=1 HOMEPLUS_PREVIEW_UPDATES=installing
+    shot updates-progress "UODDDDRODDDDDDDOO.......DO" 7800
+    exit 0 ;;
   remote) shot remote "UODDDDROO" 4800; exit 0 ;;
   remote-default) shot remote-default "UODDDDROODO" 5600; exit 0 ;;
   remote-startup) shot remote-startup "UODDDDROODDO" 5600; exit 0 ;;
@@ -75,7 +117,7 @@ shot settings-shelf-details "UODDDDRODODDDDD" 5600
 # Settings: Right on a row changes it in place (Dim After, one step on), and About, at the end of its pages
 shot settings-step "UODDDDRODOR" 4800
 shot settings-about "UODDDDRODDDDDDD" 5200
-shot settings-remove "UODDDDRODDDDDDDOO" 5800
+shot settings-remove "UODDDDRODDDDDDDODDO" 6200
 shot last-row "DD" 3500
 shot move-hint "H.O" 3800
 shot pointer-settings "MCM" 4200 "1790,80 960,600"

@@ -433,4 +433,49 @@ if (process.env.HOMEPLUS_PREVIEW_REDIRECT) {
 // HOMEPLUS_PREVIEW_OLD: the old Home+'s service on Home+'s port (com.github.pmiraka.homeplus, its id up to
 // 0.14.0, installed beside the new one)
 if (process.env.HOMEPLUS_PREVIEW_OLD) require(path.join(serviceDir, 'package.json')).name = 'com.github.pmiraka.homeplus.service';
+// Updates use the production controller and authenticated HTTP routes. Only release IO and
+// installation are isolated here; no preview action can launch the independent TV worker.
+if (process.env.HOMEPLUS_PREVIEW_UPDATES) {
+  process.env.HOMEPLUS_PREVIEW_FOREGROUND = 'com.github.pbalazaar.homeplus';
+  const mod = require(path.join(serviceDir, 'updates'));
+  const create = mod.createUpdates;
+  const mode = process.env.HOMEPLUS_PREVIEW_UPDATES;
+  const app = path.join(CONFIG_DIR, 'update-app-' + mode), svc = path.join(CONFIG_DIR, 'update-service-' + mode);
+  mkdirSync(app); mkdirSync(svc);
+  fs.writeFileSync(path.join(app, 'preview'), 'isolated update fixture');
+  const hash = require('crypto').createHash('sha256').update('isolated update fixture').digest('hex');
+  const upstream = { repository: 'pbalazaar/home-plus', version: '99.0.0', tag: 'v99.0.0', commit: 'a'.repeat(40),
+    notes: 'Preview release notes', artifact: { version: '99.0.0', size: 1024, sha256: 'b'.repeat(64),
+      url: 'https://github.com/pbalazaar/home-plus/releases/download/v99.0.0/com.github.pbalazaar.homeplus_99.0.0_all.ipk' } };
+  const source = { repository: 'MoBluey/home-plus', commit: 'c'.repeat(40), base: 'd'.repeat(40) };
+  if (mode !== 'unknown') fs.writeFileSync(path.join(app, 'update-info.json'), JSON.stringify({ schemaVersion: 1,
+    upstream, source, customised: true, customisations: ['Updater'], updater: true, fileHashes: { 'application/preview': hash } }));
+  const result = { schemaVersion: 1, upstream, source, status: mode === 'conflict' || mode === 'failed' ? mode : 'ready',
+    message: mode === 'conflict' ? 'Custom changes conflict in native/src/apps.c.' : mode === 'failed' ? 'Custom build checks failed.' : 'Prepared with the updater preserved.',
+    conflicts: mode === 'conflict' ? ['native/src/apps.c'] : [], customisations: ['Updater'],
+    artifact: Object.assign({}, upstream.artifact, { url: upstream.artifact.url.replace('pbalazaar', 'MoBluey').replace('/v99.0.0/', '/upstream-v99.0.0/').replace('_99.0.0_all.ipk', '_99.0.0_cccccccccccc_bbbbbbbbbbbb_all.ipk') }) };
+  mod.createUpdates = (opts) => {
+    const controller = create(Object.assign({}, opts, { appDir: app, serviceDir: svc,
+      stateDir: path.join(CONFIG_DIR, 'update-state'), startupDelay: Number(process.env.HOMEPLUS_PREVIEW_UPDATE_STARTUP || 600000),
+      fetchRelease: async () => { await new Promise(resolve => setTimeout(resolve, mode === 'checking' ? 10000 : 30));
+        if (mode === 'error') throw new Error('Preview release server unavailable');
+        return { upstream, result }; },
+      launchWorker: async () => {
+        if (mode === 'installing') await new Promise(resolve => setTimeout(resolve, 10000));
+        throw new Error('Preview installation stopped before TV worker');
+      } }));
+    const act = controller.act;
+    controller.act = async (body) => {
+      if (process.env.HOMEPLUS_PREVIEW_UPDATE_LOG) fs.appendFileSync(process.env.HOMEPLUS_PREVIEW_UPDATE_LOG, JSON.stringify(body) + '\n');
+      return act(body);
+    };
+    return controller;
+  };
+} else {
+  // Ordinary preview/tests keep their own app and foreground fixtures. Never let a
+  // long-running scene's automatic timer (or a manual check) reach live releases.
+  const mod = require(path.join(serviceDir, 'updates')), create = mod.createUpdates;
+  mod.createUpdates = opts => create(Object.assign({}, opts, { startupDelay: 86400000,
+    fetchRelease: async () => { throw new Error('Update checks are offline in the default preview.'); } }));
+}
 require(path.join(serviceDir, 'service.js'));
